@@ -20,6 +20,20 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
             // m_startCaptureBtn->set_sensitive(!folder.empty() && !selectedCamera.empty()); 
         });
     }
+
+    m_builder->get_widget("capture_rate_sb", m_captureRateSb);
+
+    m_builder->get_widget("preflight_btn", m_preflight_btn);
+    if (m_preflight_btn)
+    {
+        m_preflight_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_preflight_clicked));
+    }
+
+    m_builder->get_widget("start_btn", m_start_btn);
+    if (m_start_btn)
+    {
+        m_start_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_start_clicked));
+    }
 }
 
 MainWindow::~MainWindow()
@@ -64,5 +78,22 @@ void MainWindow::discover_cameras()
     {
         std::cout << "MV_CC_EnumDevices fail! Error code: " << nRet << std::endl;
         // m_logger->log("Error on MV_CC_EnumDevices: " + std::to_string(nRet), Logger::ERROR);
+    }
+}
+
+void MainWindow::on_preflight_clicked()
+{
+
+}
+
+void MainWindow::on_start_clicked()
+{
+    double captureIntervalMs = 0.0;
+
+    if (m_captureRateSb)
+    {
+        int captureRate = m_captureRateSb->get_value();
+        // Calculate the capture interval (in milliseconds) based on capture rate (FPS)
+        captureIntervalMs = 1000.0 / static_cast<double>(captureRate);
     }
 }

@@ -13,7 +13,12 @@ public:
 
 protected:
     Gtk::ComboBoxText *m_cameraComboBox;
+    Gtk::SpinButton *m_captureRateSb;
+    Gtk::Button *m_preflight_btn;
+    Gtk::Button *m_start_btn;
     void on_window_shown();
+    void on_preflight_clicked();
+    void on_start_clicked();
 
 private:
     Glib::RefPtr<Gtk::Builder> m_builder;
