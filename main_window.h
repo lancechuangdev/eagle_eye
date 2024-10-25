@@ -14,8 +14,11 @@ public:
 protected:
     Gtk::ComboBoxText *m_cameraComboBox;
     Gtk::SpinButton *m_captureRateSb;
+    Gtk::FileChooserButton *m_load_model_fcb;
+    Gtk::FileChooserButton *m_prediction_result_fcb;
     Gtk::Button *m_preflight_btn;
     Gtk::Button *m_start_btn;
+
     void on_window_shown();
     void on_preflight_clicked();
     void on_start_clicked();

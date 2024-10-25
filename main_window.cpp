@@ -14,7 +14,8 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     m_builder->get_widget("capture_source_cbox", m_cameraComboBox);
     if (m_cameraComboBox)
     {
-        m_cameraComboBox->signal_changed().connect([this]() {
+        m_cameraComboBox->signal_changed().connect([this]() 
+        {
             auto selectedCamera = m_cameraComboBox->get_active_text();
             // auto folder = m_capturePickerFcb->get_filename();
             // m_startCaptureBtn->set_sensitive(!folder.empty() && !selectedCamera.empty()); 
@@ -22,6 +23,24 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     }
 
     m_builder->get_widget("capture_rate_sb", m_captureRateSb);
+
+    m_builder->get_widget("load_model_fcb", m_load_model_fcb);
+    if (m_load_model_fcb)
+    {
+        m_load_model_fcb->signal_selection_changed().connect([this]()
+        {
+            auto model = m_load_model_fcb->get_filename();
+        });
+    }
+
+    m_builder->get_widget("prediction_result_fcb", m_prediction_result_fcb);
+    if (m_prediction_result_fcb)
+    {
+        m_prediction_result_fcb->signal_selection_changed().connect([this]()
+        {
+            auto result_folder = m_prediction_result_fcb->get_filename();
+        });
+    }
 
     m_builder->get_widget("preflight_btn", m_preflight_btn);
     if (m_preflight_btn)
