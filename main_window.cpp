@@ -22,7 +22,7 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         });
     }
 
-    m_builder->get_widget("capture_rate_sb", m_captureRateSb);
+    m_builder->get_widget("capture_rate_sb", m_capture_rate_sb);
 
     m_builder->get_widget("load_model_fcb", m_load_model_fcb);
     if (m_load_model_fcb)
@@ -41,6 +41,10 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
             auto result_folder = m_prediction_result_fcb->get_filename();
         });
     }
+
+    m_builder->get_widget("confidence_threshold_sb", m_confidence_threshold_sb);
+
+    m_builder->get_widget("pixel_threshold_sb", m_pixel_threshold_sb);
 
     m_builder->get_widget("preflight_btn", m_preflight_btn);
     if (m_preflight_btn)
@@ -108,11 +112,23 @@ void MainWindow::on_preflight_clicked()
 void MainWindow::on_start_clicked()
 {
     double captureIntervalMs = 0.0;
+    double confidence_threshold = 0.0;
+    int pixel_threshold = 0;
 
-    if (m_captureRateSb)
+    if (m_capture_rate_sb)
     {
-        int captureRate = m_captureRateSb->get_value();
+        int captureRate = m_capture_rate_sb->get_value();
         // Calculate the capture interval (in milliseconds) based on capture rate (FPS)
         captureIntervalMs = 1000.0 / static_cast<double>(captureRate);
+    }
+
+    if (m_confidence_threshold_sb)
+    {
+        confidence_threshold = m_confidence_threshold_sb->get_value();
+    }
+
+    if (m_pixel_threshold_sb)
+    {
+        pixel_threshold = m_pixel_threshold_sb->get_value();
     }
 }

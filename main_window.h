@@ -13,9 +13,11 @@ public:
 
 protected:
     Gtk::ComboBoxText *m_cameraComboBox;
-    Gtk::SpinButton *m_captureRateSb;
+    Gtk::SpinButton *m_capture_rate_sb;
     Gtk::FileChooserButton *m_load_model_fcb;
     Gtk::FileChooserButton *m_prediction_result_fcb;
+    Gtk::SpinButton *m_confidence_threshold_sb;
+    Gtk::SpinButton *m_pixel_threshold_sb;
     Gtk::Button *m_preflight_btn;
     Gtk::Button *m_start_btn;
 
