@@ -1,5 +1,4 @@
 #include "main_window.h"
-#include <iostream>
 
 int main(int argc, char **argv)
 {
@@ -28,12 +27,23 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    // Initialize MV camera control.
+    int nRet = MV_CC_Initialize();
+    if (nRet != MV_OK)
+    {
+        // logger->log("Error to initialize MV SDK", Logger::ERROR);
+        std::cout << "Initialize SDK fail!" << std::endl;
+    }
+
     // Load top level window from glade.
     MainWindow *wnd = nullptr;
     builder->get_widget_derived("main_window", wnd);
 
     // Shows the window and returns when it is closed.
-    int nRet = app->run(*wnd);
+    nRet = app->run(*wnd);
+
+    // Ensure MV_CC_Finalize is called after the window is closed
+    MV_CC_Finalize();
 
     return nRet;
 }

@@ -35,6 +35,7 @@
             </child>
             <child>
               <object class="GtkComboBoxText" id="capture_source_cbox">
+                <property name="width-request">100</property>
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
                 <property name="halign">end</property>
