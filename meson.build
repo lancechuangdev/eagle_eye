@@ -13,7 +13,7 @@ inc_dir = join_paths(mvcam_runenv, '../include')
 lib_dir = join_paths(mvcam_runenv, '64')
 
 executable('ee', 
-    ['main.cpp', 'main_window.cpp'],
+    ['main.cpp', 'main_window.cpp', 'frame_queue.cpp', 'pyscript.cpp', 'file_utils.cpp', 'logger.cpp'],
     install_dir: join_paths(get_option('prefix'), 'bin', 'eagle_eye'),
     dependencies: gtkmm_dep,
     include_directories: inc_dir,
