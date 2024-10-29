@@ -450,15 +450,15 @@ void MainWindow::start_detection(std::string py_script_path)
 
         // Command to execute the python script
         std::string cmd = py_env + " " + py_script_path +
-                            std::string(" --model_path ") + model_path +
-                            std::string(" --shm_name ") + "/my_shared_memory" + 
-                            std::string(" --frame_size ") + std::to_string(frame_size) +
-                            std::string(" --frame_width ") + std::to_string(256) +
-                            std::string(" --frame_height ") + std::to_string(256) +
-                            std::string(" --patch_size ") + std::to_string(patch_size) +
-                            std::string(" --confidence_threshold ") + std::to_string(confidence_threshold) +
-                            std::string(" --pixel_threshold ") + std::to_string(pixel_threshold) +
-                            std::string(" --output_dir ") + result_folder;
+            std::string(" --model_path ") + model_path +
+            std::string(" --shm_name ") + "/my_shared_memory" + 
+            std::string(" --frame_size ") + std::to_string(frame_size) +
+            std::string(" --frame_width ") + std::to_string(256) +
+            std::string(" --frame_height ") + std::to_string(256) +
+            std::string(" --patch_size ") + std::to_string(patch_size) +
+            std::string(" --confidence_threshold ") + std::to_string(confidence_threshold) +
+            std::string(" --pixel_threshold ") + std::to_string(pixel_threshold) +
+            std::string(" --output_dir ") + result_folder;
 
         // Open shared memory object
         std::cout << "Open shared memory object" << std::endl;
@@ -523,15 +523,15 @@ void MainWindow::start_detection(std::string py_script_path)
 
                     // Update the command to execute the python script
                     cmd = py_env + " " + py_script_path +
-                                        std::string(" --model_path ") + model_path +
-                                        std::string(" --shm_name ") + "/my_shared_memory" + 
-                                        std::string(" --frame_size ") + std::to_string(frame_metadata->nFrameLen) +
-                                        std::string(" --frame_width ") + std::to_string(frame_metadata->nWidth) +
-                                        std::string(" --frame_height ") + std::to_string(frame_metadata->nHeight) +
-                                        std::string(" --patch_size ") + std::to_string(patch_size) +
-                                        std::string(" --confidence_threshold ") + std::to_string(confidence_threshold) +
-                                        std::string(" --pixel_threshold ") + std::to_string(pixel_threshold) +
-                                        std::string(" --output_dir ") + result_folder;
+                        std::string(" --model_path ") + model_path +
+                        std::string(" --shm_name ") + "/my_shared_memory" + 
+                        std::string(" --frame_size ") + std::to_string(frame_metadata->nFrameLen) +
+                        std::string(" --frame_width ") + std::to_string(frame_metadata->nWidth) +
+                        std::string(" --frame_height ") + std::to_string(frame_metadata->nHeight) +
+                        std::string(" --patch_size ") + std::to_string(patch_size) +
+                        std::string(" --confidence_threshold ") + std::to_string(confidence_threshold) +
+                        std::string(" --pixel_threshold ") + std::to_string(pixel_threshold) +
+                        std::string(" --output_dir ") + result_folder;
 
                     frame_size = curr_frame_size;
                 }

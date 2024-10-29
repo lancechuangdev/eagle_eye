@@ -6,8 +6,9 @@ import mmap
 import numpy as np
 import tensorflow as tf
 from PIL import Image
+from datetime import datetime
 
-def read_from_shared_memory(shm_name, frame_size):
+def read_from_shared_memory(shm_name, frame_size, frame_width, frame_height):    
     # Open the shared memory object
     shm = posix_ipc.SharedMemory(shm_name)
 
@@ -21,11 +22,26 @@ def read_from_shared_memory(shm_name, frame_size):
 
     # Convert the bytes to a numpy array
     frame_array = np.frombuffer(frame_bytes, dtype=np.uint8)
+    print(f"frame_array shape: {frame_array.shape}")
+    
+    # Reshape the array based on the frame dimensions
+    frame = frame_array.reshape((frame_height, frame_width))
+    print(f"frame shape: {frame.shape}")
+    
+    return frame
 
-    # Return the frame as a numpy array
-    return frame_array
+# BCE w/ Intersection over Union (IoU)
+def iou(y_true, y_pred):
+    y_pred = tf.round(y_pred)
+    intersection = tf.reduce_sum(y_true * y_pred)
+    total = tf.reduce_sum(y_true + y_pred)
+    union = total - intersection
+    iou = intersection / (union + tf.keras.backend.epsilon())
+    return iou
 
 def main():
+    print("main started")
+
     parser = argparse.ArgumentParser(description='Process frame from shared memory.')
     parser.add_argument('--shm_name', type=str, required=True, help='Shared memory name')
     parser.add_argument('--frame_size', type=int, required=True, help='Size of the frame in bytes')
@@ -49,34 +65,45 @@ def main():
     pixel_threshold = args.pixel_threshold
     output_dir = args.output_dir
 
+    print(f"frame size: {frame_size}, frame_width: {frame_width}, frame_height: {frame_height}")
+    print(f"share memory name: {shm_name}, model_path: {model_path}, patch_size: {patch_size}, confidence_threshold: {confidence_threshold}, pixel_threshold: {pixel_threshold}, output_dir: {output_dir}")
+
     if frame_width < patch_size or frame_height < patch_size:
         print("Error: frame width or height is smaller than the specified patch size.")
         sys.exit(1)
 
     # Read the frame from shared memory
-    frame = read_from_shared_memory(shm_name, frame_size)
+    frame = read_from_shared_memory(shm_name, frame_size, frame_width, frame_height)
 
     # Reshape and preprocess the grayscale frame
-    frame = frame.reshape((patch_size, frame_width))
+    reshaped_frame = frame[:patch_size, :]
+    print(f"reshaped_frame shape: {reshaped_frame.shape}")
 
     # Normalize frame to [0, 1] range
-    frame = frame.astype(np.float32) / 255.0
+    reshaped_frame = reshaped_frame.astype(np.float32) / 255.0
 
-    # Load the model
-    model = tf.keras.models.load_model(model_path)
+    # Define the custom objects dictionary
+    custom_objects = {
+        'iou': iou
+    }
+    model = tf.keras.models.load_model(model_path, custom_objects=custom_objects)
+    print(f"model loaded")
 
     # Extract and reshape each patch_size*patch_size patch
     num_patches = frame_width // patch_size
+    print(f"num_patches: {num_patches}")
     batch = []
     for i in range(num_patches):
-        patch = frame[:, i * patch_size:(i + 1) * patch_size]
-        patch = patch.reshape((patch_size, patch_size, 1))  # Reshape to (256, 256, 1)
+        patch = reshaped_frame[:, i * patch_size:(i + 1) * patch_size]
+        patch = patch.reshape((patch_size, patch_size, 1))  # Reshape to (patch_size, patch_size, 1)
         batch.append(patch)
 
     # Handle the remaining part as a smaller patch, if any
     remainder = frame_width % patch_size
+    print(f"remainder: {remainder}")
+
     if remainder > 0:
-        last_patch = frame[:, num_patches * patch_size:]
+        last_patch = reshaped_frame[:, num_patches * patch_size:]
         # Pad the last patch to patch_size*patch_size
         last_patch = np.pad(last_patch, ((0, 0), (0, patch_size - remainder)), mode='constant') # This fills in the additional columns with zeros, creating a uniform background
         last_patch = last_patch.reshape((patch_size, patch_size, 1))
@@ -84,16 +111,18 @@ def main():
 
     # Convert list to numpy array with batch shape (num_patches, patch_size, patch_size, 1)
     frame_batch = np.array(batch)
+    print(f"frame_batch shape: {frame_batch.shape}")
 
     # Perform prediction on the entire batch
     predictions = model.predict(frame_batch)
     predictions = (predictions > confidence_threshold).astype(np.float32)
+    print(f"predictions shape: {predictions.shape}")
 
     # Check each prediction for anomaly
     for i, (prediction, patch) in enumerate(zip(predictions, batch)):
         # Threshold check for anomalies
         anomaly_count = np.sum(prediction == 1)
-        print(f"Patch {i}: Anomaly detected with count = {anomaly_count}")
+        print(f"Patch {i}: Anomaly detected with count = {anomaly_count} px")
         
         if anomaly_count > pixel_threshold:
             # Convert arrays to image format
@@ -101,8 +130,9 @@ def main():
             prediction_image = Image.fromarray((prediction.squeeze() * 255).astype(np.uint8), mode='L')
 
             # Save the images
-            patch_filename = os.path.join(output_dir, f"patch_{i}.png")
-            prediction_filename = os.path.join(output_dir, f"prediction_{i}.png")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            patch_filename = os.path.join(output_dir, f"patch_{i}_{timestamp}.png")
+            prediction_filename = os.path.join(output_dir, f"prediction_{i}_{timestamp}.png")
             
             patch_image.save(patch_filename)
             prediction_image.save(prediction_filename)
