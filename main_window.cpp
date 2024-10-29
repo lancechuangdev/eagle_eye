@@ -564,7 +564,7 @@ void MainWindow::start_detection(std::string py_script_path)
                 // Copy data to shared memory
                 std::memcpy(shm_ptr, frame_data.pData, frame_size);
 
-                predict(py_script_path);
+                predict(cmd);
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Prevent CPU overuse
         }
@@ -581,7 +581,7 @@ void MainWindow::start_detection(std::string py_script_path)
 
 void MainWindow::predict(std::string command)
 {
-    m_logger->log("Command to run: " + command);
+    m_logger->log("Start prediction: " + command);
     
     // Open a pipe to the command
     FILE *pipe = popen(command.c_str(), "r");
@@ -608,6 +608,8 @@ void MainWindow::predict(std::string command)
         std::cerr << "Command failed with return code " << returnCode << std::endl;
         m_logger->log("Unable to close the pipe: " + std::to_string(returnCode), Logger::ERROR);
     }
+
+    m_logger->log("End prediction");
 }
 
 void MainWindow::stop_capture(void *device_handle)
