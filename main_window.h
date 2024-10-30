@@ -16,6 +16,7 @@
 #include "pyscript.h"
 #include "logger.h"
 #include "file_utils.h"
+#include "web_socket_client.h"
 
 class MainWindow : public Gtk::Window
 {
@@ -59,6 +60,8 @@ private:
     void predict(std::string command);
     void stop_capture(void *device_handle);
 
+    WebSocketClient m_ws_client;
+    bool m_is_ws_connected;
     std::shared_ptr<Logger> m_logger;
 };
 

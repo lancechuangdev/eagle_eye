@@ -96,6 +96,25 @@ void MainWindow::on_window_shown()
             m_logger->log("Unable to open temp_unet_pred.py for writing", Logger::ERROR);
         }
     }
+
+    // Set up websocket callbacks
+    m_ws_client.on_connect([this]() {
+        std::cout << "Successfully connected to the WebSocket server!" << std::endl;
+        m_is_ws_connected = true;
+    });
+    m_ws_client.on_disconnect([this]() {
+        std::cout << "Disconnected from the WebSocket server." << std::endl;
+        m_is_ws_connected = false;
+    });
+    m_ws_client.on_message_received([](const std::string &message) {
+        std::cout << "Received message: " << message << std::endl;
+    });
+    
+    // Connect to the WebSocket server in a separate thread
+    std::thread([this]() {
+        std::string uri = "ws://localhost:9001";
+        m_ws_client.connect(uri);
+    }).detach();  // Detach the thread so it runs independently
 }
 
 bool MainWindow::on_window_delete(GdkEventAny* event)
@@ -124,6 +143,9 @@ bool MainWindow::on_window_delete(GdkEventAny* event)
 
     // Delete the tmp script after execution
     std::remove(m_py_script.c_str());
+
+    // Disconnect from the WebSocket server
+    m_ws_client.disconnect();
 
     // Returning false allows the window to close
     return false;
