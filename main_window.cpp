@@ -108,6 +108,7 @@ void MainWindow::on_window_shown()
     });
     m_ws_client.on_message_received([](const std::string &message) {
         std::cout << "Received message: " << message << std::endl;
+
     });
     
     // Connect to the WebSocket server in a separate thread
@@ -164,6 +165,8 @@ void MainWindow::discover_cameras()
 
 void MainWindow::on_start_clicked()
 {
+    m_is_capturing = true;
+
     double capture_interval_ms = 0.0;
     if (m_capture_rate_sb)
     {
@@ -216,18 +219,25 @@ void MainWindow::on_start_clicked()
 
         // Launch start_capture asynchronously for each device
         start_capture(device_handle, capture_interval_ms);
-        start_detection(m_py_script);
     }
+
+    start_detection(m_py_script);
 }
 
 void MainWindow::on_stop_clicked()
 {
-    m_isCapturing = false;
+    m_is_capturing = false;
 
     for (void *device_handle : m_device_handles)
     {
         m_logger->log("Stop capture for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
         stop_capture(device_handle);
+    }
+
+    // Ensure there's no existing processing thread running
+    if (m_processing_thread.joinable()) 
+    {
+        m_processing_thread.join();  // Wait for previous thread to finish
     }
 }
 
@@ -340,12 +350,8 @@ void MainWindow::preflight(void *device_handle)
                     << std::endl;
         }
 
-        // Cast pUser to MainWindow*
-        MainWindow *pThis = static_cast<MainWindow *>(pUser);
-
-        std::cout << "m_frame_queue.enqueue started" << std::endl;  
+        MainWindow *pThis = static_cast<MainWindow *>(pUser); // Cast pUser to MainWindow*
         pThis->m_frame_queue.enqueue(FrameData(pData, pFrameInfo));
-        std::cout << "m_frame_queue.enqueue ended" << std::endl;
     };
 
     m_logger->log("MV_CC_RegisterImageCallBackEx for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
@@ -370,23 +376,24 @@ void MainWindow::start_capture(void *device_handle, double capture_interval_ms)
     else
     {
         m_logger->log("Started MV_CC_StartGrabbing for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
-        m_isCapturing = true;
+
+        std::string camera_handle = std::to_string(reinterpret_cast<uintptr_t>(device_handle));
+        auto& capturing_thread = m_capturing_threads[camera_handle];
 
         // Ensure there's no existing capture thread running
-        if (m_capturing_thread.joinable()) 
-        {
-            m_capturing_thread.join();  // Wait for previous thread to finish
+        if (capturing_thread.joinable()) {
+            capturing_thread.join();  // Wait for previous thread to finish
         }
 
         // Start the frame acquisition thread
-        m_capturing_thread = std::thread([this, device_handle, capture_interval_ms]()
+        capturing_thread = std::thread([this, device_handle, capture_interval_ms]()
         {
             uint64_t lastCaptureTimestamp = 0;
 
-            while (m_isCapturing)
+            while (m_is_capturing)
             {
-                std::cout << "Entering Capturing loop." << std::endl;
-                auto currentTimeInMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+                auto currentTimeInMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
                 double elapsed = currentTimeInMs - lastCaptureTimestamp;
 
                 if (elapsed >= capture_interval_ms)
@@ -394,19 +401,19 @@ void MainWindow::start_capture(void *device_handle, double capture_interval_ms)
                     lastCaptureTimestamp = currentTimeInMs;
 
                     int nRet = MV_CC_SetCommandValue(device_handle, "TriggerSoftware");
-                    if (MV_OK != nRet)
+                    if (nRet != MV_OK)
                     {
-                        std::cout << "Failed to capture frames via TriggerSoftware. Error code: " << nRet << std::endl;
+                        std::cerr << "Failed to capture frames via TriggerSoftware. Error code: " << nRet << std::endl;
                         m_logger->log("Error on MV_CC_SetCommandValue(TriggerSoftware): " + std::to_string(nRet), Logger::ERROR);
-                        std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Prevent CPU overuse
                     }
                     else
                     {
                         std::cout << "Capturing frames via TriggerSoftware." << std::endl;
                     }
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Prevent CPU overuse
-                std::cout << "Exiting Capturing loop." << std::endl;
+
+                // Prevent CPU overuse
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
         });
     }
@@ -510,7 +517,7 @@ void MainWindow::start_detection(std::string py_script_path)
             return;
         }
 
-        while (m_isCapturing)
+        while (m_is_capturing)
         {
             std::cout << "Entering processing loop" << std::endl;
             std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Prevent CPU overuse
@@ -605,6 +612,12 @@ void MainWindow::predict(std::string command)
 {
     m_logger->log("Start prediction: " + command);
     
+    // Send the command to the ws server
+
+    // wait until receive the response
+
+    // print the response
+
     // Open a pipe to the command
     FILE *pipe = popen(command.c_str(), "r");
     if (!pipe)
@@ -636,15 +649,12 @@ void MainWindow::predict(std::string command)
 
 void MainWindow::stop_capture(void *device_handle)
 {
-    if (m_capturing_thread.joinable())
-    {
-        m_capturing_thread.join();  // Wait for the thread to complete
-    }
+    std::string camera_handle = std::to_string(reinterpret_cast<uintptr_t>(device_handle));
+    auto& capturing_thread = m_capturing_threads[camera_handle];
 
-    // Ensure there's no existing processing thread running
-    if (m_processing_thread.joinable()) 
-    {
-        m_processing_thread.join();  // Wait for previous thread to finish
+    // Ensure there's no existing capture thread running
+    if (capturing_thread.joinable()) {
+        capturing_thread.join();  // Wait for previous thread to finish
     }
 
     int nRet = MV_CC_StopGrabbing(device_handle);

@@ -11,6 +11,7 @@
 #include <chrono>
 #include <thread>
 #include <future>
+#include <unordered_map>
 #include "MvCameraControl.h"
 #include "frame_queue.h"
 #include "pyscript.h"
@@ -45,12 +46,12 @@ private:
     Glib::RefPtr<Gtk::Builder> m_builder;
     MV_CC_DEVICE_INFO_LIST m_camList;
     std::vector<void*> m_device_handles;
-    std::atomic<bool> m_isCapturing;
+    std::atomic<bool> m_is_capturing;
     FrameQueue m_frame_queue;
     std::string m_py_script;
-    std::thread m_capturing_thread;
+    std::unordered_map<std::string, std::thread> m_capturing_threads;
     std::thread m_processing_thread;
-    
+
     void discover_cameras();
     void *get_device_handle_by_serial_number(std::string sn);
     std::vector<void*> get_all_device_handles();
