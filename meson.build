@@ -24,6 +24,7 @@ lib_dir = join_paths(mvcam_runenv, '64')
 
 executable('ee', 
     ['main.cpp', 'main_window.cpp', 'frame_queue.cpp', 'pyscript.cpp', 'file_utils.cpp', 'logger.cpp', 'web_socket_client.cpp'],
+    install: true,
     install_dir: join_paths(get_option('prefix'), 'bin', 'eagle_eye'),
     dependencies: [gtkmm_dep, boost_dep, openssl_dep, json_dep],
     include_directories: [inc_dir, websocketpp_inc_dir],
@@ -32,4 +33,10 @@ executable('ee',
         '-L' + lib_dir,
         '-lMvCameraControl'
     ]
+)
+
+# Install data files
+install_data(
+    'ui.glade', 
+    install_dir: join_paths(get_option('prefix'), 'share', 'eagle-eye')
 )

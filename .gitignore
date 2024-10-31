@@ -1,0 +1,5 @@
+/builddir/
+/debian/.debhelper/*
+/debian/eagle-eye/*
+/debian/changelog
+/debian/files
