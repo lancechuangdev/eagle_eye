@@ -566,9 +566,10 @@ void MainWindow::start_detection()
             
             size_t offset = 0;
             frame_offsets.clear();
+            int frames_dequeued = 0;
 
             // Copy each frame into its respective memory offset
-            while (!m_frame_queue.isEmpty())
+            while (!m_frame_queue.isEmpty() && frames_dequeued < 2)
             {
                 if (m_frame_queue.dequeue(frame_data))
                 {
@@ -587,6 +588,9 @@ void MainWindow::start_detection()
 
                     // Update offset for the next frame
                     offset += frame_size;
+
+                    // Increment the counter
+                    frames_dequeued++;
                 }
             }
 
