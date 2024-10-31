@@ -52,7 +52,6 @@ private:
     std::string m_py_script;
     std::unordered_map<std::string, std::thread> m_capturing_threads;
     std::thread m_processing_thread;
-
     struct FrameOffsetInfo
     {
         size_t offset;
@@ -60,8 +59,7 @@ private:
         size_t frame_width;
         size_t frame_height;
     };
-
-    FILE *m_pipe;
+    // FILE *m_pipe;
 
     void discover_cameras();
     void *get_device_handle_by_serial_number(std::string sn);

@@ -127,7 +127,7 @@ void MainWindow::on_window_shown()
             m_ws_response = message;
             m_ws_response_ready = true;
         }
-        
+
         // Notify one waiting thread that the condition is met
         m_ws_response_cv.notify_one();
     });
@@ -186,47 +186,47 @@ void MainWindow::discover_cameras()
 
 void MainWindow::on_start_clicked()
 {
-    std::string py_env = m_py_env_entry->get_text();
-    if (py_env.empty())
-    {
-        std::cerr << "Python environment is not set" << std::endl;
-        return;
-    }
+    // std::string py_env = m_py_env_entry->get_text();
+    // if (py_env.empty())
+    // {
+    //     std::cerr << "Python environment is not set" << std::endl;
+    //     return;
+    // }
 
-    std::string model_path = m_load_model_fcb->get_filename();
-    if (model_path.empty())
-    {
-        std::cerr << "model path is not set" << std::endl;
-        return;
-    }
+    // std::string model_path = m_load_model_fcb->get_filename();
+    // if (model_path.empty())
+    // {
+    //     std::cerr << "model path is not set" << std::endl;
+    //     return;
+    // }
     
-    int patch_size = static_cast<int>(m_patch_size_sb->get_value());
-    if (patch_size <= 0)
-    {
-        std::cerr << "Patch size is not set" << std::endl;
-        return;
-    }
+    // int patch_size = static_cast<int>(m_patch_size_sb->get_value());
+    // if (patch_size <= 0)
+    // {
+    //     std::cerr << "Patch size is not set" << std::endl;
+    //     return;
+    // }
 
-    double confidence_threshold = m_confidence_threshold_sb->get_value();
-    if (confidence_threshold <= 0.0)
-    {
-        std::cerr << "Confidence threshold is not set" << std::endl;
-        return;
-    }
+    // double confidence_threshold = m_confidence_threshold_sb->get_value();
+    // if (confidence_threshold <= 0.0)
+    // {
+    //     std::cerr << "Confidence threshold is not set" << std::endl;
+    //     return;
+    // }
 
-    int pixel_threshold = m_pixel_threshold_sb->get_value();
-    if (pixel_threshold <= 0)
-    {
-        std::cerr << "Pixel threshold is not set" << std::endl;
-        return;
-    }
+    // int pixel_threshold = m_pixel_threshold_sb->get_value();
+    // if (pixel_threshold <= 0)
+    // {
+    //     std::cerr << "Pixel threshold is not set" << std::endl;
+    //     return;
+    // }
 
-    std::string result_folder = m_prediction_result_fcb->get_filename();
-    if (result_folder.empty())
-    {
-        std::cerr << "Output dir is not set" << std::endl;
-        return;
-    }
+    // std::string result_folder = m_prediction_result_fcb->get_filename();
+    // if (result_folder.empty())
+    // {
+    //     std::cerr << "Output dir is not set" << std::endl;
+    //     return;
+    // }
 
     // Command to execute the python script
     // std::string cmd = py_env + " " + m_py_script +
@@ -250,6 +250,7 @@ void MainWindow::on_start_clicked()
     // send_ws_message(message);
 
     m_is_capturing = true;
+    m_start_btn->set_sensitive(!m_is_capturing);
 
     double capture_interval_ms = 0.0;
     if (m_capture_rate_sb)
@@ -311,6 +312,7 @@ void MainWindow::on_start_clicked()
 void MainWindow::on_stop_clicked()
 {
     m_is_capturing = false;
+    m_start_btn->set_sensitive(!m_is_capturing);
 
     for (void *device_handle : m_device_handles)
     {
@@ -648,12 +650,11 @@ void MainWindow::send_ws_message(std::string message)
 
         // wait until receive the response
         std::unique_lock<std::mutex> lock(m_ws_response_mutex);
-
         m_ws_response_cv.wait(lock, [this]{ return m_ws_response_ready; });
-
+        
         // print the response
-        std::cout << "ws response: " << m_ws_response << std::endl;
-        m_logger->log("ws response: " + m_ws_response);
+        std::cout << "receiving a ws response: " << m_ws_response << std::endl;
+        m_logger->log("receiving a ws response: " + m_ws_response);
 
         // Reset the condition for future use if needed
         m_ws_response_ready = false;
