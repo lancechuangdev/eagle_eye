@@ -3,7 +3,7 @@
 MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &refBuilder, std::shared_ptr<Logger> logger)
     : Gtk::Window(obj),
       m_builder(refBuilder),
-      m_frame_queue(20),
+      m_frame_queue(2),
       m_logger(logger)
 {
     signal_show().connect(sigc::mem_fun(*this, &MainWindow::on_window_shown));
@@ -77,25 +77,37 @@ void MainWindow::on_window_shown()
     }
 
     // Write the Python script to the temp file
-    m_py_script = "/tmp/eagle_eye/temp_unet_pred.py";
-    if (!FileUtils::createSubdirectory("/tmp", "eagle_eye"))
-    {
-        std::cerr << "Failed to create tmp directory." << std::endl;
-    }
-    else
-    {
-        std::ofstream tempUnetPredPyFile(m_py_script);
-        if (tempUnetPredPyFile.is_open())
-        {
-            tempUnetPredPyFile << unet_predict_py;
-            tempUnetPredPyFile.close();
-        }
-        else
-        {
-            std::cerr << "Failed to open temp_unet_pred.py for writing" << std::endl;
-            m_logger->log("Unable to open temp_unet_pred.py for writing", Logger::ERROR);
-        }
-    }
+    // m_py_script = "/tmp/eagle_eye/temp_unet_pred.py";
+    // if (!FileUtils::createSubdirectory("/tmp", "eagle_eye"))
+    // {
+    //     std::cerr << "Failed to create tmp directory." << std::endl;
+    // }
+    // else
+    // {
+    //     std::ofstream tempUnetPredPyFile(m_py_script);
+    //     if (tempUnetPredPyFile.is_open())
+    //     {
+    //         tempUnetPredPyFile << unet_predict_py;
+    //         tempUnetPredPyFile.close();
+    //     }
+    //     else
+    //     {
+    //         std::cerr << "Failed to open temp_unet_pred.py for writing" << std::endl;
+    //         m_logger->log("Unable to open temp_unet_pred.py for writing", Logger::ERROR);
+    //     }
+    // }
+
+    // Open a pipe to the command
+    // std::string py_env = "/home/liang/anaconda3/envs/colab/bin/python";
+    // std::string cmd = py_env + " " + m_py_script;
+    // m_pipe = popen(cmd.c_str(), "r");
+    // if (!m_pipe)
+    // {
+    //     std::cerr << "Failed to run command\n";
+    //     m_logger->log("Unable to run command: " + cmd, Logger::ERROR);
+    // }
+
+    // std::this_thread::sleep_for(std::chrono::seconds(3));
 
     // Set up websocket callbacks
     m_ws_client.on_connect([this]() {
@@ -106,9 +118,18 @@ void MainWindow::on_window_shown()
         std::cout << "Disconnected from the WebSocket server." << std::endl;
         m_is_ws_connected = false;
     });
-    m_ws_client.on_message_received([](const std::string &message) {
+    m_ws_client.on_message_received([this](const std::string &message) {
         std::cout << "Received message: " << message << std::endl;
 
+        // Lock the mutex before modifying shared resource
+        {
+            std::lock_guard<std::mutex> lock(m_ws_response_mutex);
+            m_ws_response = message;
+            m_ws_response_ready = true;
+        }
+        
+        // Notify one waiting thread that the condition is met
+        m_ws_response_cv.notify_one();
     });
     
     // Connect to the WebSocket server in a separate thread
@@ -165,6 +186,69 @@ void MainWindow::discover_cameras()
 
 void MainWindow::on_start_clicked()
 {
+    std::string py_env = m_py_env_entry->get_text();
+    if (py_env.empty())
+    {
+        std::cerr << "Python environment is not set" << std::endl;
+        return;
+    }
+
+    std::string model_path = m_load_model_fcb->get_filename();
+    if (model_path.empty())
+    {
+        std::cerr << "model path is not set" << std::endl;
+        return;
+    }
+    
+    int patch_size = static_cast<int>(m_patch_size_sb->get_value());
+    if (patch_size <= 0)
+    {
+        std::cerr << "Patch size is not set" << std::endl;
+        return;
+    }
+
+    double confidence_threshold = m_confidence_threshold_sb->get_value();
+    if (confidence_threshold <= 0.0)
+    {
+        std::cerr << "Confidence threshold is not set" << std::endl;
+        return;
+    }
+
+    int pixel_threshold = m_pixel_threshold_sb->get_value();
+    if (pixel_threshold <= 0)
+    {
+        std::cerr << "Pixel threshold is not set" << std::endl;
+        return;
+    }
+
+    std::string result_folder = m_prediction_result_fcb->get_filename();
+    if (result_folder.empty())
+    {
+        std::cerr << "Output dir is not set" << std::endl;
+        return;
+    }
+
+    // Command to execute the python script
+    // std::string cmd = py_env + " " + m_py_script +
+    //     std::string(" --model_path ") + model_path +
+    //     std::string(" --shm_name ") + "/ee_shared_memory" + 
+    //     std::string(" --patch_size ") + std::to_string(patch_size) +
+    //     std::string(" --confidence_threshold ") + std::to_string(confidence_threshold) +
+    //     std::string(" --pixel_threshold ") + std::to_string(pixel_threshold) +
+    //     std::string(" --output_dir ") + result_folder;
+
+    // Send the command to the ws server
+    // nlohmann::json json_data;
+    // json_data["shm_name"] = "/ee_shared_memory";
+    // json_data["model_path"] = model_path;
+    // json_data["patch_size"] = patch_size;
+    // json_data["confidence_threshold"] = confidence_threshold;
+    // json_data["pixel_threshold"] = pixel_threshold;
+    // json_data["output_dir"] = result_folder;
+
+    // std::string message = json_data.dump(); // Convert JSON to string
+    // send_ws_message(message);
+
     m_is_capturing = true;
 
     double capture_interval_ms = 0.0;
@@ -221,7 +305,7 @@ void MainWindow::on_start_clicked()
         start_capture(device_handle, capture_interval_ms);
     }
 
-    start_detection(m_py_script);
+    start_detection();
 }
 
 void MainWindow::on_stop_clicked()
@@ -239,6 +323,14 @@ void MainWindow::on_stop_clicked()
     {
         m_processing_thread.join();  // Wait for previous thread to finish
     }
+
+    // Close the pipe
+    // int returnCode = pclose(m_pipe);
+    // if (returnCode != 0)
+    // {
+    //     std::cerr << "Command failed with return code " << returnCode << std::endl;
+    //     m_logger->log("Unable to close the pipe: " + std::to_string(returnCode), Logger::ERROR);
+    // }
 }
 
 void *MainWindow::get_device_handle_by_serial_number(std::string sn)
@@ -342,13 +434,13 @@ void MainWindow::preflight(void *device_handle)
     // Register image callback
     auto image_capture_callback = [](unsigned char *pData, MV_FRAME_OUT_INFO_EX *pFrameInfo, void *pUser)
     {
-        if (pFrameInfo)
-        {
-            std::cout << "GetOneFrame, nDevTimeStampHigh: " << pFrameInfo->nDevTimeStampHigh
-                    << ", nDevTimeStampLow: " << pFrameInfo->nDevTimeStampLow
-                    << ", nHostTimeStamp: " << pFrameInfo->nHostTimeStamp
-                    << std::endl;
-        }
+        // if (pFrameInfo)
+        // {
+        //     std::cout << "GetOneFrame, nDevTimeStampHigh: " << pFrameInfo->nDevTimeStampHigh
+        //             << ", nDevTimeStampLow: " << pFrameInfo->nDevTimeStampLow
+        //             << ", nHostTimeStamp: " << pFrameInfo->nHostTimeStamp
+        //             << std::endl;
+        // }
 
         MainWindow *pThis = static_cast<MainWindow *>(pUser); // Cast pUser to MainWindow*
         pThis->m_frame_queue.enqueue(FrameData(pData, pFrameInfo));
@@ -408,7 +500,7 @@ void MainWindow::start_capture(void *device_handle, double capture_interval_ms)
                     }
                     else
                     {
-                        std::cout << "Capturing frames via TriggerSoftware." << std::endl;
+                        // std::cout << "Capturing frames via TriggerSoftware." << std::endl;
                     }
                 }
 
@@ -419,50 +511,8 @@ void MainWindow::start_capture(void *device_handle, double capture_interval_ms)
     }
 }
 
-void MainWindow::start_detection(std::string py_script_path)
+void MainWindow::start_detection()
 {
-    std::string py_env = m_py_env_entry->get_text();
-    if (py_env.empty())
-    {
-        std::cerr << "Python environment is not set" << std::endl;
-        return;
-    }
-
-    std::string model_path = m_load_model_fcb->get_filename();
-    if (model_path.empty())
-    {
-        std::cerr << "model path is not set" << std::endl;
-        return;
-    }
-    
-    int patch_size = static_cast<int>(m_patch_size_sb->get_value());
-    if (patch_size <= 0)
-    {
-        std::cerr << "Patch size is not set" << std::endl;
-        return;
-    }
-
-    double confidence_threshold = m_confidence_threshold_sb->get_value();
-    if (confidence_threshold <= 0.0)
-    {
-        std::cerr << "Confidence threshold is not set" << std::endl;
-        return;
-    }
-
-    int pixel_threshold = m_pixel_threshold_sb->get_value();
-    if (pixel_threshold <= 0)
-    {
-        std::cerr << "Pixel threshold is not set" << std::endl;
-        return;
-    }
-
-    std::string result_folder = m_prediction_result_fcb->get_filename();
-    if (result_folder.empty())
-    {
-        std::cerr << "Output dir is not set" << std::endl;
-        return;
-    }
-
     // Ensure there's no existing processing thread running
     if (m_processing_thread.joinable()) 
     {
@@ -470,24 +520,12 @@ void MainWindow::start_detection(std::string py_script_path)
     }
 
     // Start the frame processing thread
-    m_processing_thread = std::thread([this, py_env, py_script_path, model_path, patch_size, confidence_threshold, pixel_threshold, result_folder]()
+    m_processing_thread = std::thread([this]()
     {
         FrameData frame_data(nullptr, nullptr); // Initialize FrameData with null pointers
 
-        std::string shm_name = "/my_shared_memory";
-        size_t frame_size = 256 * 256;
-
-        // Command to execute the python script
-        std::string cmd = py_env + " " + py_script_path +
-            std::string(" --model_path ") + model_path +
-            std::string(" --shm_name ") + "/my_shared_memory" + 
-            std::string(" --frame_size ") + std::to_string(frame_size) +
-            std::string(" --frame_width ") + std::to_string(256) +
-            std::string(" --frame_height ") + std::to_string(256) +
-            std::string(" --patch_size ") + std::to_string(patch_size) +
-            std::string(" --confidence_threshold ") + std::to_string(confidence_threshold) +
-            std::string(" --pixel_threshold ") + std::to_string(pixel_threshold) +
-            std::string(" --output_dir ") + result_folder;
+        std::string shm_name = "/ee_shared_memory";
+        size_t buffer = 1280 * 1024 * 3;
 
         // Open shared memory object
         std::cout << "Open shared memory object" << std::endl;
@@ -500,7 +538,7 @@ void MainWindow::start_detection(std::string py_script_path)
 
         // Resize shared memory object to the initial data size
         std::cout << "Resize shared memory object" << std::endl;
-        if (ftruncate(shm_fd, frame_size) == -1)
+        if (ftruncate(shm_fd, buffer) == -1)
         {
             std::cerr << "Failed to resize shared memory object." << std::endl;
             ::close(shm_fd);
@@ -509,7 +547,7 @@ void MainWindow::start_detection(std::string py_script_path)
 
         // Map shared memory into address space
         std::cout << "Map shared memory" << std::endl;
-        void *shm_ptr = mmap(0, frame_size, PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        void *shm_ptr = mmap(0, buffer, PROT_WRITE, MAP_SHARED, shm_fd, 0);
         if (shm_ptr == MAP_FAILED)
         {
             std::cerr << "Failed to map shared memory." << std::endl;
@@ -517,134 +555,69 @@ void MainWindow::start_detection(std::string py_script_path)
             return;
         }
 
+        std::vector<FrameOffsetInfo> frame_offsets;
+        
         while (m_is_capturing)
         {
-            std::cout << "Entering processing loop" << std::endl;
+            // std::cout << "Entering processing loop" << std::endl;
             std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Prevent CPU overuse
-            if (m_frame_queue.dequeue(frame_data))
+            
+            size_t offset = 0;
+            frame_offsets.clear();
+
+            // Copy each frame into its respective memory offset
+            while (!m_frame_queue.isEmpty())
             {
-                auto frame_metadata = frame_data.pMetadata;
-                size_t curr_frame_size = frame_metadata->nFrameLen;
-
-                // Check if the data pointer is valid and frame size is greater than zero
-                if (frame_data.pData == nullptr || curr_frame_size == 0) {
-                    std::cerr << "Frame data is invalid or has size 0." << std::endl;
-                    continue;
-                }
-
-                if (curr_frame_size != frame_size)
+                if (m_frame_queue.dequeue(frame_data))
                 {
-                    std::cout << "frame size is different" << std::endl;
-                    // Resize shared memory object to the data size
-                    if (ftruncate(shm_fd, curr_frame_size) == -1)
-                    {
-                        std::cerr << "Failed to resize shared memory object." << std::endl;
-                        continue;
-                    }
+                    auto frame_size = frame_data.pMetadata->nFrameLen;
+                    auto frame_width = frame_data.pMetadata->nWidth;
+                    auto frame_height = frame_data.pMetadata->nHeight;
 
-                    // Map shared memory into address space
-                    shm_ptr = mmap(0, curr_frame_size, PROT_WRITE, MAP_SHARED, shm_fd, 0);
-                    if (shm_ptr == MAP_FAILED)
-                    {
-                        std::cerr << "Failed to map shared memory." << std::endl;
-                        continue;
-                    }
+                    // Save the frame metadata
+                    frame_offsets.push_back({ offset, frame_size, frame_width, frame_height });
 
-                    // Update the command to execute the python script
-                    cmd = py_env + " " + py_script_path +
-                        std::string(" --model_path ") + model_path +
-                        std::string(" --shm_name ") + "/my_shared_memory" + 
-                        std::string(" --frame_size ") + std::to_string(frame_metadata->nFrameLen) +
-                        std::string(" --frame_width ") + std::to_string(frame_metadata->nWidth) +
-                        std::string(" --frame_height ") + std::to_string(frame_metadata->nHeight) +
-                        std::string(" --patch_size ") + std::to_string(patch_size) +
-                        std::string(" --confidence_threshold ") + std::to_string(confidence_threshold) +
-                        std::string(" --pixel_threshold ") + std::to_string(pixel_threshold) +
-                        std::string(" --output_dir ") + result_folder;
+                    // Calculate the memory address to copy this frame
+                    void* frame_ptr = static_cast<uint8_t*>(shm_ptr) + offset;
 
-                    frame_size = curr_frame_size;
+                    // Copy the frame data into the calculated memory location
+                    std::memcpy(frame_ptr, frame_data.pData, frame_size);
+
+                    // Update offset for the next frame
+                    offset += frame_size;
                 }
-
-                // Copy data to shared memory
-                std::cout << "Copy data to shared memory" << std::endl;
-                std::memcpy(shm_ptr, frame_data.pData, frame_size);
-
-                // Send command to the python script
-                // 1) it will read frame data from the shared memory
-                // 2) and run model prediction
-                predict(cmd);
             }
-            std::cout << "Exiting processing loop" << std::endl;
-        }
 
-        // Flush frame queue
-        while (!m_frame_queue.isEmpty())
-        {
-            if (m_frame_queue.dequeue(frame_data))
+            if (frame_offsets.empty())
             {
-                size_t curr_frame_size = frame_data.pMetadata->nFrameLen;
-
-                // Check if the data pointer is valid and frame size is greater than zero
-                if (frame_data.pData == nullptr || curr_frame_size == 0) {
-                    std::cerr << "Frame data is invalid or has size 0." << std::endl;
-                    continue;
-                }
-
-                // Copy data to shared memory
-                std::memcpy(shm_ptr, frame_data.pData, frame_size);
-
-                predict(cmd);
+                continue;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Prevent CPU overuse
+
+            // Send the command to the ws server
+            nlohmann::json json_data;
+            for (const auto& info : frame_offsets)
+            {
+                json_data["frames"].push_back({
+                    {"offset", info.offset},
+                    {"frame_size", info.frame_size},
+                    {"frame_width", info.frame_width},
+                    {"frame_height", info.frame_height}
+                });
+            }
+            std::string frame_info_string = json_data.dump(); // Convert JSON to string
+            send_ws_message(frame_info_string);
+            
+            // std::cout << "Exiting processing loop" << std::endl;
         }
 
         // Clean up
         std::cout << "Clean up shared memory object" << std::endl; 
-        if (munmap(shm_ptr, frame_size) == -1) // Unmap the shared memory
+        if (munmap(shm_ptr, buffer) == -1) // Unmap the shared memory
         {
             std::cerr << "Failed to unmap shared memory." << std::endl;
         }
         ::close(shm_fd);
     });
-}
-
-void MainWindow::predict(std::string command)
-{
-    m_logger->log("Start prediction: " + command);
-    
-    // Send the command to the ws server
-
-    // wait until receive the response
-
-    // print the response
-
-    // Open a pipe to the command
-    FILE *pipe = popen(command.c_str(), "r");
-    if (!pipe)
-    {
-        std::cerr << "Failed to run command\n";
-        m_logger->log("Unable to run command: " + command, Logger::ERROR);
-    }
-
-    // Buffer to hold each line of output
-    std::array<char, 256> buffer;
-
-    // Read the output from the pipe line by line
-    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr)
-    {
-        std::cout << buffer.data(); // Print each line to the console
-        m_logger->log(std::string(buffer.data()));
-    }
-
-    // Close the pipe
-    int returnCode = pclose(pipe);
-    if (returnCode != 0)
-    {
-        std::cerr << "Command failed with return code " << returnCode << std::endl;
-        m_logger->log("Unable to close the pipe: " + std::to_string(returnCode), Logger::ERROR);
-    }
-
-    m_logger->log("End prediction");
 }
 
 void MainWindow::stop_capture(void *device_handle)
@@ -662,5 +635,32 @@ void MainWindow::stop_capture(void *device_handle)
     {
         std::cerr << "MV_CC_StopGrabbing fail. Error code: " << nRet << std::endl;
         m_logger->log("Error on MV_CC_StopGrabbing", Logger::ERROR);
+    }
+}
+
+void MainWindow::send_ws_message(std::string message)
+{
+    if (m_is_ws_connected)
+    {
+        std::cout << "sending a ws message: " << message << std::endl;
+        m_logger->log("sending a ws message: " + message);
+        m_ws_client.send_message(message);
+
+        // wait until receive the response
+        std::unique_lock<std::mutex> lock(m_ws_response_mutex);
+
+        m_ws_response_cv.wait(lock, [this]{ return m_ws_response_ready; });
+
+        // print the response
+        std::cout << "ws response: " << m_ws_response << std::endl;
+        m_logger->log("ws response: " + m_ws_response);
+
+        // Reset the condition for future use if needed
+        m_ws_response_ready = false;
+    }
+    else
+    {
+        std::cerr << "Failed to send a message, ws is not connected" << std::endl;
+        m_logger->log("Failed to send a message, ws is not connected", Logger::ERROR);
     }
 }

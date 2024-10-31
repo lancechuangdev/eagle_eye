@@ -9,6 +9,9 @@ gtkmm_dep = dependency('gtkmm-3.0', version: '>= 3.24.0')
 boost_dep = dependency('boost', required: true)
 openssl_dep = dependency('openssl', required: true)
 
+# Add JSON dependency
+json_dep = dependency('nlohmann_json', required: true)
+
 # WebSocket++ path
 websocketpp_inc_dir = include_directories('/usr/include/websocketpp')
 
@@ -22,7 +25,7 @@ lib_dir = join_paths(mvcam_runenv, '64')
 executable('ee', 
     ['main.cpp', 'main_window.cpp', 'frame_queue.cpp', 'pyscript.cpp', 'file_utils.cpp', 'logger.cpp', 'web_socket_client.cpp'],
     install_dir: join_paths(get_option('prefix'), 'bin', 'eagle_eye'),
-    dependencies: [gtkmm_dep, boost_dep, openssl_dep],
+    dependencies: [gtkmm_dep, boost_dep, openssl_dep, json_dep],
     include_directories: [inc_dir, websocketpp_inc_dir],
     link_args: [
         '-Wl,-rpath=' + lib_dir,

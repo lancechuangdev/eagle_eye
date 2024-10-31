@@ -9,9 +9,11 @@
 class WebSocketClient {
 public:
     WebSocketClient();
+    
     void connect(const std::string &uri);
     void disconnect();
-    
+    void send_message(const std::string &message);
+
     // Register callback for messages
     void on_connect(const std::function<void()> &callback);
     void on_disconnect(const std::function<void()> &callback);

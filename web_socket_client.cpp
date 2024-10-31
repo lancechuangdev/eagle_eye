@@ -40,6 +40,19 @@ void WebSocketClient::disconnect()
     }
 }
 
+void WebSocketClient::send_message(const std::string &message)
+{
+    websocketpp::lib::error_code ec;
+    
+    // Send the message using the client instance
+    m_client.send(m_hdl, message, websocketpp::frame::opcode::text, ec);
+
+    if (ec)
+    {
+        std::cerr << "Send message error: " << ec.message() << std::endl;
+    }
+}
+
 void WebSocketClient::on_connect(const std::function<void()> &callback) {
     connect_callback = callback;
 }
