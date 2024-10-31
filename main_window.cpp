@@ -527,7 +527,7 @@ void MainWindow::start_detection()
         FrameData frame_data(nullptr, nullptr); // Initialize FrameData with null pointers
 
         std::string shm_name = "/ee_shared_memory";
-        size_t buffer = 1280 * 1024 * 3;
+        size_t buffer = 2448 * 2048 * 3;
 
         // Open shared memory object
         std::cout << "Open shared memory object" << std::endl;
