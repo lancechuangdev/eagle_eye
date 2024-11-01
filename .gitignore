@@ -3,3 +3,4 @@
 /debian/eagle-eye/*
 /debian/changelog
 /debian/files
+/.ipynb_checkpoints/*
