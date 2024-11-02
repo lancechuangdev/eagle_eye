@@ -1,12 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[66]:
-
-
 import os
-import sys
-import argparse
 import posix_ipc
 import mmap
 import numpy as np
@@ -16,10 +11,6 @@ from datetime import datetime
 import json
 from websocket_server import WebsocketServer
 
-
-# In[67]:
-
-
 shared_memory_name = '/ee_shared_memory' # DONOT CHANGE
 model_path = '/usr/local/share/eagle_eye/ds.keras'
 patch_size = 256
@@ -28,10 +19,6 @@ pixel_threshold = 2000
 home_dir = os.path.expanduser("~")
 output_dir = os.path.join(home_dir, "eagle_eye", "test_result")
 os.makedirs(output_dir, exist_ok=True)
-
-
-# In[68]:
-
 
 def print_with_ts(message):
     print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} - {message}")
@@ -233,19 +220,12 @@ def iou(y_true, y_pred):
 custom_objects = { 'iou': iou }
 model = tf.keras.models.load_model(model_path, custom_objects=custom_objects)
 
-
-# In[ ]:
-
-
 PORT=9001 # DONOT CHANGE
 server = WebsocketServer(port = PORT)
 server.set_fn_new_client(new_client)
 server.set_fn_client_left(client_left)
 server.set_fn_message_received(message_received)
 server.run_forever()
-
-
-# In[ ]:
 
 
 

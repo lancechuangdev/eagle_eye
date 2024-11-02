@@ -15,7 +15,6 @@
 #include <nlohmann/json.hpp>
 #include "MvCameraControl.h"
 #include "frame_queue.h"
-#include "pyscript.h"
 #include "logger.h"
 #include "file_utils.h"
 #include "web_socket_client.h"
@@ -43,7 +42,6 @@ private:
     std::vector<void*> m_device_handles;
     std::atomic<bool> m_is_capturing;
     FrameQueue m_frame_queue;
-    std::string m_py_script;
     std::unordered_map<std::string, std::thread> m_capturing_threads;
     std::thread m_processing_thread;
     struct FrameOffsetInfo

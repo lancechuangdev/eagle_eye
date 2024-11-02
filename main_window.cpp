@@ -64,39 +64,6 @@ void MainWindow::on_window_shown()
         m_logger->log("No camera found.");
     }
 
-    // Write the Python script to the temp file
-    // m_py_script = "/tmp/eagle_eye/temp_unet_pred.py";
-    // if (!FileUtils::createSubdirectory("/tmp", "eagle_eye"))
-    // {
-    //     std::cerr << "Failed to create tmp directory." << std::endl;
-    // }
-    // else
-    // {
-    //     std::ofstream tempUnetPredPyFile(m_py_script);
-    //     if (tempUnetPredPyFile.is_open())
-    //     {
-    //         tempUnetPredPyFile << unet_predict_py;
-    //         tempUnetPredPyFile.close();
-    //     }
-    //     else
-    //     {
-    //         std::cerr << "Failed to open temp_unet_pred.py for writing" << std::endl;
-    //         m_logger->log("Unable to open temp_unet_pred.py for writing", Logger::ERROR);
-    //     }
-    // }
-
-    // Open a pipe to the command
-    // std::string py_env = "/home/liang/anaconda3/envs/colab/bin/python";
-    // std::string cmd = py_env + " " + m_py_script;
-    // m_pipe = popen(cmd.c_str(), "r");
-    // if (!m_pipe)
-    // {
-    //     std::cerr << "Failed to run command\n";
-    //     m_logger->log("Unable to run command: " + cmd, Logger::ERROR);
-    // }
-
-    // std::this_thread::sleep_for(std::chrono::seconds(3));
-
     // Set up websocket callbacks
     m_ws_client.on_connect([this]() {
         std::cout << "Successfully connected to the WebSocket server!" << std::endl;
@@ -150,9 +117,6 @@ bool MainWindow::on_window_delete(GdkEventAny* event)
             m_logger->log("Error on MV_CC_DestroyHandle: " + std::to_string(nRet), Logger::ERROR);
         }
     }
-
-    // Delete the tmp script after execution
-    std::remove(m_py_script.c_str());
 
     // Disconnect from the WebSocket server
     m_ws_client.disconnect();

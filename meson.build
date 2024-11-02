@@ -23,7 +23,7 @@ inc_dir = join_paths(mvcam_runenv, '../include')
 lib_dir = join_paths(mvcam_runenv, '64')
 
 executable('ee', 
-    ['main.cpp', 'main_window.cpp', 'frame_queue.cpp', 'pyscript.cpp', 'file_utils.cpp', 'logger.cpp', 'web_socket_client.cpp'],
+    ['main.cpp', 'main_window.cpp', 'frame_queue.cpp', 'file_utils.cpp', 'logger.cpp', 'web_socket_client.cpp'],
     install: true,
     install_dir: join_paths(get_option('prefix'), 'bin', 'eagle_eye'),
     dependencies: [gtkmm_dep, boost_dep, openssl_dep, json_dep],
