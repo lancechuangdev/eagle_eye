@@ -21,11 +21,13 @@ from websocket_server import WebsocketServer
 
 
 shared_memory_name = '/ee_shared_memory' # DONOT CHANGE
-model_path = '/home/liang/Documents/model_20241027_203957/ds.keras'
+model_path = '/usr/local/share/eagle_eye/ds.keras'
 patch_size = 256
 confidence_threshold = 0.8
 pixel_threshold = 2000
-output_dir = '/home/liang/Pictures'
+home_dir = os.path.expanduser("~")
+output_dir = os.path.join(home_dir, "eagle_eye", "test_result")
+os.makedirs(output_dir, exist_ok=True)
 
 
 # In[68]:

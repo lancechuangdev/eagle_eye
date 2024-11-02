@@ -3,7 +3,7 @@
 std::string FileUtils::getGladeFilePath()
 {
     const std::filesystem::path dev_path = "../ui.glade";
-    const std::filesystem::path install_path = "/usr/local/share/eagle-eye/ui.glade";
+    const std::filesystem::path install_path = "/usr/local/share/eagle_eye/ui.glade";
 
     if (std::filesystem::exists(dev_path))
     {

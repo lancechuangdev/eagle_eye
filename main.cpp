@@ -3,7 +3,7 @@
 int main(int argc, char **argv)
 {
     // Create a shared Logger instance
-    const std::string logFile = std::string(std::getenv("HOME")) + "/.config/eagle-eye/app.log";
+    const std::string logFile = std::string(std::getenv("HOME")) + "/.config/eagle_eye/app.log";
     std::shared_ptr<Logger> logger = std::make_shared<Logger>(logFile);
     logger->log("app started");
 

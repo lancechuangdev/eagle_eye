@@ -5,10 +5,10 @@ After=network.target
 [Service]
 Type=simple
 User=liang
-WorkingDirectory=/home/liang/Documents/Projects/eagle_eye
+WorkingDirectory=/usr/local/share/eagle_eye
 ExecStart=/home/liang/anaconda3/envs/colab/bin/python ee_anomaly_detection_service.py
-StandardOutput=append:/home/liang/.config/eagle-eye/service.log
-StandardError=append:/home/liang/.config/eagle-eye/service.log
+StandardOutput=append:/home/liang/.config/eagle_eye/service.log
+StandardError=append:/home/liang/.config/eagle_eye/service.log
 Restart=on-failure
 
 [Install]
