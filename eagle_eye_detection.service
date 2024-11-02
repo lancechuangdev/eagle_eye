@@ -1,0 +1,15 @@
+[Unit]
+Description=The Eagle Eye Anomaly Detection Service
+After=network.target
+
+[Service]
+Type=simple
+User=liang
+WorkingDirectory=/home/liang/Documents/Projects/eagle_eye
+ExecStart=/home/liang/anaconda3/envs/colab/bin/python ee_anomaly_detection_service.py
+StandardOutput=append:/home/liang/.config/eagle-eye/service.log
+StandardError=append:/home/liang/.config/eagle-eye/service.log
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
