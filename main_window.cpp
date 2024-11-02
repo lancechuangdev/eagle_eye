@@ -174,27 +174,6 @@ void MainWindow::discover_cameras()
 
 void MainWindow::on_start_clicked()
 {
-    // Command to execute the python script
-    // std::string cmd = py_env + " " + m_py_script +
-    //     std::string(" --model_path ") + model_path +
-    //     std::string(" --shm_name ") + "/ee_shared_memory" + 
-    //     std::string(" --patch_size ") + std::to_string(patch_size) +
-    //     std::string(" --confidence_threshold ") + std::to_string(confidence_threshold) +
-    //     std::string(" --pixel_threshold ") + std::to_string(pixel_threshold) +
-    //     std::string(" --output_dir ") + result_folder;
-
-    // Send the command to the ws server
-    // nlohmann::json json_data;
-    // json_data["shm_name"] = "/ee_shared_memory";
-    // json_data["model_path"] = model_path;
-    // json_data["patch_size"] = patch_size;
-    // json_data["confidence_threshold"] = confidence_threshold;
-    // json_data["pixel_threshold"] = pixel_threshold;
-    // json_data["output_dir"] = result_folder;
-
-    // std::string message = json_data.dump(); // Convert JSON to string
-    // send_ws_message(message);
-
     m_is_capturing = true;
     m_start_btn->set_sensitive(!m_is_capturing);
 
