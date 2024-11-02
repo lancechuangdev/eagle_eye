@@ -18,18 +18,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("capture_rate_sb", m_capture_rate_sb);
 
-    m_builder->get_widget("load_model_fcb", m_load_model_fcb);
-
-    m_builder->get_widget("prediction_result_fcb", m_prediction_result_fcb);
-
-    m_builder->get_widget("confidence_threshold_sb", m_confidence_threshold_sb);
-
-    m_builder->get_widget("pixel_threshold_sb", m_pixel_threshold_sb);
-
-    m_builder->get_widget("py_env_entry", m_py_env_entry);
-
-    m_builder->get_widget("model_patch_size_sb", m_patch_size_sb);
-
     m_builder->get_widget("start_btn", m_start_btn);
     if (m_start_btn)
     {
@@ -186,48 +174,6 @@ void MainWindow::discover_cameras()
 
 void MainWindow::on_start_clicked()
 {
-    // std::string py_env = m_py_env_entry->get_text();
-    // if (py_env.empty())
-    // {
-    //     std::cerr << "Python environment is not set" << std::endl;
-    //     return;
-    // }
-
-    // std::string model_path = m_load_model_fcb->get_filename();
-    // if (model_path.empty())
-    // {
-    //     std::cerr << "model path is not set" << std::endl;
-    //     return;
-    // }
-    
-    // int patch_size = static_cast<int>(m_patch_size_sb->get_value());
-    // if (patch_size <= 0)
-    // {
-    //     std::cerr << "Patch size is not set" << std::endl;
-    //     return;
-    // }
-
-    // double confidence_threshold = m_confidence_threshold_sb->get_value();
-    // if (confidence_threshold <= 0.0)
-    // {
-    //     std::cerr << "Confidence threshold is not set" << std::endl;
-    //     return;
-    // }
-
-    // int pixel_threshold = m_pixel_threshold_sb->get_value();
-    // if (pixel_threshold <= 0)
-    // {
-    //     std::cerr << "Pixel threshold is not set" << std::endl;
-    //     return;
-    // }
-
-    // std::string result_folder = m_prediction_result_fcb->get_filename();
-    // if (result_folder.empty())
-    // {
-    //     std::cerr << "Output dir is not set" << std::endl;
-    //     return;
-    // }
-
     // Command to execute the python script
     // std::string cmd = py_env + " " + m_py_script +
     //     std::string(" --model_path ") + model_path +

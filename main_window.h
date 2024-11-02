@@ -29,14 +29,8 @@ public:
 protected:
     Gtk::ComboBoxText *m_camera_combo_box;
     Gtk::SpinButton *m_capture_rate_sb;
-    Gtk::FileChooserButton *m_load_model_fcb;
-    Gtk::FileChooserButton *m_prediction_result_fcb;
-    Gtk::SpinButton *m_confidence_threshold_sb;
-    Gtk::SpinButton *m_pixel_threshold_sb;
     Gtk::Button *m_start_btn;
     Gtk::Button *m_stop_btn;
-    Gtk::Entry *m_py_env_entry;
-    Gtk::SpinButton *m_patch_size_sb;
 
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
