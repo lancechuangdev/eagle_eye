@@ -1,0 +1,17 @@
+/home/tl/.config/eagle_eye/service.log {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+    create 0644 tl tl
+}
+
+/home/tl/.config/eagle_eye/app.log {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+    create 0644 tl tl
+}
