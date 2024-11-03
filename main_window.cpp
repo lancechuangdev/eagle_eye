@@ -29,6 +29,26 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     {
         m_stop_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_stop_clicked));
     }
+
+    m_builder->get_widget("test_capture_source_cbox", m_camera_test_combo_box);
+
+    m_builder->get_widget("capture_btn", m_capture_btn);
+    if (m_capture_btn)
+    {
+        m_capture_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_capture_clicked));
+    }
+
+    m_builder->get_widget("test_btn", m_test_btn);
+    if (m_test_btn)
+    {
+        m_test_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_test_clicked));
+    }
+
+    m_builder->get_widget("test_drawing_area", m_test_display_area);
+    if (m_test_display_area)
+    {
+        m_test_display_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_test_draw));
+    }
 }
 
 MainWindow::~MainWindow()
@@ -54,6 +74,7 @@ void MainWindow::on_window_shown()
                 // Add the camera name to the combo box
                 auto serialNumber = pDeviceInfo->SpecialInfo.stGigEInfo.chSerialNumber;
                 m_camera_combo_box->append(std::string((char *)serialNumber));
+                m_camera_test_combo_box->append(std::string((char *)serialNumber));
             }
         }
         m_camera_combo_box->append("All Cameras");
@@ -214,14 +235,203 @@ void MainWindow::on_stop_clicked()
     {
         m_processing_thread.join();  // Wait for previous thread to finish
     }
+}
 
-    // Close the pipe
-    // int returnCode = pclose(m_pipe);
-    // if (returnCode != 0)
+void MainWindow::on_capture_clicked()
+{
+    auto selectedCaptureDevice = m_camera_test_combo_box->get_active_text();
+    auto device_handle = get_device_handle_by_serial_number(selectedCaptureDevice);
+
+    // Connect to the device
+    int nRet = MV_CC_OpenDevice(device_handle);
+    if (nRet != MV_OK)
+    {
+        std::cout << "MV_CC_OpenDevice fail! Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_OpenDevice: " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+    m_logger->log("Connected to device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
+
+    // Detect network optimal packet size(It only works for the GigE camera)
+    int nPacketSize = MV_CC_GetOptimalPacketSize(device_handle);
+    if (nPacketSize > 0)
+    {
+        nRet = MV_CC_SetIntValue(device_handle, "GevSCPSPacketSize", nPacketSize);
+        if (nRet != MV_OK)
+        {
+            std::cout << "Set Packet Size fail. Error code: " << nRet << std::endl;
+            m_logger->log("Error on MV_CC_SetIntValue(GevSCPSPacketSize): " + std::to_string(nRet), Logger::ERROR);
+        }
+    }
+    else
+    {
+        std::cout << "Get Packet Size fail. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_GetOptimalPacketSize: " + std::to_string(nRet), Logger::ERROR);
+    }
+    m_logger->log("MV_CC_SetIntValue(GevSCPSPacketSize) for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
+
+    // Enable trigger mode
+    nRet = MV_CC_SetEnumValue(device_handle, "TriggerMode", 1);
+    if (MV_OK != nRet)
+    {
+        std::cout << "MV_CC_SetTriggerMode fail! Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetTriggerMode: " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+
+    // Set trigger source
+    nRet = MV_CC_SetEnumValue(device_handle, "TriggerSource", MV_TRIGGER_SOURCE_SOFTWARE);
+    if (MV_OK != nRet)
+    {
+        std::cout << "MV_CC_SetTriggerSource fail! Error code:" << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetEnumValue(TriggerSource): " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+
+    // Register image callback
+    auto image_capture_callback = [](unsigned char *pData, MV_FRAME_OUT_INFO_EX *pFrameInfo, void *pUser)
+    {
+        if (pFrameInfo)
+        {
+            std::cout << "Frame width: " << pFrameInfo->nWidth
+                << "Frame height: " << pFrameInfo->nHeight
+                << "Frame size: " << pFrameInfo->nFrameLen
+                << std::endl;
+        }
+
+        MainWindow *pThis = static_cast<MainWindow *>(pUser); // Cast pUser to MainWindow*
+
+        pThis->m_test_frame = FrameData(pData, pFrameInfo);
+
+        // // Create a Pixbuf from raw data (assuming RGB format here)
+        // auto width = pFrameInfo->nWidth;
+        // auto height = pFrameInfo->nHeight;
+        // pThis->m_pixbuf = Gdk::Pixbuf::create_from_data(
+        //     pData, Gdk::COLORSPACE_RGB, false, 8, width, height, width * 3);
+
+        // pThis->m_test_display_area->set_size_request(width, height);
+
+        // Trigger a redraw of the drawing area
+        // pThis->m_test_display_area->queue_draw();
+    };
+
+    // nRet = MV_CC_RegisterImageCallBackEx(device_handle, image_capture_callback, this);
+    // if (nRet != MV_OK)
     // {
-    //     std::cerr << "Command failed with return code " << returnCode << std::endl;
-    //     m_logger->log("Unable to close the pipe: " + std::to_string(returnCode), Logger::ERROR);
+    //     std::cout << "MV_CC_RegisterImageCallBackEx fail. Error code: " << nRet << std::endl;
+    //     m_logger->log("Error on MV_CC_RegisterImageCallBackEx: " + std::to_string(nRet), Logger::ERROR);
+    //     return;
     // }
+
+    // Start grabbing images
+    nRet = MV_CC_StartGrabbing(device_handle);
+    if (nRet != MV_OK)
+    {
+        std::cout << "MV_CC_StartGrabbing fail. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_StartGrabbing: " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+
+    // Capture one frame
+    nRet = MV_CC_SetCommandValue(device_handle, "TriggerSoftware");
+    if(MV_OK != nRet)
+    {
+        std::cout << "Error on TriggerSoftware: " << nRet << std::endl;
+        m_logger->log("Error on TriggerSoftware: " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+
+    // Grab one frame from camera
+    MVCC_INTVALUE stParam;
+    memset(&stParam, 0, sizeof(MVCC_INTVALUE));
+    nRet = MV_CC_GetIntValue(device_handle, "PayloadSize", &stParam);
+    if (MV_OK != nRet)
+    {
+        std::cout << "Get PayloadSize fail! Error code: " << nRet << std::endl;
+        return;
+    }
+
+    MV_FRAME_OUT_INFO_EX stImageInfo = {0};
+    memset(&stImageInfo, 0, sizeof(MV_FRAME_OUT_INFO_EX));
+    unsigned char *pData = (unsigned char *)malloc(sizeof(unsigned char) * stParam.nCurValue);
+    if (pData == nullptr)
+    {
+        return;
+    }
+
+    unsigned int nDataSize = stParam.nCurValue;
+    nRet = MV_CC_GetOneFrameTimeout(device_handle, pData, nDataSize, &stImageInfo, 1000);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "MV_CC_GetOneFrameTimeout fail. Error code: " << nRet << std::endl;
+        // std::cout << "Frame width: " << stImageInfo.nWidth
+        //     << "Frame height: " << stImageInfo.nHeight
+        //     << "Frame size: " << stImageInfo.nFrameLen
+        //     << std::endl;
+    }
+
+    save_image(pData, stImageInfo, device_handle);
+
+    m_test_display_area->set_size_request(stImageInfo.nWidth, stImageInfo.nHeight);
+    
+    try
+    {
+        // Load image
+        m_ImagePixbuf = Gdk::Pixbuf::create_from_file("/tmp/eagle_eye/test.jpeg");
+    }
+    catch (const Glib::FileError &ex)
+    {
+        std::cerr << "File Error: " << ex.what() << std::endl;
+    }
+    catch (const Gdk::PixbufError &ex)
+    {
+        std::cerr << "Pixbuf Error: " << ex.what() << std::endl;
+    }
+
+    m_test_display_area->queue_draw();
+
+    // std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    // Stop grabbing images
+    nRet = MV_CC_StopGrabbing(device_handle);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "MV_CC_StopGrabbing fail. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_StopGrabbing", Logger::ERROR);
+    }
+
+    // Close the device
+    nRet = MV_CC_CloseDevice(device_handle);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "MV_CC_CloseDevice fail. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_CloseDevice: " + std::to_string(nRet), Logger::ERROR);
+    }
+
+    // Destory the device handle
+    nRet = MV_CC_DestroyHandle(device_handle);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "MV_CC_DestroyHandle fail. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_DestroyHandle: " + std::to_string(nRet), Logger::ERROR);
+    }
+}
+
+void MainWindow::on_test_clicked()
+{
+
+}
+
+bool MainWindow::on_test_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+{
+    // Draw the image
+    if (m_ImagePixbuf)
+    {
+        Gdk::Cairo::set_source_pixbuf(cr, m_ImagePixbuf, 0, 0);
+        cr->paint();
+    }
+
+    return true;
 }
 
 void *MainWindow::get_device_handle_by_serial_number(std::string sn)
@@ -556,5 +766,36 @@ void MainWindow::send_ws_message(std::string message)
     {
         std::cerr << "Failed to send a message, ws is not connected" << std::endl;
         m_logger->log("Failed to send a message, ws is not connected", Logger::ERROR);
+    }
+}
+
+void MainWindow::save_image(unsigned char *pData, MV_FRAME_OUT_INFO_EX frameInfo, void *deviceHandle)
+{
+    std::string temp_dir = "/tmp/eagle_eye";
+    if (!std::filesystem::is_directory(temp_dir))
+    {
+        if (!std::filesystem::create_directory(temp_dir))
+        {
+            std::cerr << "Failed to create temporary directory: " << temp_dir << std::endl;
+            return;
+        }
+    }
+
+    MV_SAVE_IMG_TO_FILE_PARAM stSaveFileParam;
+    memset(&stSaveFileParam, 0, sizeof(MV_SAVE_IMG_TO_FILE_PARAM));
+
+    stSaveFileParam.enImageType = MV_Image_Jpeg;
+    stSaveFileParam.nQuality = 90;
+    stSaveFileParam.enPixelType = frameInfo.enPixelType;
+    stSaveFileParam.nWidth = frameInfo.nWidth;
+    stSaveFileParam.nHeight = frameInfo.nHeight;
+    stSaveFileParam.nDataLen = frameInfo.nFrameLen;
+    stSaveFileParam.pData = pData;
+    sprintf(stSaveFileParam.pImagePath, "/tmp/eagle_eye/test.jpeg");
+    
+    int nRet = MV_CC_SaveImageToFile(deviceHandle, &stSaveFileParam);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Failed to save image to file. Error code: " << nRet << std::endl;
     }
 }

@@ -31,10 +31,18 @@ protected:
     Gtk::Button *m_start_btn;
     Gtk::Button *m_stop_btn;
 
+    Gtk::ComboBoxText *m_camera_test_combo_box;
+    Gtk::Button *m_capture_btn;
+    Gtk::Button *m_test_btn;
+    Gtk::DrawingArea *m_test_display_area;
+
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
     void on_start_clicked();
     void on_stop_clicked();
+    void on_capture_clicked();
+    void on_test_clicked();
+    bool on_test_draw(const Cairo::RefPtr<Cairo::Context> &cr);
 
 private:
     Glib::RefPtr<Gtk::Builder> m_builder;
@@ -59,9 +67,9 @@ private:
     void preflight(void *device_handle);
     void start_capture(void *device_handle, double capture_interval_ms);
     void start_detection();
-    void predict(std::string command);
     void stop_capture(void *device_handle);
     void send_ws_message(std::string message);
+    void save_image(unsigned char *pData, MV_FRAME_OUT_INFO_EX FrameInfo, void *deviceHandle);
 
     WebSocketClient m_ws_client;
     bool m_is_ws_connected;
@@ -69,6 +77,9 @@ private:
     std::mutex m_ws_response_mutex;
     std::condition_variable m_ws_response_cv;
     bool m_ws_response_ready = false; // Condition to wait on
+
+    Glib::RefPtr<Gdk::Pixbuf> m_ImagePixbuf;
+    FrameData m_test_frame;
 
     std::shared_ptr<Logger> m_logger;
 };
