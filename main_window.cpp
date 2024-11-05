@@ -165,6 +165,7 @@ void MainWindow::on_start_clicked()
 {
     m_is_capturing = true;
     m_start_btn->set_sensitive(!m_is_capturing);
+    m_test_btn->set_sensitive(!m_is_capturing);
 
     double capture_interval_ms = 0.0;
     if (m_capture_rate_sb)
@@ -227,6 +228,7 @@ void MainWindow::on_stop_clicked()
 {
     m_is_capturing = false;
     m_start_btn->set_sensitive(!m_is_capturing);
+    m_test_btn->set_sensitive(!m_is_capturing);
 
     for (void *device_handle : m_device_handles)
     {
@@ -243,6 +245,27 @@ void MainWindow::on_stop_clicked()
 
 void MainWindow::on_test_clicked()
 {
+    // Disconnect all cameras
+    for (void *device_handle : m_device_handles)
+    {
+        // Close the device
+        int nRet = MV_CC_CloseDevice(device_handle);
+        if (nRet != MV_OK)
+        {
+            std::cerr << "MV_CC_CloseDevice fail. Error code: " << nRet << std::endl;
+            m_logger->log("Error on MV_CC_CloseDevice: " + std::to_string(nRet), Logger::ERROR);
+        }
+
+        // Destory the device handle
+        nRet = MV_CC_DestroyHandle(device_handle);
+        if (nRet != MV_OK)
+        {
+            std::cerr << "MV_CC_DestroyHandle fail. Error code: " << nRet << std::endl;
+            m_logger->log("Error on MV_CC_DestroyHandle: " + std::to_string(nRet), Logger::ERROR);
+        }
+    }
+    m_device_handles.clear();
+
     auto selectedCaptureDevice = m_camera_test_combo_box->get_active_text();
     auto device_handle = get_device_handle_by_serial_number(selectedCaptureDevice);
 

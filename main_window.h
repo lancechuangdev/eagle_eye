@@ -30,9 +30,8 @@ protected:
     Gtk::SpinButton *m_capture_rate_sb;
     Gtk::Button *m_start_btn;
     Gtk::Button *m_stop_btn;
-
-    Gtk::ComboBoxText *m_camera_test_combo_box;
     Gtk::Button *m_test_btn;
+    Gtk::ComboBoxText *m_camera_test_combo_box;
     Gtk::DrawingArea *m_test_display_area;
 
     void on_window_shown();
