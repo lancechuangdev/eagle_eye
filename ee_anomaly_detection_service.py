@@ -148,16 +148,13 @@ def message_received(client, server, message):
     frames_array = data.get('frames', [])
     transaction_id = data.get('transaction_id', 0)
     total_anomalies = 0
+    output_path = os.path.join(output_dir, transaction_id)
 
     # Build the initial transaction json object
     transaction_json = {
         "transaction_id": transaction_id,
         "patch_size": patch_size
     }
-
-    # Ensure the directory exists
-    output_path = os.path.join(output_dir, transaction_id)
-    os.makedirs(output_path, exist_ok=True)
 
     if frames_array and transaction_id:
         # Notify client about prediction start
@@ -199,13 +196,16 @@ def message_received(client, server, message):
                     prediction_image = Image.fromarray((prediction.squeeze() * 255).astype(np.uint8), mode='L')
 
                     # Build the prediction file name
-                    prediction_filename = os.path.join(output_dir, transaction_id, f"prediction_{i}.png")
+                    prediction_filename = os.path.join(output_path, f"prediction_{i}.png")
                     prediction_files.append((prediction_image, i, prediction_filename))
                     total_anomalies += 1
 
             if total_anomalies > 0:
                 frames_data = []
                 predictions_data = []
+
+                # Ensure the directory exists
+                os.makedirs(output_path, exist_ok=True)
 
                 for i, (frame, frame_width, frame_height) in enumerate(frames):
                     # Convert the reshaped frame to an image
@@ -235,6 +235,11 @@ def message_received(client, server, message):
                 # Update the transaction JSON structure
                 transaction_json["frames"] = frames_data
                 transaction_json["predictions"] = predictions_data
+                transaction_json["total_anomalies"] = total_anomalies
+
+                # Write dictionary to a JSON file with indentation
+                with open(os.path.join(output_path, "transaction_data.json"), "w") as trans_json_file:
+                    json.dump(transaction_json, trans_json_file, indent=4)
 
             # Send a final summary of the prediction results
             summary_message = f"Transaction {transaction_id} completed: {total_anomalies} patches with anomalies are more than the detection threshold.\n"
@@ -243,12 +248,6 @@ def message_received(client, server, message):
             # Join all messages into a single string and send to the client
             final_message = ''.join(client_messages)
             print_with_ts(final_message)
-
-    if total_anomalies > 0:
-        transaction_json["total_anomalies"] = total_anomalies
-        # Write dictionary to a JSON file with indentation
-        with open(os.path.join(output_path, "transaction_data.json"), "w") as trans_json_file:
-            json.dump(transaction_json, trans_json_file, indent=4)
 
     result_json = {
         "transaction_id": transaction_id,
