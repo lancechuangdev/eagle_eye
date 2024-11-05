@@ -162,7 +162,6 @@ def message_received(client, server, message):
     if frames_array and transaction_id:
         # Notify client about prediction start
         initial_message = f"Transaction {transaction_id} started: Starting prediction on {len(frames_array)} image(s)\n"
-        
 
         # Read frames from shared memory
         frames = read_frames_from_shared_memory(shared_memory_name, frames_array)
@@ -245,11 +244,11 @@ def message_received(client, server, message):
             final_message = ''.join(client_messages)
             print_with_ts(final_message)
 
-    transaction_json["total_anomalies"] = total_anomalies
-
-    # Write dictionary to a JSON file with indentation
-    with open(os.path.join(output_path, "transaction_data.json"), "w") as trans_json_file:
-        json.dump(transaction_json, trans_json_file, indent=4)
+    if total_anomalies > 0:
+        transaction_json["total_anomalies"] = total_anomalies
+        # Write dictionary to a JSON file with indentation
+        with open(os.path.join(output_path, "transaction_data.json"), "w") as trans_json_file:
+            json.dump(transaction_json, trans_json_file, indent=4)
 
     result_json = {
         "transaction_id": transaction_id,
