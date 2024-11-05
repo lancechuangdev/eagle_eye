@@ -23,13 +23,16 @@ os.makedirs(output_dir, exist_ok=True)
 def print_with_ts(message):
     print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} - {message}")
 
-def read_from_shared_memory(shm_name, frame_size, frame_width, frame_height, offset):
+def read_frame_from_shared_memory(shm_name, frame_size, frame_width, frame_height, offset):
     """
     Reads a single frame from the shared memory based on the frame information.
 
     Parameters:
     - shm_name: The name of the shared memory.
-    - frame_info: Dictionary containing 'offset' and 'frame_size' for the desired frame.
+    - frame_size: The frame size.
+    - frame_width: The frame width.
+    - frame_height: The frame height.
+    - offset: The frame offset.
 
     Returns:
     - bytes: The data of the frame read from shared memory.
@@ -63,9 +66,10 @@ def read_from_shared_memory(shm_name, frame_size, frame_width, frame_height, off
     
     return frame
 
-def build_batch_from_frames(frames, patch_size, shared_memory_name):
-    batch = []
-    for frame_data in frames:
+def read_frames_from_shared_memory(shm_name, frames_array):
+    frames = []
+
+    for frame_data in frames_array:
         frame_size = frame_data['frame_size']
         frame_height = frame_data['frame_height']
         frame_width = frame_data['frame_width']
@@ -78,30 +82,30 @@ def build_batch_from_frames(frames, patch_size, shared_memory_name):
         if frame_width < patch_size or frame_height < patch_size:
             print("Error: frame width or height is smaller than the specified patch size.")
             continue
-        
-        # Read the frame from shared memory
-        frame = read_from_shared_memory(shared_memory_name, frame_size, frame_width, frame_height, offset)
 
-        # Reshape and preprocess the grayscale frame
+        # Read the frame from shared memory
+        frame = read_frame_from_shared_memory(shm_name, frame_size, frame_width, frame_height, offset)
+
+        # Reshape the frame to patch_size height
         reshaped_frame = frame[:patch_size, :]
         print(f"reshaped_frame shape: {reshaped_frame.shape}")
 
-        # Convert the reshaped frame to an image
-        #reshaped_image = Image.fromarray(reshaped_frame.astype(np.uint8))
-        
-        # Save the image to a file
-        #timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-        #orig_filename = os.path.join(output_dir, f"orig_{timestamp}.png")
-        #reshaped_image.save(orig_filename)
-        
+        frames.append((reshaped_frame, frame_width, frame_height))
+    
+    return frames
+    
+
+def build_batch_from_frames(frames, patch_size, shared_memory_name):
+    batch = []
+    for frame, frame_width, _ in frames:        
         # Normalize frame to [0, 1] range
-        reshaped_frame = reshaped_frame.astype(np.float32) / 255.0
+        frame = frame.astype(np.float32) / 255.0
 
         # Extract and reshape each patch_size*patch_size patch
         num_patches = frame_width // patch_size
         # print(f"num_patches: {num_patches}")
         for i in range(num_patches):
-            patch = reshaped_frame[:, i * patch_size:(i + 1) * patch_size]
+            patch = frame[:, i * patch_size:(i + 1) * patch_size]
             patch = patch.reshape((patch_size, patch_size, 1))  # Reshape to (patch_size, patch_size, 1)
             batch.append(patch)
 
@@ -112,7 +116,7 @@ def build_batch_from_frames(frames, patch_size, shared_memory_name):
         if remainder > 0:
             # Adjust the start position for the last patch so it aligns properly
             start_x = frame_width - patch_size
-            last_patch = reshaped_frame[:, start_x:start_x + patch_size]
+            last_patch = frame[:, start_x:start_x + patch_size]
             last_patch = last_patch.reshape((patch_size, patch_size, 1))
             batch.append(last_patch)
     
@@ -141,15 +145,33 @@ def client_left(client, server):
 def message_received(client, server, message):
     print_with_ts("Receiving a message from Client(%d): %s" % (client['id'], message))
     data = json.loads(message)
-    frames = data.get('frames', [])
+    frames_array = data.get('frames', [])
+    transaction_id = data.get('transaction_id', 0)
+    total_anomalies = 0
 
-    if frames:
+    # Build the initial transaction json object
+    transaction_json = {
+        "transaction_id": transaction_id,
+        "patch_size": patch_size
+    }
+
+    # Ensure the directory exists
+    output_path = os.path.join(output_dir, transaction_id)
+    os.makedirs(output_path, exist_ok=True)
+
+    if frames_array and transaction_id:
         # Notify client about prediction start
-        initial_message = f"Starting prediction on {len(frames)} image(s)...\n"
+        initial_message = f"Transaction {transaction_id} started: Starting prediction on {len(frames_array)} image(s)\n"
         
+
+        # Read frames from shared memory
+        frames = read_frames_from_shared_memory(shared_memory_name, frames_array)
+        transaction_json["num_frames"] = len(frames)
+
         # Build batch from frames
         batch = build_batch_from_frames(frames, patch_size, shared_memory_name)
-        
+        transaction_json["num_patches"] = len(batch)
+
         if batch:
             # Convert list to numpy array with batch shape (num_patches, patch_size, patch_size, 1)
             frame_batch = np.array(batch)
@@ -160,13 +182,13 @@ def message_received(client, server, message):
             predictions = (predictions > confidence_threshold).astype(np.float32)
             # print(f"predictions shape: {predictions.shape}")
             
-            total_anomalies = 0
-            
+            prediction_files = []
+
             # List to accumulate messages to send to the client
             client_messages = [initial_message]
             
             # Check each prediction for anomaly
-            for i, (prediction, patch) in enumerate(zip(predictions, batch)):
+            for i, prediction in enumerate(predictions):
                 # Threshold check for anomalies
                 anomaly_count = np.sum(prediction == 1)
                 
@@ -175,38 +197,66 @@ def message_received(client, server, message):
                 
                 if anomaly_count >= pixel_threshold:
                     # Convert arrays to image format
-                    patch_image = Image.fromarray((patch.squeeze() * 255).astype(np.uint8), mode='L')  # Convert to grayscale image
                     prediction_image = Image.fromarray((prediction.squeeze() * 255).astype(np.uint8), mode='L')
-                                        
-                    # Combine the images side by side
-                    combined_width = patch_image.width + prediction_image.width
-                    combined_height = max(patch_image.height, prediction_image.height)
-                    
-                    # Create a new blank image with the combined dimensions
-                    combined_image = Image.new('L', (combined_width, combined_height))  # 'L' for grayscale
-                    
-                    # Paste the patch and prediction images into the combined image
-                    combined_image.paste(patch_image, (0, 0))  # Paste patch at (0, 0)
-                    combined_image.paste(prediction_image, (patch_image.width, 0))  # Paste prediction to the right of patch
-                    
-                    # Save the combined image
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-                    combined_filename = os.path.join(output_dir, f"patch_prediction_{i}_{timestamp}.png")
-                    combined_image.save(combined_filename)
-                    
-                    # Accumulate saved image notifications
-                    client_messages.append(f"Saved images and prediction for patch {i}: {combined_filename}.\n")
-                
-                total_anomalies += 1 if anomaly_count > pixel_threshold else 0
-            
+
+                    # Build the prediction file name
+                    prediction_filename = os.path.join(output_dir, transaction_id, f"prediction_{i}.png")
+                    prediction_files.append((prediction_image, i, prediction_filename))
+                    total_anomalies += 1
+
+            if total_anomalies > 0:
+                frames_data = []
+                predictions_data = []
+
+                for i, (frame, frame_width, frame_height) in enumerate(frames):
+                    # Convert the reshaped frame to an image
+                    frame = Image.fromarray(frame.astype(np.uint8))
+                    # Save the frame to a file
+                    frame_filename = os.path.join(output_path, f"frame_{i}.png")
+                    frame.save(frame_filename)
+                    client_messages.append(f"Saved frame {i}: {frame_filename}.\n")
+
+                    # Add frame info to list
+                    frames_data.append({
+                        "frame_id": i,
+                        "frame_width": frame_width,
+                        "frame_height": frame_height,
+                        "filename": frame_filename
+                    })
+
+                for prediction_image, i, prediction_filename in prediction_files:
+                    prediction_image.save(prediction_filename)
+                    client_messages.append(f"Saved prediction for patch {i}: {prediction_filename}.\n")
+                    # Add prediction info to list
+                    predictions_data.append({
+                        "prediction_id": i,
+                        "filename": prediction_filename
+                    })
+
+                # Update the transaction JSON structure
+                transaction_json["frames"] = frames_data
+                transaction_json["predictions"] = predictions_data
+
             # Send a final summary of the prediction results
-            summary_message = f"Prediction completed: {total_anomalies} patches with anomalies are more than the detection threshold.\n"
+            summary_message = f"Transaction {transaction_id} completed: {total_anomalies} patches with anomalies are more than the detection threshold.\n"
             client_messages.append(summary_message)
 
             # Join all messages into a single string and send to the client
             final_message = ''.join(client_messages)
             print_with_ts(final_message)
-    server.send_message(client, "prediction completed")
+
+    transaction_json["total_anomalies"] = total_anomalies
+
+    # Write dictionary to a JSON file with indentation
+    with open(os.path.join(output_path, "transaction_data.json"), "w") as trans_json_file:
+        json.dump(transaction_json, trans_json_file, indent=4)
+
+    result_json = {
+        "transaction_id": transaction_id,
+        "status": "complete"
+    }
+    result = json.dumps(result_json)
+    server.send_message(client, result)
 
 # BCE w/ Intersection over Union (IoU)
 def iou(y_true, y_pred):
