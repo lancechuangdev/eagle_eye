@@ -26,22 +26,32 @@ public:
     virtual ~MainWindow();
 
 protected:
+    Gtk::RadioButton *m_verify_btn;
+    Gtk::RadioButton *m_run_btn;
+    Gtk::RadioButton *m_explore_btn;
+    Gtk::RadioButton *m_settings_btn;
     Gtk::ComboBoxText *m_camera_combo_box;
     Gtk::SpinButton *m_capture_rate_sb;
     Gtk::Button *m_start_btn;
     Gtk::Button *m_stop_btn;
-    Gtk::Button *m_test_btn;
+    Gtk::Button *m_snap_btn;
     Gtk::ComboBoxText *m_camera_test_combo_box;
     Gtk::DrawingArea *m_test_display_area;
+    Gtk::Stack *m_content_stack;
+    Gtk::Button *m_discoverBtn;
+    Gtk::Grid *m_cam_grid;
 
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
+    void on_menu_toggled();
     void on_start_clicked();
     void on_stop_clicked();
-    void on_test_clicked();
+    void on_snap_clicked();
     bool on_test_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_test_display_area_scroll_event(GdkEventScroll *scroll_event);
-
+    void on_connect_clicked(const std::string& model);
+    void on_discover_clicked();
+    
     // Key events
     bool on_key_press_event(GdkEventKey *key_event) override;
     bool on_key_release_event(GdkEventKey *key_event) override;
@@ -81,6 +91,9 @@ private:
     void update_mask_color();
     void update_mask_alpha(gint32 alpha);
     void display_test_masks(std::string trans_id);
+    std::string convert_to_ip_address_str(uint32_t ip);
+    void set_button_icon(Gtk::Button* button, const Glib::ustring& resource_path);
+    void clear_grid_except_header(Gtk::Grid* grid);
 
     WebSocketClient m_ws_client;
     bool m_is_ws_connected;
@@ -99,6 +112,7 @@ private:
     double m_offset_x = 0.0;    // Horizontal pan offset
     double m_offset_y = 0.0;    // Vertical pan offset
     double m_zoom_factor = 1.0; // Zoom factor (1.0 = no zoom)
+
 
     std::shared_ptr<Logger> m_logger;
 };

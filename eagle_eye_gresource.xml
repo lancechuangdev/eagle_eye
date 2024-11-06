@@ -1,0 +1,11 @@
+<gresources>
+  <gresource prefix="/com/example/eagle_eye">
+    <file>verify.svg</file>
+    <file>run.svg</file>
+    <file>explore.svg</file>
+    <file>settings.svg</file>
+    <file>connect.svg</file>
+    <file>disconnect.svg</file>
+    <file>view.svg</file>
+  </gresource>
+</gresources>

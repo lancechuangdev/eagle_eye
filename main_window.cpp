@@ -14,6 +14,32 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     m_builder->get_widget("main_window", root);
     root->set_title("Eagle Eye");
 
+    m_builder->get_widget("verify_rbtn", m_verify_btn);
+    if (m_verify_btn)
+    {
+        m_verify_btn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_menu_toggled));
+    }
+
+    m_builder->get_widget("run_rbtn", m_run_btn);
+    if (m_run_btn)
+    {
+        m_run_btn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_menu_toggled));
+    }
+
+    m_builder->get_widget("explore_rbtn", m_explore_btn);
+    if (m_explore_btn)
+    {
+        m_explore_btn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_menu_toggled));
+    }
+
+    m_builder->get_widget("settings_rbtn", m_settings_btn);
+    if (m_settings_btn)
+    {
+        m_settings_btn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_menu_toggled));
+    }
+
+    m_builder->get_widget("content_stack", m_content_stack);
+
     m_builder->get_widget("capture_source_cbox", m_camera_combo_box);
 
     m_builder->get_widget("capture_rate_sb", m_capture_rate_sb);
@@ -32,10 +58,10 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("test_capture_source_cbox", m_camera_test_combo_box);
 
-    m_builder->get_widget("test_btn", m_test_btn);
-    if (m_test_btn)
+    m_builder->get_widget("snap_btn", m_snap_btn);
+    if (m_snap_btn)
     {
-        m_test_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_test_clicked));
+        m_snap_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_snap_clicked));
     }
 
     m_builder->get_widget("test_drawing_area", m_test_display_area);
@@ -53,10 +79,148 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_test_display_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_btn_release_event));
         m_test_display_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_motion_notify_event));
     }
+
+    m_builder->get_widget("cam_grid", m_cam_grid);
+
+    m_builder->get_widget("discover_btn", m_discoverBtn);
+    if (m_discoverBtn)
+    {
+        m_discoverBtn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_discover_clicked));
+    }
+}
+
+std::string MainWindow::convert_to_ip_address_str(uint32_t ip)
+{
+    std::ostringstream ipStream;
+    for (int i = 0; i < 4; ++i)
+    {
+        if (i > 0)
+        {
+            ipStream << ".";
+        }
+        ipStream << ((ip >> (24 - 8 * i)) & 0xFF);
+    }
+    return ipStream.str();
+}
+
+void MainWindow::clear_grid_except_header(Gtk::Grid *grid)
+{
+    auto children = grid->get_children();
+    for (auto* widget : children)
+    {
+        grid->remove(*widget);
+    }
+
+    Gtk::Label* model = Gtk::make_managed<Gtk::Label>(Glib::ustring("Model"));
+    Gtk::Label* ip = Gtk::make_managed<Gtk::Label>(Glib::ustring("IP Address"));
+    Gtk::Label* sn = Gtk::make_managed<Gtk::Label>(Glib::ustring("Serial Number"));
+    Gtk::Label* actions = Gtk::make_managed<Gtk::Label>(Glib::ustring("Actions"));
+
+    grid->attach(*model, 0, 0);
+    grid->attach(*ip, 1, 0);
+    grid->attach(*sn, 2, 0);
+    grid->attach(*actions, 3, 0);
+}
+
+void MainWindow::on_discover_clicked()
+{
+    clear_grid_except_header(m_cam_grid);
+
+    // enum device
+    int nRet = MV_CC_EnumDevices(MV_GIGE_DEVICE | MV_USB_DEVICE, &m_camList);
+    if (nRet != MV_OK)
+    {
+        std::cout << "MV_CC_EnumDevices fail! Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_EnumDevices: " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+
+    if (m_camList.nDeviceNum > 0)
+    {
+        int row_index = 1;
+        for (unsigned int i = 0; i < m_camList.nDeviceNum; i++)
+        {
+            MV_CC_DEVICE_INFO *pDeviceInfo = m_camList.pDeviceInfo[i];
+            if (pDeviceInfo == nullptr)
+            {
+                continue;
+            }
+
+            if (pDeviceInfo->nTLayerType == MV_GIGE_DEVICE)
+            {
+                auto modelName = pDeviceInfo->SpecialInfo.stGigEInfo.chModelName;
+                auto friendlyName = pDeviceInfo->SpecialInfo.stGigEInfo.chUserDefinedName;
+                auto serialNumber = pDeviceInfo->SpecialInfo.stGigEInfo.chSerialNumber;
+
+                // Create labels for each row's data
+                Gtk::Label* model_data = Gtk::make_managed<Gtk::Label>(Glib::ustring(reinterpret_cast<const char *>(modelName)));
+                Gtk::Label* ip_data = Gtk::make_managed<Gtk::Label>(convert_to_ip_address_str(pDeviceInfo->SpecialInfo.stGigEInfo.nCurrentIp));
+                Gtk::Label* sn_data = Gtk::make_managed<Gtk::Label>(Glib::ustring(reinterpret_cast<const char *>(serialNumber)));
+
+                m_cam_grid->attach(*model_data, 0, row_index);
+                m_cam_grid->attach(*ip_data, 1, row_index);
+                m_cam_grid->attach(*sn_data, 2, row_index);
+
+                // Create the edit and delete buttons
+                auto connect_button = Gtk::make_managed<Gtk::Button>();
+                auto disconnect_button = Gtk::make_managed<Gtk::Button>();
+                auto view_button = Gtk::make_managed<Gtk::Button>();
+
+                // Load SVG icons from GResource and set them to buttons
+                set_button_icon(connect_button, "/com/example/eagle_eye/connect.svg");
+                set_button_icon(disconnect_button, "/com/example/eagle_eye/disconnect.svg");
+                set_button_icon(view_button, "/com/example/eagle_eye/view.svg");
+
+                // Pack buttons into a horizontal box for the action column
+                Gtk::Box* actions_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+                actions_box->pack_start(*connect_button);
+                actions_box->pack_start(*disconnect_button);
+                actions_box->pack_start(*view_button);
+
+                // Connect button signals
+                connect_button->signal_clicked().connect([=] { on_connect_clicked(reinterpret_cast<const char *>(serialNumber)); });
+
+                // Attach buttons to grid
+                m_cam_grid->attach(*actions_box, 3, row_index);
+
+                row_index++;
+            }
+        }
+
+        m_cam_grid->show_all_children();
+    }
+    else
+    {
+        std::cout << "No device found." << std::endl;
+        m_logger->log("No device found.");
+    }
 }
 
 MainWindow::~MainWindow()
 {
+}
+
+void MainWindow::on_connect_clicked(const std::string& model)
+{
+    std::cout << "Edit clicked for: " << model << std::endl;
+}
+
+void MainWindow::set_button_icon(Gtk::Button* button, const Glib::ustring& resource_path)
+{
+    try {
+        // Create a Pixbuf from the SVG file in the resource
+        auto pixbuf = Gdk::Pixbuf::create_from_resource(resource_path);
+
+        // Create an Image widget to hold the Pixbuf
+        auto image = Gtk::make_managed<Gtk::Image>(pixbuf);
+
+        // Set the image on the button
+        button->set_image(*image);
+        button->set_relief(Gtk::RELIEF_NONE); // Optional: remove button relief for a cleaner look
+    }
+    catch (const Glib::Exception& e) {
+        std::cerr << "Error loading resource: " << e.what() << std::endl;
+    }
 }
 
 void MainWindow::on_window_shown()
@@ -161,11 +325,31 @@ void MainWindow::discover_cameras()
     }
 }
 
+void MainWindow::on_menu_toggled()
+{
+    if (m_verify_btn->get_active())
+    {
+        m_content_stack->set_visible_child("page_verify");
+    }
+    else if (m_run_btn->get_active())
+    {
+        m_content_stack->set_visible_child("page_run");
+    }
+    else if (m_explore_btn->get_active())
+    {
+        m_content_stack->set_visible_child("page_explore");
+    }
+    else if (m_settings_btn->get_active())
+    {
+        m_content_stack->set_visible_child("page_settings");
+    }
+}
+
 void MainWindow::on_start_clicked()
 {
     m_is_capturing = true;
     m_start_btn->set_sensitive(!m_is_capturing);
-    m_test_btn->set_sensitive(!m_is_capturing);
+    m_snap_btn->set_sensitive(!m_is_capturing);
 
     double capture_interval_ms = 0.0;
     if (m_capture_rate_sb)
@@ -228,7 +412,7 @@ void MainWindow::on_stop_clicked()
 {
     m_is_capturing = false;
     m_start_btn->set_sensitive(!m_is_capturing);
-    m_test_btn->set_sensitive(!m_is_capturing);
+    m_snap_btn->set_sensitive(!m_is_capturing);
 
     for (void *device_handle : m_device_handles)
     {
@@ -243,7 +427,7 @@ void MainWindow::on_stop_clicked()
     }
 }
 
-void MainWindow::on_test_clicked()
+void MainWindow::on_snap_clicked()
 {
     // Disconnect all cameras
     for (void *device_handle : m_device_handles)
