@@ -40,7 +40,7 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("content_stack", m_content_stack);
 
-    m_builder->get_widget("capture_source_cbox", m_camera_combo_box);
+    m_builder->get_widget("run_capture_source_cbox", m_camera_combo_box);
 
     m_builder->get_widget("capture_rate_sb", m_capture_rate_sb);
 
@@ -87,6 +87,22 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     {
         m_discoverBtn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_discover_clicked));
     }
+
+    m_builder->get_widget("settings_drawing_area", m_settings_display_area);
+    if (m_settings_display_area)
+    {
+        m_settings_display_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_settings_display_area_draw));
+
+        // Connect mouse scroll event
+        m_settings_display_area->add_events(Gdk::SCROLL_MASK);
+        m_settings_display_area->signal_scroll_event().connect(sigc::mem_fun(*this, &MainWindow::on_settings_display_area_scroll_event));
+
+        // Connect mouse press and motion events
+        m_settings_display_area->add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
+        m_settings_display_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_settings_display_area_btn_press_event));
+        m_settings_display_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_settings_display_area_btn_release_event));
+        m_settings_display_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_settings_display_area_motion_notify_event));
+    }
 }
 
 std::string MainWindow::convert_to_ip_address_str(uint32_t ip)
@@ -103,12 +119,19 @@ std::string MainWindow::convert_to_ip_address_str(uint32_t ip)
     return ipStream.str();
 }
 
-void MainWindow::clear_grid_except_header(Gtk::Grid *grid)
+void MainWindow::on_discover_clicked()
 {
-    auto children = grid->get_children();
+    discover_cameras();
+    update_cam_grid();
+}
+
+void MainWindow::update_cam_grid()
+{
+    // Clear camera grid except header
+    auto children = m_cam_grid->get_children();
     for (auto* widget : children)
     {
-        grid->remove(*widget);
+        m_cam_grid->remove(*widget);
     }
 
     Gtk::Label* model = Gtk::make_managed<Gtk::Label>(Glib::ustring("Model"));
@@ -116,31 +139,18 @@ void MainWindow::clear_grid_except_header(Gtk::Grid *grid)
     Gtk::Label* sn = Gtk::make_managed<Gtk::Label>(Glib::ustring("Serial Number"));
     Gtk::Label* actions = Gtk::make_managed<Gtk::Label>(Glib::ustring("Actions"));
 
-    grid->attach(*model, 0, 0);
-    grid->attach(*ip, 1, 0);
-    grid->attach(*sn, 2, 0);
-    grid->attach(*actions, 3, 0);
-}
+    m_cam_grid->attach(*model, 0, 0);
+    m_cam_grid->attach(*ip, 1, 0);
+    m_cam_grid->attach(*sn, 2, 0);
+    m_cam_grid->attach(*actions, 3, 0);
 
-void MainWindow::on_discover_clicked()
-{
-    clear_grid_except_header(m_cam_grid);
-
-    // enum device
-    int nRet = MV_CC_EnumDevices(MV_GIGE_DEVICE | MV_USB_DEVICE, &m_camList);
-    if (nRet != MV_OK)
-    {
-        std::cout << "MV_CC_EnumDevices fail! Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_EnumDevices: " + std::to_string(nRet), Logger::ERROR);
-        return;
-    }
-
-    if (m_camList.nDeviceNum > 0)
+    // Populate camera grid content
+    if (m_cam_list.nDeviceNum > 0)
     {
         int row_index = 1;
-        for (unsigned int i = 0; i < m_camList.nDeviceNum; i++)
+        for (unsigned int i = 0; i < m_cam_list.nDeviceNum; i++)
         {
-            MV_CC_DEVICE_INFO *pDeviceInfo = m_camList.pDeviceInfo[i];
+            MV_CC_DEVICE_INFO *pDeviceInfo = m_cam_list.pDeviceInfo[i];
             if (pDeviceInfo == nullptr)
             {
                 continue;
@@ -179,6 +189,7 @@ void MainWindow::on_discover_clicked()
 
                 // Connect button signals
                 connect_button->signal_clicked().connect([=] { on_connect_clicked(reinterpret_cast<const char *>(serialNumber)); });
+                disconnect_button->signal_clicked().connect([=] { on_disconnect_clicked(reinterpret_cast<const char *>(serialNumber)); });
 
                 // Attach buttons to grid
                 m_cam_grid->attach(*actions_box, 3, row_index);
@@ -200,9 +211,116 @@ MainWindow::~MainWindow()
 {
 }
 
-void MainWindow::on_connect_clicked(const std::string& model)
+void MainWindow::on_connect_clicked(const std::string& sn)
 {
-    std::cout << "Edit clicked for: " << model << std::endl;
+    auto device_handle = create_or_get_device_handle_by_serial_number(sn);
+    if (!connect_camera(device_handle))
+    {
+        std::cout << "Failed to connect to the camera: " << std::to_string(reinterpret_cast<uintptr_t>(device_handle)) << std::endl;
+        m_logger->log("Failed to connect to the camera: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)), Logger::ERROR);
+        return;
+    }
+    
+    m_running_device_handles[sn] = device_handle;
+
+    // Reset image pixel buffer and test frame
+    if (m_image_pixbuf_settings)
+    {
+        m_image_pixbuf_settings.reset();
+    }
+
+    // Reset zoom and pan when a new image is loaded
+    m_zoom_factor_settings = 1.0;
+    m_offset_x_settings = 0.0;
+    m_offset_y_settings = 0.0;
+
+    // Start grabbing images
+    int nRet = MV_CC_StartGrabbing(device_handle);
+    if (nRet != MV_OK)
+    {
+        std::cout << "MV_CC_StartGrabbing fail. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_StartGrabbing: " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+
+    // Capture one frame
+    nRet = MV_CC_SetCommandValue(device_handle, "TriggerSoftware");
+    if(MV_OK != nRet)
+    {
+        std::cout << "Error on TriggerSoftware: " << nRet << std::endl;
+        m_logger->log("Error on TriggerSoftware: " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+
+    // Grab one frame from camera
+    MVCC_INTVALUE stParam;
+    memset(&stParam, 0, sizeof(MVCC_INTVALUE));
+    nRet = MV_CC_GetIntValue(device_handle, "PayloadSize", &stParam);
+    if (MV_OK != nRet)
+    {
+        std::cout << "Get PayloadSize fail! Error code: " << nRet << std::endl;
+        return;
+    }
+
+    MV_FRAME_OUT_INFO_EX stImageInfo = {0};
+    memset(&stImageInfo, 0, sizeof(MV_FRAME_OUT_INFO_EX));
+    unsigned char *pData = (unsigned char *)malloc(sizeof(unsigned char) * stParam.nCurValue);
+    if (pData == nullptr)
+    {
+        return;
+    }
+
+    unsigned int nDataSize = stParam.nCurValue;
+    nRet = MV_CC_GetOneFrameTimeout(device_handle, pData, nDataSize, &stImageInfo, 1000);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "MV_CC_GetOneFrameTimeout fail. Error code: " << nRet << std::endl;
+        return;
+    }
+
+    auto frame_width = stImageInfo.nWidth;
+    auto frame_height = stImageInfo.nHeight;
+
+    // Save the frame to file
+    save_tmp_image(pData, stImageInfo, device_handle);
+
+    // Load the frame from file    
+    try
+    {
+        m_image_pixbuf_settings = Gdk::Pixbuf::create_from_file("/tmp/eagle_eye/tmp.jpeg");
+    }
+    catch (const Glib::FileError &ex)
+    {
+        std::cerr << "File Error: " << ex.what() << std::endl;
+    }
+    catch (const Gdk::PixbufError &ex)
+    {
+        std::cerr << "Pixbuf Error: " << ex.what() << std::endl;
+    }
+
+    // Queue the frame for diaplay
+    if (m_image_pixbuf_settings)
+    {
+        m_settings_display_area->set_size_request(frame_width, frame_height);
+        m_settings_display_area->queue_draw();
+    }
+}
+void MainWindow::on_disconnect_clicked(const std::string& sn)
+{
+    if (m_running_device_handles.find(sn) != m_running_device_handles.end())
+    {
+        void *device_handle = m_running_device_handles[sn];
+        if (!disconnect_camera(device_handle))
+        {
+            std::cout << "Failed to disconnect from the camera: " << std::to_string(reinterpret_cast<uintptr_t>(device_handle)) << std::endl;
+            m_logger->log("Failed to disconnect from the camera: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)), Logger::ERROR);
+        }
+        m_running_device_handles.erase(sn);
+    }
+    else
+    {
+        std::cout << "Camera with serial number " << sn << " not found." << std::endl;
+    }
 }
 
 void MainWindow::set_button_icon(Gtk::Button* button, const Glib::ustring& resource_path)
@@ -226,12 +344,12 @@ void MainWindow::set_button_icon(Gtk::Button* button, const Glib::ustring& resou
 void MainWindow::on_window_shown()
 {
     discover_cameras();
-
-    if (m_camList.nDeviceNum > 0)
+    update_cam_grid();
+    if (m_cam_list.nDeviceNum > 0)
     {
-        for (unsigned int i = 0; i < m_camList.nDeviceNum; i++)
+        for (unsigned int i = 0; i < m_cam_list.nDeviceNum; i++)
         {
-            MV_CC_DEVICE_INFO *pDeviceInfo = m_camList.pDeviceInfo[i];
+            MV_CC_DEVICE_INFO *pDeviceInfo = m_cam_list.pDeviceInfo[i];
             if (pDeviceInfo == nullptr)
             {
                 continue;
@@ -286,26 +404,6 @@ void MainWindow::on_window_shown()
 bool MainWindow::on_window_delete(GdkEventAny* event)
 {
     int nRet = 0;
-    
-    // Perform any necessary cleanup here
-    for (void *device_handle : m_device_handles)
-    {
-        // Close the device
-        nRet = MV_CC_CloseDevice(device_handle);
-        if (nRet != MV_OK)
-        {
-            std::cerr << "MV_CC_CloseDevice fail. Error code: " << nRet << std::endl;
-            m_logger->log("Error on MV_CC_CloseDevice: " + std::to_string(nRet), Logger::ERROR);
-        }
-
-        // Destory the device handle
-        nRet = MV_CC_DestroyHandle(device_handle);
-        if (nRet != MV_OK)
-        {
-            std::cerr << "MV_CC_DestroyHandle fail. Error code: " << nRet << std::endl;
-            m_logger->log("Error on MV_CC_DestroyHandle: " + std::to_string(nRet), Logger::ERROR);
-        }
-    }
 
     // Disconnect from the WebSocket server
     m_ws_client.disconnect();
@@ -314,10 +412,102 @@ bool MainWindow::on_window_delete(GdkEventAny* event)
     return false;
 }
 
+bool MainWindow::connect_camera(void *device_handle)
+{
+    // Check if already connected
+    if (MV_CC_IsDeviceConnected(device_handle))
+    {
+        show_camera_connect_warning(*this);
+        return false;
+    }
+
+    // Connect to the device
+    int nRet = MV_CC_OpenDevice(device_handle);
+    if (nRet != MV_OK)
+    {
+        std::cout << "MV_CC_OpenDevice fail! Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_OpenDevice: " + std::to_string(nRet), Logger::ERROR);
+        return false;
+    }
+
+    m_logger->log("Connected to device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
+
+    // Detect network optimal packet size(It only works for the GigE camera)
+    int nPacketSize = MV_CC_GetOptimalPacketSize(device_handle);
+    if (nPacketSize > 0)
+    {
+        nRet = MV_CC_SetIntValue(device_handle, "GevSCPSPacketSize", nPacketSize);
+        if (nRet != MV_OK)
+        {
+            std::cout << "Set Packet Size fail. Error code: " << nRet << std::endl;
+            m_logger->log("Error on MV_CC_SetIntValue(GevSCPSPacketSize): " + std::to_string(nRet), Logger::ERROR);
+        }
+    }
+    else
+    {
+        std::cout << "Get Packet Size fail. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_GetOptimalPacketSize: " + std::to_string(nRet), Logger::ERROR);
+    }
+    m_logger->log("MV_CC_SetIntValue(GevSCPSPacketSize) for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
+
+    // Enable trigger mode
+    nRet = MV_CC_SetEnumValue(device_handle, "TriggerMode", 1);
+    if (MV_OK != nRet)
+    {
+        std::cout << "MV_CC_SetTriggerMode fail! Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetTriggerMode: " + std::to_string(nRet), Logger::ERROR);
+    }
+
+    // Set trigger source
+    nRet = MV_CC_SetEnumValue(device_handle, "TriggerSource", MV_TRIGGER_SOURCE_SOFTWARE);
+    if (MV_OK != nRet)
+    {
+        std::cout << "MV_CC_SetTriggerSource fail! Error code:" << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetEnumValue(TriggerSource): " + std::to_string(nRet), Logger::ERROR);
+    }
+
+    return nRet == MV_OK;
+}
+
+bool MainWindow::disconnect_camera(void *device_handle)
+{
+    // Close the device
+    int nRet = MV_CC_CloseDevice(device_handle);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "MV_CC_CloseDevice fail. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_CloseDevice: " + std::to_string(nRet), Logger::ERROR);
+    }
+
+    // Destory the device handle
+    nRet = MV_CC_DestroyHandle(device_handle);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "MV_CC_DestroyHandle fail. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_DestroyHandle: " + std::to_string(nRet), Logger::ERROR);
+    }
+
+    return nRet == MV_OK;
+}
+
+void MainWindow::show_camera_connect_warning(Gtk::Window& parent)
+{
+    // Create the message dialog with the specified parent window, message text, and button options
+    Gtk::MessageDialog dialog(parent, 
+                              "The selected camera appears to be in use. Please disconnect it from any other application or device before proceeding.", 
+                              false,
+                              Gtk::MESSAGE_WARNING,
+                              Gtk::BUTTONS_OK,
+                              true);
+
+    // Run the dialog and wait for the user to press the OK button
+    dialog.run();
+}
+
 void MainWindow::discover_cameras()
 {
     // enum device
-    int nRet = MV_CC_EnumDevices(MV_GIGE_DEVICE, &m_camList);
+    int nRet = MV_CC_EnumDevices(MV_GIGE_DEVICE, &m_cam_list);
     if (nRet != MV_OK)
     {
         std::cout << "MV_CC_EnumDevices fail! Error code: " << nRet << std::endl;
@@ -347,9 +537,10 @@ void MainWindow::on_menu_toggled()
 
 void MainWindow::on_start_clicked()
 {
-    m_is_capturing = true;
-    m_start_btn->set_sensitive(!m_is_capturing);
-    m_snap_btn->set_sensitive(!m_is_capturing);
+    m_is_running = true;
+
+    m_start_btn->set_sensitive(false);
+    m_start_btn->set_label("Starting...");
 
     double capture_interval_ms = 0.0;
     if (m_capture_rate_sb)
@@ -359,104 +550,173 @@ void MainWindow::on_start_clicked()
         capture_interval_ms = 1000.0 / static_cast<double>(capture_rate);
     }
 
-    if (m_device_handles.empty())
+    std::vector<std::string> serial_numbers;
+    std::vector<void*> device_handles;
+    
+    if (m_camera_combo_box)
     {
-        if (m_camera_combo_box)
+        auto selectedCaptureDevice = m_camera_combo_box->get_active_text();
+        if (selectedCaptureDevice == "All Cameras")
         {
-            auto selectedCaptureDevice = m_camera_combo_box->get_active_text();
-            if (selectedCaptureDevice == "All Cameras")
+            auto model = m_camera_combo_box->get_model();
+            if (model)
             {
-                m_device_handles = get_all_device_handles();
+                for (auto& row : model->children())
+                {
+                    Glib::ustring sn;
+                    row.get_value(0, sn); // 0 is the column index for ComboBoxText items
+                    
+                    if (sn == "All Cameras")
+                    {
+                        continue;
+                    }
+
+                    auto deviceHandle = create_or_get_device_handle_by_serial_number(sn);
+                    if (deviceHandle == nullptr)
+                    {
+                        std::cout << "create_or_get_device_handle_by_serial_number fail! deviceHandle is nullptr" << std::endl;
+                        m_logger->log("Error on create_or_get_device_handle_by_serial_number: deviceHandle is nullptr.", Logger::ERROR);
+                    }
+                    else
+                    {
+                        device_handles.push_back(deviceHandle);
+                        serial_numbers.push_back(sn);
+                    }
+                }
+            }
+        }
+        else
+        {
+            // Create device handle
+            auto deviceHandle = create_or_get_device_handle_by_serial_number(selectedCaptureDevice);
+            if (deviceHandle == nullptr)
+            {
+                std::cout << "create_or_get_device_handle_by_serial_number fail! deviceHandle is nullptr" << std::endl;
+                m_logger->log("Error on create_or_get_device_handle_by_serial_number: deviceHandle is nullptr.", Logger::ERROR);
             }
             else
             {
-                // Create device handle
-                auto deviceHandle = get_device_handle_by_serial_number(selectedCaptureDevice);
-                if (deviceHandle == nullptr)
-                {
-                    std::cout << "get_device_handle_by_serial_number fail! deviceHandle is nullptr" << std::endl;
-                    m_logger->log("Error on get_device_handle_by_serial_number: deviceHandle is nullptr.", Logger::ERROR);
-                }
-                m_device_handles.push_back(deviceHandle);
+                device_handles.push_back(deviceHandle);
+                serial_numbers.push_back(selectedCaptureDevice);
             }
         }
+    }
 
-        // Preflight
-        for (void *device_handle : m_device_handles)
+    size_t num_connected = 0;
+    size_t num_registed = 0;
+    size_t total_cams = device_handles.size();
+
+    for (void *device_handle : device_handles)
+    {
+        if (!connect_camera(device_handle))
         {
-            auto currentTimeInMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-            std::cout << "Preflight request to device: " << device_handle << " at " << currentTimeInMs << std::endl;
-            m_logger->log("Preflight request to device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
+            std::cout << "Failed to connect to the camera: " << std::to_string(reinterpret_cast<uintptr_t>(device_handle)) << std::endl;
+            m_logger->log("Failed to connect to the camera: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)), Logger::ERROR);
+            break;
+        }
+        num_connected++;
+    }
 
-            // Launch preflight asynchronously for each device
-            std::async(std::launch::async, &MainWindow::preflight, this, device_handle);
+    if (num_connected == total_cams)
+    {
+        for (void *device_handle : device_handles)
+        {
+            // Register image callback
+            auto image_capture_callback = [](unsigned char *pData, MV_FRAME_OUT_INFO_EX *pFrameInfo, void *pUser)
+            {
+                // if (pFrameInfo)
+                // {
+                //     std::cout << "GetOneFrame, nDevTimeStampHigh: " << pFrameInfo->nDevTimeStampHigh
+                //             << ", nDevTimeStampLow: " << pFrameInfo->nDevTimeStampLow
+                //             << ", nHostTimeStamp: " << pFrameInfo->nHostTimeStamp
+                //             << std::endl;
+                // }
+                MainWindow *pThis = static_cast<MainWindow *>(pUser); // Cast pUser to MainWindow*
+                pThis->m_frame_queue.enqueue(FrameData(pData, pFrameInfo));
+            };
+
+            int nRet = MV_CC_RegisterImageCallBackEx(device_handle, image_capture_callback, this);
+            if (nRet != MV_OK)
+            {
+                std::cout << "MV_CC_RegisterImageCallBackEx fail. Error code: " << nRet << std::endl;
+                m_logger->log("Error on MV_CC_RegisterImageCallBackEx: " + std::to_string(nRet), Logger::ERROR);
+                break;
+            }
+            num_registed++;
         }
     }
 
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-
-    for (void *device_handle : m_device_handles)
+    if (num_registed == total_cams)
     {
-        auto currentTimeInMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-        std::cout << "Begin capture for device: " << device_handle << " at " << currentTimeInMs << std::endl;
-        m_logger->log("Begin capture for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        // Launch start_capture asynchronously for each device
-        start_capture(device_handle, capture_interval_ms);
+        if (serial_numbers.size() == device_handles.size())
+        {
+            for (size_t i = 0; i < serial_numbers.size(); ++i)
+            {
+                const std::string &sn = serial_numbers[i];
+                void *handle = device_handles[i];
+
+                auto currentTimeInMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+                std::cout << "Begin capture for device: " << sn << " at " << currentTimeInMs << std::endl;
+                m_logger->log("Begin capture for device: " + sn);
+
+                start_capture(handle, capture_interval_ms);
+                m_running_device_handles[sn] = handle; 
+            }
+
+            start_detection();
+        }
+        else
+        {
+            std::cerr << "Vectors have different sizes!" << std::endl;
+        }
     }
-
-    start_detection();
+    else
+    {
+        m_is_running = false;
+        m_start_btn->set_sensitive(true);
+    }
+    m_start_btn->set_label("Start");
 }
 
 void MainWindow::on_stop_clicked()
 {
-    m_is_capturing = false;
-    m_start_btn->set_sensitive(!m_is_capturing);
-    m_snap_btn->set_sensitive(!m_is_capturing);
+    m_is_running = false;
 
-    for (void *device_handle : m_device_handles)
+    for (const auto& pair : m_running_device_handles)
     {
+        void* device_handle = pair.second;
         m_logger->log("Stop capture for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
         stop_capture(device_handle);
     }
 
-    // Ensure there's no existing processing thread running
-    if (m_processing_thread.joinable()) 
+    stop_detection();
+
+    // Perform any necessary cleanup here
+    for (const auto& pair : m_running_device_handles)
     {
-        m_processing_thread.join();  // Wait for previous thread to finish
+        void* device_handle = pair.second;
+        if (!disconnect_camera(device_handle))
+        {
+            std::cout << "Failed to disconnect from the camera: " << std::to_string(reinterpret_cast<uintptr_t>(device_handle)) << std::endl;
+            m_logger->log("Failed to disconnect from the camera: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)), Logger::ERROR);
+        }
     }
+    m_running_device_handles.clear();
+
+    m_start_btn->set_sensitive(!m_is_running);
 }
 
 void MainWindow::on_snap_clicked()
 {
-    // Disconnect all cameras
-    for (void *device_handle : m_device_handles)
-    {
-        // Close the device
-        int nRet = MV_CC_CloseDevice(device_handle);
-        if (nRet != MV_OK)
-        {
-            std::cerr << "MV_CC_CloseDevice fail. Error code: " << nRet << std::endl;
-            m_logger->log("Error on MV_CC_CloseDevice: " + std::to_string(nRet), Logger::ERROR);
-        }
-
-        // Destory the device handle
-        nRet = MV_CC_DestroyHandle(device_handle);
-        if (nRet != MV_OK)
-        {
-            std::cerr << "MV_CC_DestroyHandle fail. Error code: " << nRet << std::endl;
-            m_logger->log("Error on MV_CC_DestroyHandle: " + std::to_string(nRet), Logger::ERROR);
-        }
-    }
-    m_device_handles.clear();
-
     auto selectedCaptureDevice = m_camera_test_combo_box->get_active_text();
-    auto device_handle = get_device_handle_by_serial_number(selectedCaptureDevice);
+    auto device_handle = create_or_get_device_handle_by_serial_number(selectedCaptureDevice);
 
     // Reset image pixel buffer and test frame
-    if (m_ImagePixbuf)
+    if (m_image_pixbuf_test)
     {
-        m_ImagePixbuf.reset();
+        m_image_pixbuf_test.reset();
     }
     if (m_maskPixbuf)
     {
@@ -464,58 +724,18 @@ void MainWindow::on_snap_clicked()
     }
 
     // Reset zoom and pan when a new image is loaded
-    m_zoom_factor = 1.0;
-    m_offset_x = 0.0;
-    m_offset_y = 0.0;
+    m_zoom_factor_test = 1.0;
+    m_offset_x_test = 0.0;
+    m_offset_y_test = 0.0;
     
-    // Connect to the device
-    int nRet = MV_CC_OpenDevice(device_handle);
-    if (nRet != MV_OK)
+    if (!connect_camera(device_handle))
     {
-        std::cout << "MV_CC_OpenDevice fail! Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_OpenDevice: " + std::to_string(nRet), Logger::ERROR);
-        return;
-    }
-    m_logger->log("Connected to device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
-
-    // Detect network optimal packet size(It only works for the GigE camera)
-    int nPacketSize = MV_CC_GetOptimalPacketSize(device_handle);
-    if (nPacketSize > 0)
-    {
-        nRet = MV_CC_SetIntValue(device_handle, "GevSCPSPacketSize", nPacketSize);
-        if (nRet != MV_OK)
-        {
-            std::cout << "Set Packet Size fail. Error code: " << nRet << std::endl;
-            m_logger->log("Error on MV_CC_SetIntValue(GevSCPSPacketSize): " + std::to_string(nRet), Logger::ERROR);
-        }
-    }
-    else
-    {
-        std::cout << "Get Packet Size fail. Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_GetOptimalPacketSize: " + std::to_string(nRet), Logger::ERROR);
-    }
-    m_logger->log("MV_CC_SetIntValue(GevSCPSPacketSize) for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
-
-    // Enable trigger mode
-    nRet = MV_CC_SetEnumValue(device_handle, "TriggerMode", 1);
-    if (MV_OK != nRet)
-    {
-        std::cout << "MV_CC_SetTriggerMode fail! Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_SetTriggerMode: " + std::to_string(nRet), Logger::ERROR);
-        return;
-    }
-
-    // Set trigger source
-    nRet = MV_CC_SetEnumValue(device_handle, "TriggerSource", MV_TRIGGER_SOURCE_SOFTWARE);
-    if (MV_OK != nRet)
-    {
-        std::cout << "MV_CC_SetTriggerSource fail! Error code:" << nRet << std::endl;
-        m_logger->log("Error on MV_CC_SetEnumValue(TriggerSource): " + std::to_string(nRet), Logger::ERROR);
-        return;
+        std::cout << "Failed to connect to the camera: " << std::to_string(reinterpret_cast<uintptr_t>(device_handle)) << std::endl;
+        m_logger->log("Failed to connect to the camera: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)), Logger::ERROR);
     }
 
     // Start grabbing images
-    nRet = MV_CC_StartGrabbing(device_handle);
+    int nRet = MV_CC_StartGrabbing(device_handle);
     if (nRet != MV_OK)
     {
         std::cout << "MV_CC_StartGrabbing fail. Error code: " << nRet << std::endl;
@@ -562,12 +782,12 @@ void MainWindow::on_snap_clicked()
     auto frame_height = stImageInfo.nHeight;
 
     // Save the frame to file
-    save_image(pData, stImageInfo, device_handle);
+    save_tmp_image(pData, stImageInfo, device_handle);
 
     // Load the frame from file    
     try
     {
-        m_ImagePixbuf = Gdk::Pixbuf::create_from_file("/tmp/eagle_eye/test.jpeg");
+        m_image_pixbuf_test = Gdk::Pixbuf::create_from_file("/tmp/eagle_eye/tmp.jpeg");
     }
     catch (const Glib::FileError &ex)
     {
@@ -579,7 +799,7 @@ void MainWindow::on_snap_clicked()
     }
 
     // Queue the frame for diaplay
-    if (m_ImagePixbuf)
+    if (m_image_pixbuf_test)
     {
         m_test_display_area->set_size_request(frame_width, frame_height);
         m_test_display_area->queue_draw();
@@ -686,20 +906,10 @@ void MainWindow::on_snap_clicked()
         m_logger->log("Error on MV_CC_StopGrabbing", Logger::ERROR);
     }
 
-    // Close the device
-    nRet = MV_CC_CloseDevice(device_handle);
-    if (nRet != MV_OK)
+    if (!disconnect_camera(device_handle))
     {
-        std::cerr << "MV_CC_CloseDevice fail. Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_CloseDevice: " + std::to_string(nRet), Logger::ERROR);
-    }
-
-    // Destory the device handle
-    nRet = MV_CC_DestroyHandle(device_handle);
-    if (nRet != MV_OK)
-    {
-        std::cerr << "MV_CC_DestroyHandle fail. Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_DestroyHandle: " + std::to_string(nRet), Logger::ERROR);
+        std::cout << "Failed to disconnect from the camera: " << std::to_string(reinterpret_cast<uintptr_t>(device_handle)) << std::endl;
+        m_logger->log("Failed to disconnect from the camera: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)), Logger::ERROR);
     }
 }
 
@@ -876,149 +1086,39 @@ void MainWindow::update_mask_alpha(gint32 alpha)
     }
 }
 
-bool MainWindow::on_test_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+void *MainWindow::create_or_get_device_handle_by_serial_number(std::string sn)
 {
-    // Apply zoom and pan transformations
-    cr->translate(m_offset_x, m_offset_y);   // Apply panning offset
-    cr->scale(m_zoom_factor, m_zoom_factor); // Apply zoom
-
-    // Draw the image
-    if (m_ImagePixbuf)
+    if (m_running_device_handles.find(sn) != m_running_device_handles.end())
     {
-        Gdk::Cairo::set_source_pixbuf(cr, m_ImagePixbuf, 0, 0);
-        cr->paint();
-    }
-
-    if (m_maskPixbuf)
+        return m_running_device_handles[sn];
+    } 
+    else 
     {
-        Gdk::Cairo::set_source_pixbuf(cr, m_maskPixbuf, 0, 0);
-        cr->paint();
-    }
-
-    return true;
-}
-
-void *MainWindow::get_device_handle_by_serial_number(std::string sn)
-{
-    for (unsigned int i = 0; i < m_camList.nDeviceNum; i++)
-    {
-        MV_CC_DEVICE_INFO *pDeviceInfo = m_camList.pDeviceInfo[i];
-        if (pDeviceInfo->nTLayerType == MV_GIGE_DEVICE)
+        for (unsigned int i = 0; i < m_cam_list.nDeviceNum; i++)
         {
-            auto serialNumber = pDeviceInfo->SpecialInfo.stGigEInfo.chSerialNumber;
-            std::string serialNumberStr(reinterpret_cast<const char *>(serialNumber));
-            if (serialNumberStr == sn)
+            MV_CC_DEVICE_INFO *pDeviceInfo = m_cam_list.pDeviceInfo[i];
+            if (pDeviceInfo->nTLayerType == MV_GIGE_DEVICE)
             {
-                void *deviceHandle;
-                int nRet = MV_CC_CreateHandle(&deviceHandle, pDeviceInfo);
-                if (nRet != MV_OK)
+                auto serialNumber = pDeviceInfo->SpecialInfo.stGigEInfo.chSerialNumber;
+                std::string serialNumberStr(reinterpret_cast<const char *>(serialNumber));
+                if (serialNumberStr == sn)
                 {
-                    std::cout << "MV_CC_CreateHandle fail! Error code: " << nRet << std::endl;
-                    m_logger->log("Error on MV_CC_CreateHandle: " + std::to_string(nRet), Logger::ERROR);
-                    return nullptr;
+                    void *device_handle;
+                    int nRet = MV_CC_CreateHandle(&device_handle, pDeviceInfo);
+                    if (nRet != MV_OK)
+                    {
+                        std::cout << "MV_CC_CreateHandle fail! Error code: " << nRet << std::endl;
+                        m_logger->log("Error on MV_CC_CreateHandle: " + std::to_string(nRet), Logger::ERROR);
+                        return nullptr;
+                    }
+                    return device_handle;
                 }
-                return deviceHandle;
             }
         }
-    }
-
-    return nullptr;
-}
-
-std::vector<void*> MainWindow::get_all_device_handles()
-{
-    std::vector<void*> deviceHandles;  // To store all device handles
-
-    for (unsigned int i = 0; i < m_camList.nDeviceNum; i++)
-    {
-        MV_CC_DEVICE_INFO *pDeviceInfo = m_camList.pDeviceInfo[i];
-        if (pDeviceInfo->nTLayerType == MV_GIGE_DEVICE)
-        {
-            void *deviceHandle;
-            int nRet = MV_CC_CreateHandle(&deviceHandle, pDeviceInfo);
-            if (nRet != MV_OK)
-            {
-                std::cout << "MV_CC_CreateHandle fail! Error code: " << nRet << std::endl;
-                m_logger->log("Error on MV_CC_CreateHandle: " + std::to_string(nRet), Logger::ERROR);
-                continue;  // Skip this device if handle creation failed
-            }
-
-            deviceHandles.push_back(deviceHandle);  // Add handle to the list
-        }
-    }
-
-    return deviceHandles;  // Return all device handles
-}
-
-void MainWindow::preflight(void *device_handle)
-{
-    // Connect to the device
-    int nRet = MV_CC_OpenDevice(device_handle);
-    if (nRet != MV_OK)
-    {
-        std::cout << "MV_CC_OpenDevice fail! Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_OpenDevice: " + std::to_string(nRet), Logger::ERROR);
-        return;
-    }
-    m_logger->log("Connected to device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
-
-    // Detect network optimal packet size(It only works for the GigE camera)
-    int nPacketSize = MV_CC_GetOptimalPacketSize(device_handle);
-    if (nPacketSize > 0)
-    {
-        nRet = MV_CC_SetIntValue(device_handle, "GevSCPSPacketSize", nPacketSize);
-        if (nRet != MV_OK)
-        {
-            std::cout << "Set Packet Size fail. Error code: " << nRet << std::endl;
-            m_logger->log("Error on MV_CC_SetIntValue(GevSCPSPacketSize): " + std::to_string(nRet), Logger::ERROR);
-        }
-    }
-    else
-    {
-        std::cout << "Get Packet Size fail. Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_GetOptimalPacketSize: " + std::to_string(nRet), Logger::ERROR);
-    }
-    m_logger->log("MV_CC_SetIntValue(GevSCPSPacketSize) for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
-
-    // Enable trigger mode
-    nRet = MV_CC_SetEnumValue(device_handle, "TriggerMode", 1);
-    if (MV_OK != nRet)
-    {
-        std::cout << "MV_CC_SetTriggerMode fail! Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_SetTriggerMode: " + std::to_string(nRet), Logger::ERROR);
-    }
-
-    // Set trigger source
-    nRet = MV_CC_SetEnumValue(device_handle, "TriggerSource", MV_TRIGGER_SOURCE_SOFTWARE);
-    if (MV_OK != nRet)
-    {
-        std::cout << "MV_CC_SetTriggerSource fail! Error code:" << nRet << std::endl;
-        m_logger->log("Error on MV_CC_SetEnumValue(TriggerSource): " + std::to_string(nRet), Logger::ERROR);
     }
     
-    // Register image callback
-    auto image_capture_callback = [](unsigned char *pData, MV_FRAME_OUT_INFO_EX *pFrameInfo, void *pUser)
-    {
-        // if (pFrameInfo)
-        // {
-        //     std::cout << "GetOneFrame, nDevTimeStampHigh: " << pFrameInfo->nDevTimeStampHigh
-        //             << ", nDevTimeStampLow: " << pFrameInfo->nDevTimeStampLow
-        //             << ", nHostTimeStamp: " << pFrameInfo->nHostTimeStamp
-        //             << std::endl;
-        // }
 
-        MainWindow *pThis = static_cast<MainWindow *>(pUser); // Cast pUser to MainWindow*
-        pThis->m_frame_queue.enqueue(FrameData(pData, pFrameInfo));
-    };
-
-    m_logger->log("MV_CC_RegisterImageCallBackEx for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
-    nRet = MV_CC_RegisterImageCallBackEx(device_handle, image_capture_callback, this);
-    if (nRet != MV_OK)
-    {
-        std::cout << "MV_CC_RegisterImageCallBackEx fail. Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_RegisterImageCallBackEx: " + std::to_string(nRet), Logger::ERROR);
-        return;
-    }
+    return nullptr;
 }
 
 void MainWindow::start_capture(void *device_handle, double capture_interval_ms)
@@ -1032,22 +1132,15 @@ void MainWindow::start_capture(void *device_handle, double capture_interval_ms)
     }
     else
     {
-        m_logger->log("Started MV_CC_StartGrabbing for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
-
         std::string camera_handle = std::to_string(reinterpret_cast<uintptr_t>(device_handle));
-        auto& capturing_thread = m_capturing_threads[camera_handle];
-
-        // Ensure there's no existing capture thread running
-        if (capturing_thread.joinable()) {
-            capturing_thread.join();  // Wait for previous thread to finish
-        }
+        m_logger->log("Started MV_CC_StartGrabbing for device: " + camera_handle);
 
         // Start the frame acquisition thread
-        capturing_thread = std::thread([this, device_handle, capture_interval_ms]()
+        auto capturing_thread = std::thread([this, device_handle, capture_interval_ms]()
         {
             uint64_t lastCaptureTimestamp = 0;
 
-            while (m_is_capturing)
+            while (m_is_running)
             {
                 auto currentTimeInMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -1073,7 +1166,28 @@ void MainWindow::start_capture(void *device_handle, double capture_interval_ms)
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
         });
+
+        m_capturing_threads[camera_handle] = std::move(capturing_thread);
     }
+}
+
+void MainWindow::stop_capture(void *device_handle)
+{
+    std::string camera_handle = std::to_string(reinterpret_cast<uintptr_t>(device_handle));
+    auto& capturing_thread = m_capturing_threads[camera_handle];
+
+    if (capturing_thread.joinable()) {
+        capturing_thread.join();  // Wait for previous thread to finish
+    }
+
+    int nRet = MV_CC_StopGrabbing(device_handle);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "MV_CC_StopGrabbing fail. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_StopGrabbing", Logger::ERROR);
+    }
+
+    m_capturing_threads.erase(camera_handle);
 }
 
 void MainWindow::start_detection()
@@ -1122,7 +1236,7 @@ void MainWindow::start_detection()
 
         std::vector<FrameOffsetInfo> frame_offsets;
         
-        while (m_is_capturing)
+        while (m_is_running)
         {
             // std::cout << "Entering processing loop" << std::endl;
             std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Prevent CPU overuse
@@ -1190,21 +1304,11 @@ void MainWindow::start_detection()
     });
 }
 
-void MainWindow::stop_capture(void *device_handle)
+void MainWindow::stop_detection()
 {
-    std::string camera_handle = std::to_string(reinterpret_cast<uintptr_t>(device_handle));
-    auto& capturing_thread = m_capturing_threads[camera_handle];
-
-    // Ensure there's no existing capture thread running
-    if (capturing_thread.joinable()) {
-        capturing_thread.join();  // Wait for previous thread to finish
-    }
-
-    int nRet = MV_CC_StopGrabbing(device_handle);
-    if (nRet != MV_OK)
+    if (m_processing_thread.joinable()) 
     {
-        std::cerr << "MV_CC_StopGrabbing fail. Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_StopGrabbing", Logger::ERROR);
+        m_processing_thread.join();  // Wait for previous thread to finish
     }
 }
 
@@ -1234,7 +1338,7 @@ void MainWindow::send_ws_message(std::string message)
     }
 }
 
-void MainWindow::save_image(unsigned char *pData, MV_FRAME_OUT_INFO_EX frameInfo, void *deviceHandle)
+void MainWindow::save_tmp_image(unsigned char *pData, MV_FRAME_OUT_INFO_EX frameInfo, void *deviceHandle)
 {
     std::string temp_dir = "/tmp/eagle_eye";
     if (!std::filesystem::is_directory(temp_dir))
@@ -1256,7 +1360,7 @@ void MainWindow::save_image(unsigned char *pData, MV_FRAME_OUT_INFO_EX frameInfo
     stSaveFileParam.nHeight = frameInfo.nHeight;
     stSaveFileParam.nDataLen = frameInfo.nFrameLen;
     stSaveFileParam.pData = pData;
-    sprintf(stSaveFileParam.pImagePath, "/tmp/eagle_eye/test.jpeg");
+    sprintf(stSaveFileParam.pImagePath, "/tmp/eagle_eye/tmp.jpeg");
     
     int nRet = MV_CC_SaveImageToFile(deviceHandle, &stSaveFileParam);
     if (nRet != MV_OK)
@@ -1281,6 +1385,28 @@ std::string MainWindow::generate_transaction_id()
     return ss.str();
 }
 
+bool MainWindow::on_test_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+{
+    // Apply zoom and pan transformations
+    cr->translate(m_offset_x_test, m_offset_y_test);   // Apply panning offset
+    cr->scale(m_zoom_factor_test, m_zoom_factor_test); // Apply zoom
+
+    // Draw the image
+    if (m_image_pixbuf_test)
+    {
+        Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_test, 0, 0);
+        cr->paint();
+    }
+
+    if (m_maskPixbuf)
+    {
+        Gdk::Cairo::set_source_pixbuf(cr, m_maskPixbuf, 0, 0);
+        cr->paint();
+    }
+
+    return true;
+}
+
 bool MainWindow::on_test_display_area_scroll_event(GdkEventScroll *scroll_event)
 {
     if (m_ctrl_pressed)
@@ -1303,11 +1429,11 @@ bool MainWindow::on_test_display_area_scroll_event(GdkEventScroll *scroll_event)
 
         if (scroll_event->direction == GDK_SCROLL_UP)
         {
-            m_zoom_factor += zoom_step;
+            m_zoom_factor_test += zoom_step;
         }
         else if (scroll_event->direction == GDK_SCROLL_DOWN)
         {
-            m_zoom_factor = std::max(zoom_step, m_zoom_factor - zoom_step);
+            m_zoom_factor_test = std::max(zoom_step, m_zoom_factor_test - zoom_step);
         }
     }
 
@@ -1341,9 +1467,9 @@ bool MainWindow::on_test_display_area_btn_press_event(GdkEventButton *button_eve
     if (button_event->button == 1)
     {
         // Start dragging
-        m_is_dragging = true;
-        m_drag_start_x = button_event->x;
-        m_drag_start_y = button_event->y;
+        m_is_dragging_test = true;
+        m_drag_start_x_test = button_event->x;
+        m_drag_start_y_test = button_event->y;
     }
     return true;
 }
@@ -1353,30 +1479,111 @@ bool MainWindow::on_test_display_area_btn_release_event(GdkEventButton *button_e
     if (button_event->button == 1)
     {
         // Stop dragging
-        m_is_dragging = false;
+        m_is_dragging_test = false;
     }
     return true;
 }
 
 bool MainWindow::on_test_display_area_motion_notify_event(GdkEventMotion *motion_event)
 {
-    if (m_is_dragging)
+    if (m_is_dragging_test)
     {
         // Calculate the distance moved
-        double deltaX = motion_event->x - m_drag_start_x;
-        double deltaY = motion_event->y - m_drag_start_y;
+        double deltaX = motion_event->x - m_drag_start_x_test;
+        double deltaY = motion_event->y - m_drag_start_y_test;
 
         // Update the panning offset
-        m_offset_x += deltaX;
-        m_offset_y += deltaY;
+        m_offset_x_test += deltaX;
+        m_offset_y_test += deltaY;
 
         // Update the start position for the next motion event
-        m_drag_start_x = motion_event->x;
-        m_drag_start_y = motion_event->y;
+        m_drag_start_x_test = motion_event->x;
+        m_drag_start_y_test = motion_event->y;
     }
 
     // Trigger a redraw of the drawing area
     m_test_display_area->queue_draw();
+
+    return true;
+}
+
+bool MainWindow::on_settings_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+{
+    // Apply zoom and pan transformations
+    cr->translate(m_offset_x_settings, m_offset_y_settings);   // Apply panning offset
+    cr->scale(m_zoom_factor_settings, m_zoom_factor_settings); // Apply zoom
+
+    // Draw the image
+    if (m_image_pixbuf_settings)
+    {
+        Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_settings, 0, 0);
+        cr->paint();
+    }
+
+    return true;
+}
+
+bool MainWindow::on_settings_display_area_scroll_event(GdkEventScroll *scroll_event)
+{
+    const double zoom_step = 0.1;
+
+    if (scroll_event->direction == GDK_SCROLL_UP)
+    {
+        m_zoom_factor_settings += zoom_step;
+    }
+    else if (scroll_event->direction == GDK_SCROLL_DOWN)
+    {
+        m_zoom_factor_settings = std::max(zoom_step, m_zoom_factor_settings - zoom_step);
+    }
+
+    // Trigger a redraw of the drawing area
+    m_settings_display_area->queue_draw();
+
+    // Return true to indicate that the event has been handled
+    return true;
+}
+
+bool MainWindow::on_settings_display_area_btn_press_event(GdkEventButton *button_event)
+{
+    if (button_event->button == 1)
+    {
+        // Start dragging
+        m_is_dragging_settings = true;
+        m_drag_start_x_settings = button_event->x;
+        m_drag_start_y_settings = button_event->y;
+    }
+    return true;
+}
+
+bool MainWindow::on_settings_display_area_btn_release_event(GdkEventButton *button_event)
+{
+    if (button_event->button == 1)
+    {
+        // Stop dragging
+        m_is_dragging_settings = false;
+    }
+    return true;
+}
+
+bool MainWindow::on_settings_display_area_motion_notify_event(GdkEventMotion *motion_event)
+{
+    if (m_is_dragging_settings)
+    {
+        // Calculate the distance moved
+        double deltaX = motion_event->x - m_drag_start_x_settings;
+        double deltaY = motion_event->y - m_drag_start_y_settings;
+
+        // Update the panning offset
+        m_offset_x_settings += deltaX;
+        m_offset_y_settings += deltaY;
+
+        // Update the start position for the next motion event
+        m_drag_start_x_settings = motion_event->x;
+        m_drag_start_y_settings = motion_event->y;
+    }
+
+    // Trigger a redraw of the drawing area
+    m_settings_display_area->queue_draw();
 
     return true;
 }
