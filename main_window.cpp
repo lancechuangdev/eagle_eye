@@ -84,12 +84,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("cam_grid", m_cam_grid);
 
-    m_builder->get_widget("discover_btn", m_discoverBtn);
-    if (m_discoverBtn)
-    {
-        m_discoverBtn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_discover_clicked));
-    }
-
     m_builder->get_widget("settings_drawing_area", m_settings_display_area);
     if (m_settings_display_area)
     {
@@ -495,12 +489,6 @@ std::string MainWindow::convert_to_ip_address_str(uint32_t ip)
     return ipStream.str();
 }
 
-void MainWindow::on_discover_clicked()
-{
-    discover_cameras();
-    update_cam_grid();
-}
-
 void MainWindow::update_cam_grid()
 {
     // Clear camera grid except header
@@ -594,6 +582,13 @@ void MainWindow::on_connect_clicked(const std::string& sn)
     {
         std::cout << "Failed to connect to the camera: " << sn << std::endl;
         m_logger->log("Failed to connect to the camera: " + sn, Logger::ERROR);
+        return;
+    }
+
+    if (!configure_camera(sn))
+    {
+        std::cout << "Failed to configure the camera: " << sn << std::endl;
+        m_logger->log("Failed to configure the camera: " + sn, Logger::ERROR);
         return;
     }
 
@@ -921,8 +916,6 @@ void MainWindow::on_window_shown()
 
 bool MainWindow::on_window_delete(GdkEventAny* event)
 {
-    int nRet = 0;
-
     // Disconnect from the WebSocket server
     m_ws_client.disconnect();
 
@@ -947,10 +940,20 @@ bool MainWindow::connect_camera(const std::string& sn)
     {
         std::cout << "MV_CC_OpenDevice fail! Error code: " << nRet << std::endl;
         m_logger->log("Error on MV_CC_OpenDevice: " + std::to_string(nRet), Logger::ERROR);
-        return false;
+    }
+    else
+    {
+        m_logger->log("Connected to device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
+        m_connected_device_handles[sn] = device_handle;
     }
 
-    m_logger->log("Connected to device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
+    return nRet == MV_OK;
+}
+
+bool MainWindow::configure_camera(const std::string sn)
+{
+    int nRet = 0;
+    auto device_handle = create_or_get_device_handle_by_serial_number(sn);
 
     // Detect network optimal packet size(It only works for the GigE camera)
     int nPacketSize = MV_CC_GetOptimalPacketSize(device_handle);
@@ -961,14 +964,15 @@ bool MainWindow::connect_camera(const std::string& sn)
         {
             std::cout << "Set Packet Size fail. Error code: " << nRet << std::endl;
             m_logger->log("Error on MV_CC_SetIntValue(GevSCPSPacketSize): " + std::to_string(nRet), Logger::ERROR);
+            return false;
         }
     }
     else
     {
         std::cout << "Get Packet Size fail. Error code: " << nRet << std::endl;
         m_logger->log("Error on MV_CC_GetOptimalPacketSize: " + std::to_string(nRet), Logger::ERROR);
+        return false;
     }
-    m_logger->log("MV_CC_SetIntValue(GevSCPSPacketSize) for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
 
     // Enable trigger mode
     nRet = MV_CC_SetEnumValue(device_handle, "TriggerMode", 1);
@@ -976,6 +980,7 @@ bool MainWindow::connect_camera(const std::string& sn)
     {
         std::cout << "MV_CC_SetTriggerMode fail! Error code: " << nRet << std::endl;
         m_logger->log("Error on MV_CC_SetTriggerMode: " + std::to_string(nRet), Logger::ERROR);
+        return false;
     }
 
     // Set trigger source
@@ -984,11 +989,89 @@ bool MainWindow::connect_camera(const std::string& sn)
     {
         std::cout << "MV_CC_SetTriggerSource fail! Error code:" << nRet << std::endl;
         m_logger->log("Error on MV_CC_SetEnumValue(TriggerSource): " + std::to_string(nRet), Logger::ERROR);
+        return false;
     }
 
-    if (nRet == MV_OK)
+    // Load settings from .ini file
+    std::ifstream settings_file(Settings_File_Path);
+    std::string line;
+    bool is_current_device = false;
+
+    if (settings_file.is_open())
     {
-        m_connected_device_handles[sn] = device_handle;
+        while (std::getline(settings_file, line))
+        {
+            if (line == "[" + sn + "]")
+            {
+                is_current_device = true;
+            }
+            else if (line.find('[') != std::string::npos)
+            {
+                is_current_device = false; // New section means we passed the current device's settings
+            }
+
+            if (is_current_device)
+            {
+                std::istringstream line_stream(line);
+                std::string key;
+
+                if (std::getline(line_stream, key, '='))
+                {
+                    std::string value;
+                    if (key == "exposureTime" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetFloatValue(device_handle, "ExposureTime", std::stof(value));
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set exposure time. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetFloatValue(ExposureTime): " + std::to_string(nRet), Logger::ERROR);
+                            break;
+                        }
+                    }
+                    else if (key == "width" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetIntValue(device_handle, "Width", std::stoi(value));
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set width. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetIntValue(Width): " + std::to_string(nRet), Logger::ERROR);
+                            break;
+                        }
+                    }
+                    else if (key == "height" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetIntValue(device_handle, "Height", std::stoi(value));
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set height. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetIntValue(Height): " + std::to_string(nRet), Logger::ERROR);
+                            break;
+                        }
+                    }
+                    else if (key == "offsetX" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetIntValue(device_handle, "OffsetX", std::stoi(value));
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set offsetX. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetIntValue(OffsetX): " + std::to_string(nRet), Logger::ERROR);
+                            break;
+                        }
+                    }
+                    else if (key == "offsetY" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetIntValue(device_handle, "OffsetY", std::stoi(value));
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set offsetY. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetIntValue(OffsetY): " + std::to_string(nRet), Logger::ERROR);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        settings_file.close();
     }
 
     return nRet == MV_OK;
@@ -1010,6 +1093,7 @@ bool MainWindow::disconnect_camera(const std::string& sn)
     {
         std::cerr << "MV_CC_CloseDevice fail. Error code: " << nRet << std::endl;
         m_logger->log("Error on MV_CC_CloseDevice: " + std::to_string(nRet), Logger::ERROR);
+        return false;
     }
 
     // Destory the device handle
@@ -1018,14 +1102,11 @@ bool MainWindow::disconnect_camera(const std::string& sn)
     {
         std::cerr << "MV_CC_DestroyHandle fail. Error code: " << nRet << std::endl;
         m_logger->log("Error on MV_CC_DestroyHandle: " + std::to_string(nRet), Logger::ERROR);
+        return false;
     }
 
-    if (nRet == MV_OK)
-    {
-        m_connected_device_handles.erase(sn);
-    }
-
-    return nRet == MV_OK;
+    m_connected_device_handles.erase(sn);
+    return true;
 }
 
 void MainWindow::show_camera_connect_warning(Gtk::Window& parent, std::string message)
@@ -1118,6 +1199,7 @@ void MainWindow::on_start_clicked()
     }
 
     size_t num_connected = 0;
+    size_t num_configured = 0;
     size_t total_cams = serial_numbers.size();
     std::vector<std::string> connected_serial_numbers;
 
@@ -1137,6 +1219,35 @@ void MainWindow::on_start_clicked()
     }
 
     if (num_connected != total_cams)
+    {
+        for (const std::string sn : connected_serial_numbers)
+        {
+            if (!disconnect_camera(sn))
+            {
+                std::cerr << "Failed to disconnect camera: " << sn << std::endl;
+            }
+        }
+        m_is_running = false;
+        m_start_btn->set_sensitive(true);
+        m_start_btn->set_label("Start");
+        return;
+    }
+
+    for (const std::string sn : connected_serial_numbers)
+    {
+        if (!configure_camera(sn))
+        {
+            std::cout << "Failed to configure the camera: " << sn << std::endl;
+            m_logger->log("Failed to configure the camera: " + sn, Logger::ERROR);
+            break;
+        }
+        else
+        {
+            num_configured++;
+        }
+    }
+
+    if (num_configured != total_cams)
     {
         for (const std::string sn : connected_serial_numbers)
         {
@@ -1262,6 +1373,14 @@ void MainWindow::on_snap_clicked()
     {
         std::cout << "Failed to connect to the camera: " << sn << std::endl;
         m_logger->log("Failed to connect to the camera: " + sn, Logger::ERROR);
+        return;
+    }
+
+    if (!configure_camera(sn))
+    {
+        std::cout << "Failed to configure the camera: " << sn << std::endl;
+        m_logger->log("Failed to configure the camera: " + sn, Logger::ERROR);
+        return;
     }
 
     // Start grabbing images

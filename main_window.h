@@ -38,7 +38,6 @@ protected:
     Gtk::ComboBoxText *m_camera_test_combo_box;
     Gtk::DrawingArea *m_test_display_area;
     Gtk::Stack *m_content_stack;
-    Gtk::Button *m_discoverBtn;
     Gtk::Grid *m_cam_grid;
     Gtk::DrawingArea *m_settings_display_area;
     Gtk::Label *m_sn_lbl;
@@ -62,7 +61,6 @@ protected:
     void on_connect_clicked(const std::string& sn);
     void on_disconnect_clicked(const std::string& sn);
     void on_view_clicked(const std::string& sn);
-    void on_discover_clicked();
     bool on_test_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_settings_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_exposure_time_entry_focus_out(GdkEventFocus* event);
@@ -136,6 +134,7 @@ private:
     void discover_cameras();
     bool connect_camera(const std::string& sn);
     bool disconnect_camera(const std::string& sn);
+    bool configure_camera(const std::string sn);
     void update_cam_grid();
     void show_camera_connect_warning(Gtk::Window& parent, std::string message);
     void *create_or_get_device_handle_by_serial_number(std::string sn);
