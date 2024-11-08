@@ -16,12 +16,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     m_builder->get_widget("main_window", root);
     root->set_title("Eagle Eye");
 
-    m_builder->get_widget("verify_rbtn", m_verify_btn);
-    if (m_verify_btn)
-    {
-        m_verify_btn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_menu_toggled));
-    }
-
     m_builder->get_widget("run_rbtn", m_run_btn);
     if (m_run_btn)
     {
@@ -32,6 +26,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     if (m_explore_btn)
     {
         m_explore_btn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_menu_toggled));
+    }
+
+    m_builder->get_widget("toolkit_rbtn", m_toolkit_btn);
+    if (m_toolkit_btn)
+    {
+        m_toolkit_btn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_menu_toggled));
     }
 
     m_builder->get_widget("settings_rbtn", m_settings_btn);
@@ -144,6 +144,20 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     if (m_save_settings_btn)
     {
         m_save_settings_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_save_settings_clicked));
+    }
+
+    m_builder->get_widget("toolkit_stack", m_toolkit_stack);
+
+    m_builder->get_widget("toolkit_anomaly_detection_rbtn", m_toolkit_anomaly_detection_rbtn);
+    if (m_toolkit_anomaly_detection_rbtn)
+    {
+        m_toolkit_anomaly_detection_rbtn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_toolkit_toggled));
+    }
+
+    m_builder->get_widget("toolkit_digital_io_rbtn", m_toolkit_digital_io_rbtn);
+    if (m_toolkit_digital_io_rbtn)
+    {
+        m_toolkit_digital_io_rbtn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_toolkit_toggled));
     }
 }
 
@@ -562,14 +576,14 @@ void MainWindow::update_cam_grid()
                 row_index++;
             }
         }
-
-        m_cam_grid->show_all_children();
     }
     else
     {
         std::cout << "No device found." << std::endl;
         m_logger->log("No device found.");
     }
+
+    m_cam_grid->show_all_children();
 }
 
 MainWindow::~MainWindow()
@@ -1136,9 +1150,9 @@ void MainWindow::discover_cameras()
 
 void MainWindow::on_menu_toggled()
 {
-    if (m_verify_btn->get_active())
+    if (m_toolkit_btn->get_active())
     {
-        m_content_stack->set_visible_child("page_verify");
+        m_content_stack->set_visible_child("page_toolkit");
     }
     else if (m_run_btn->get_active())
     {
@@ -1151,6 +1165,18 @@ void MainWindow::on_menu_toggled()
     else if (m_settings_btn->get_active())
     {
         m_content_stack->set_visible_child("page_settings");
+    }
+}
+
+void MainWindow::on_toolkit_toggled()
+{
+    if (m_toolkit_anomaly_detection_rbtn->get_active())
+    {
+        m_toolkit_stack->set_visible_child("page_anomaly_detection");
+    }
+    else if (m_toolkit_digital_io_rbtn->get_active())
+    {
+        m_toolkit_stack->set_visible_child("page_digital_io");
     }
 }
 

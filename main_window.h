@@ -26,7 +26,7 @@ public:
     virtual ~MainWindow();
 
 protected:
-    Gtk::RadioButton *m_verify_btn;
+    Gtk::RadioButton *m_toolkit_btn;
     Gtk::RadioButton *m_run_btn;
     Gtk::RadioButton *m_explore_btn;
     Gtk::RadioButton *m_settings_btn;
@@ -51,6 +51,9 @@ protected:
     Glib::RefPtr<Gtk::Adjustment> m_offset_x_adj;
     Glib::RefPtr<Gtk::Adjustment> m_offset_y_adj;
     Gtk::Button *m_save_settings_btn;
+    Gtk::Stack *m_toolkit_stack;
+    Gtk::RadioButton *m_toolkit_anomaly_detection_rbtn;
+    Gtk::RadioButton *m_toolkit_digital_io_rbtn;
 
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
@@ -69,6 +72,7 @@ protected:
     void on_offset_x_value_changed();
     void on_offset_y_value_changed();
     void on_save_settings_clicked();
+    void on_toolkit_toggled();
 
     // Key events
     bool on_key_press_event(GdkEventKey *key_event) override;
