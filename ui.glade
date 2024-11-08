@@ -8,6 +8,26 @@
     <property name="step-increment">1</property>
     <property name="page-increment">10</property>
   </object>
+  <object class="GtkAdjustment" id="height_adjustment">
+    <property name="upper">100</property>
+    <property name="step-increment">1</property>
+    <property name="page-increment">10</property>
+  </object>
+  <object class="GtkAdjustment" id="offset_x_adjustment">
+    <property name="upper">100</property>
+    <property name="step-increment">1</property>
+    <property name="page-increment">10</property>
+  </object>
+  <object class="GtkAdjustment" id="offset_y_adjustment">
+    <property name="upper">100</property>
+    <property name="step-increment">1</property>
+    <property name="page-increment">10</property>
+  </object>
+  <object class="GtkAdjustment" id="width_adjustment">
+    <property name="upper">100</property>
+    <property name="step-increment">1</property>
+    <property name="page-increment">10</property>
+  </object>
   <object class="GtkWindow" id="main_window">
     <property name="can-focus">False</property>
     <child>
@@ -594,11 +614,10 @@
                       </packing>
                     </child>
                     <child>
-                      <object class="GtkLabel">
+                      <object class="GtkLabel" id="sn_lbl">
                         <property name="visible">True</property>
                         <property name="can-focus">False</property>
                         <property name="halign">start</property>
-                        <property name="label" translatable="yes">label</property>
                       </object>
                       <packing>
                         <property name="left-attach">1</property>
@@ -617,7 +636,7 @@
                       </packing>
                     </child>
                     <child>
-                      <object class="GtkEntry" id="exposure_entry">
+                      <object class="GtkEntry" id="exposure_time_entry">
                         <property name="visible">True</property>
                         <property name="can-focus">True</property>
                         <property name="input-purpose">number</property>
@@ -639,17 +658,6 @@
                       </packing>
                     </child>
                     <child>
-                      <object class="GtkEntry" id="width_entry">
-                        <property name="visible">True</property>
-                        <property name="can-focus">True</property>
-                        <property name="input-purpose">number</property>
-                      </object>
-                      <packing>
-                        <property name="left-attach">1</property>
-                        <property name="top-attach">2</property>
-                      </packing>
-                    </child>
-                    <child>
                       <object class="GtkLabel">
                         <property name="visible">True</property>
                         <property name="can-focus">False</property>
@@ -657,17 +665,6 @@
                       </object>
                       <packing>
                         <property name="left-attach">0</property>
-                        <property name="top-attach">3</property>
-                      </packing>
-                    </child>
-                    <child>
-                      <object class="GtkEntry" id="height_entry">
-                        <property name="visible">True</property>
-                        <property name="can-focus">True</property>
-                        <property name="input-purpose">number</property>
-                      </object>
-                      <packing>
-                        <property name="left-attach">1</property>
                         <property name="top-attach">3</property>
                       </packing>
                     </child>
@@ -683,17 +680,6 @@
                       </packing>
                     </child>
                     <child>
-                      <object class="GtkEntry" id="offset_x_entry">
-                        <property name="visible">True</property>
-                        <property name="can-focus">True</property>
-                        <property name="input-purpose">number</property>
-                      </object>
-                      <packing>
-                        <property name="left-attach">1</property>
-                        <property name="top-attach">4</property>
-                      </packing>
-                    </child>
-                    <child>
                       <object class="GtkLabel">
                         <property name="visible">True</property>
                         <property name="can-focus">False</property>
@@ -705,46 +691,13 @@
                       </packing>
                     </child>
                     <child>
-                      <object class="GtkEntry" id="offset_y_entry">
-                        <property name="visible">True</property>
-                        <property name="can-focus">True</property>
-                        <property name="input-purpose">number</property>
-                      </object>
-                      <packing>
-                        <property name="left-attach">1</property>
-                        <property name="top-attach">5</property>
-                      </packing>
-                    </child>
-                    <child>
-                      <object class="GtkLabel">
-                        <property name="visible">True</property>
-                        <property name="can-focus">False</property>
-                        <property name="label" translatable="yes">Gain (dB):</property>
-                      </object>
-                      <packing>
-                        <property name="left-attach">0</property>
-                        <property name="top-attach">6</property>
-                      </packing>
-                    </child>
-                    <child>
-                      <object class="GtkEntry" id="gain_entry">
-                        <property name="visible">True</property>
-                        <property name="can-focus">True</property>
-                        <property name="input-purpose">number</property>
-                      </object>
-                      <packing>
-                        <property name="left-attach">1</property>
-                        <property name="top-attach">6</property>
-                      </packing>
-                    </child>
-                    <child>
                       <object class="GtkBox">
                         <property name="visible">True</property>
                         <property name="can-focus">False</property>
                         <property name="spacing">10</property>
                         <property name="homogeneous">True</property>
                         <child>
-                          <object class="GtkButton">
+                          <object class="GtkButton" id="save_settings_btn">
                             <property name="label" translatable="yes">Save</property>
                             <property name="visible">True</property>
                             <property name="can-focus">True</property>
@@ -757,17 +710,7 @@
                           </packing>
                         </child>
                         <child>
-                          <object class="GtkButton">
-                            <property name="label" translatable="yes">Recall</property>
-                            <property name="visible">True</property>
-                            <property name="can-focus">True</property>
-                            <property name="receives-default">True</property>
-                          </object>
-                          <packing>
-                            <property name="expand">False</property>
-                            <property name="fill">True</property>
-                            <property name="position">1</property>
-                          </packing>
+                          <placeholder/>
                         </child>
                       </object>
                       <packing>
@@ -775,6 +718,64 @@
                         <property name="top-attach">7</property>
                         <property name="width">2</property>
                       </packing>
+                    </child>
+                    <child>
+                      <object class="GtkSpinButton" id="width_sb">
+                        <property name="visible">True</property>
+                        <property name="can-focus">True</property>
+                        <property name="adjustment">width_adjustment</property>
+                        <property name="snap-to-ticks">True</property>
+                        <property name="numeric">True</property>
+                      </object>
+                      <packing>
+                        <property name="left-attach">1</property>
+                        <property name="top-attach">2</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkSpinButton" id="height_sb">
+                        <property name="visible">True</property>
+                        <property name="can-focus">True</property>
+                        <property name="adjustment">height_adjustment</property>
+                        <property name="snap-to-ticks">True</property>
+                        <property name="numeric">True</property>
+                      </object>
+                      <packing>
+                        <property name="left-attach">1</property>
+                        <property name="top-attach">3</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkSpinButton" id="offset_x_sb">
+                        <property name="visible">True</property>
+                        <property name="can-focus">True</property>
+                        <property name="adjustment">offset_x_adjustment</property>
+                        <property name="snap-to-ticks">True</property>
+                        <property name="numeric">True</property>
+                      </object>
+                      <packing>
+                        <property name="left-attach">1</property>
+                        <property name="top-attach">4</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkSpinButton" id="offset_y_sb">
+                        <property name="visible">True</property>
+                        <property name="can-focus">True</property>
+                        <property name="adjustment">offset_y_adjustment</property>
+                        <property name="snap-to-ticks">True</property>
+                        <property name="numeric">True</property>
+                      </object>
+                      <packing>
+                        <property name="left-attach">1</property>
+                        <property name="top-attach">5</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <placeholder/>
+                    </child>
+                    <child>
+                      <placeholder/>
                     </child>
                   </object>
                   <packing>

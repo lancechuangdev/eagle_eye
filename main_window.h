@@ -41,6 +41,17 @@ protected:
     Gtk::Button *m_discoverBtn;
     Gtk::Grid *m_cam_grid;
     Gtk::DrawingArea *m_settings_display_area;
+    Gtk::Label *m_sn_lbl;
+    Gtk::Entry *m_exposure_time_entry;
+    Gtk::SpinButton *m_width_sb;
+    Gtk::SpinButton *m_height_sb;
+    Gtk::SpinButton *m_offset_x_sb;
+    Gtk::SpinButton *m_offset_y_sb;
+    Glib::RefPtr<Gtk::Adjustment> m_width_adj;
+    Glib::RefPtr<Gtk::Adjustment> m_height_adj;
+    Glib::RefPtr<Gtk::Adjustment> m_offset_x_adj;
+    Glib::RefPtr<Gtk::Adjustment> m_offset_y_adj;
+    Gtk::Button *m_save_settings_btn;
 
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
@@ -50,9 +61,16 @@ protected:
     void on_snap_clicked();
     void on_connect_clicked(const std::string& sn);
     void on_disconnect_clicked(const std::string& sn);
+    void on_view_clicked(const std::string& sn);
     void on_discover_clicked();
     bool on_test_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_settings_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
+    bool on_exposure_time_entry_focus_out(GdkEventFocus* event);
+    void on_width_value_changed();
+    void on_height_value_changed();
+    void on_offset_x_value_changed();
+    void on_offset_y_value_changed();
+    void on_save_settings_clicked();
 
     // Key events
     bool on_key_press_event(GdkEventKey *key_event) override;
@@ -79,8 +97,7 @@ private:
 
     Glib::RefPtr<Gtk::Builder> m_builder;
     MV_CC_DEVICE_INFO_LIST m_cam_list;
-    //std::vector<void*> m_running_device_handles;
-    std::unordered_map<std::string, void*> m_running_device_handles;
+    std::unordered_map<std::string, void*> m_connected_device_handles;
     std::atomic<bool> m_is_running;
     FrameQueue m_frame_queue;
     std::unordered_map<std::string, std::thread> m_capturing_threads;
@@ -112,13 +129,15 @@ private:
     double m_offset_y_settings = 0.0;    // Vertical pan offset on settings page
     double m_zoom_factor_settings = 1.0; // Zoom factor (1.0 = no zoom) on settings page
 
+    static const std::string Settings_File_Path;
+
     std::shared_ptr<Logger> m_logger;
 
     void discover_cameras();
-    bool connect_camera(void *device_handle);
-    bool disconnect_camera(void *device_handle);
+    bool connect_camera(const std::string& sn);
+    bool disconnect_camera(const std::string& sn);
     void update_cam_grid();
-    void show_camera_connect_warning(Gtk::Window& parent);
+    void show_camera_connect_warning(Gtk::Window& parent, std::string message);
     void *create_or_get_device_handle_by_serial_number(std::string sn);
     void start_capture(void *device_handle, double capture_interval_ms);
     void start_detection();
@@ -132,6 +151,9 @@ private:
     void display_test_masks(std::string trans_id);
     std::string convert_to_ip_address_str(uint32_t ip);
     void set_button_icon(Gtk::Button* button, const Glib::ustring& resource_path);
+    void populate_camera_settings(void *device_handle);
+    void clear_camera_settings();
+    void snap_and_display(void *device_handle);
 };
 
 #endif
