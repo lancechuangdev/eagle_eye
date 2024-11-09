@@ -8,6 +8,18 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
       m_frame_queue(2),
       m_logger(logger)
 {
+    // Create a CssProvider
+    auto css_file = FileUtils::getCssFilePath();
+    auto provider = Gtk::CssProvider::create();
+    provider->load_from_path(css_file);
+
+    // Apply the CSS provider to the default screen
+    Gtk::StyleContext::add_provider_for_screen(
+        Gdk::Screen::get_default(),
+        provider,
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION
+    );
+
     signal_show().connect(sigc::mem_fun(*this, &MainWindow::on_window_shown));
     signal_delete_event().connect(sigc::mem_fun(*this, &MainWindow::on_window_delete));
 

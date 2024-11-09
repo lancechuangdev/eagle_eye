@@ -322,10 +322,11 @@ Coming Soon...</property>
                 <property name="vexpand">True</property>
                 <property name="column-spacing">10</property>
                 <child>
-                  <object class="GtkBox">
+                  <object class="GtkButtonBox">
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
                     <property name="halign">center</property>
+                    <property name="layout-style">expand</property>
                     <child>
                       <object class="GtkRadioButton" id="toolkit_anomaly_detection_rbtn">
                         <property name="label" translatable="yes">Anomaly Detection</property>
@@ -392,7 +393,7 @@ Coming Soon...</property>
                                     <property name="visible">True</property>
                                     <property name="can-focus">False</property>
                                     <property name="orientation">vertical</property>
-                                    <property name="spacing">5</property>
+                                    <property name="spacing">10</property>
                                     <child>
                                       <object class="GtkLabel">
                                         <property name="visible">True</property>
@@ -400,6 +401,9 @@ Coming Soon...</property>
                                         <property name="halign">start</property>
                                         <property name="margin-bottom">5</property>
                                         <property name="label" translatable="yes">Service Status</property>
+                                        <style>
+                                          <class name="section_title_label"/>
+                                        </style>
                                       </object>
                                       <packing>
                                         <property name="expand">False</property>
@@ -493,7 +497,7 @@ Coming Soon...</property>
                                     <property name="visible">True</property>
                                     <property name="can-focus">False</property>
                                     <property name="orientation">vertical</property>
-                                    <property name="spacing">5</property>
+                                    <property name="spacing">10</property>
                                     <child>
                                       <object class="GtkLabel">
                                         <property name="visible">True</property>
@@ -501,6 +505,9 @@ Coming Soon...</property>
                                         <property name="halign">start</property>
                                         <property name="margin-bottom">5</property>
                                         <property name="label" translatable="yes">Service Controls</property>
+                                        <style>
+                                          <class name="section_title_label"/>
+                                        </style>
                                       </object>
                                       <packing>
                                         <property name="expand">False</property>
@@ -560,7 +567,7 @@ Coming Soon...</property>
                                     <property name="hexpand">True</property>
                                     <property name="vexpand">True</property>
                                     <property name="orientation">vertical</property>
-                                    <property name="spacing">5</property>
+                                    <property name="spacing">10</property>
                                     <child>
                                       <object class="GtkLabel">
                                         <property name="visible">True</property>
@@ -568,6 +575,9 @@ Coming Soon...</property>
                                         <property name="halign">start</property>
                                         <property name="margin-bottom">5</property>
                                         <property name="label" translatable="yes">Test Anomaly Detection</property>
+                                        <style>
+                                          <class name="section_title_label"/>
+                                        </style>
                                       </object>
                                       <packing>
                                         <property name="expand">False</property>

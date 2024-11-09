@@ -44,6 +44,6 @@ executable('ee',
 
 # Install data files
 install_data(
-    ['ui.glade', 'ds.keras', 'ee_anomaly_detection_service.py'],
+    ['ui.glade', 'style.css', 'ds.keras', 'ee_anomaly_detection_service.py'],
     install_dir: join_paths(get_option('prefix'), 'share', 'eagle_eye')
 )

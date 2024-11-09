@@ -15,6 +15,7 @@ public:
     static bool createSubdirectory(const std::string& parent, const std::string& sub);
     static bool createFile(const std::string& path);
     static std::string getGladeFilePath();
+    static std::string getCssFilePath();
     static bool directoryExists(const std::string &parent, const std::string &sub);
 };
 
