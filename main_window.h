@@ -30,12 +30,13 @@ protected:
     Gtk::RadioButton *m_run_btn;
     Gtk::RadioButton *m_explore_btn;
     Gtk::RadioButton *m_settings_btn;
-    Gtk::ComboBoxText *m_camera_combo_box;
+    Gtk::ComboBoxText *m_detection_source_cbox;
+    Gtk::ComboBoxText *m_digital_output_source_cbox;
     Gtk::SpinButton *m_capture_rate_sb;
     Gtk::Button *m_start_btn;
     Gtk::Button *m_stop_btn;
     Gtk::Button *m_snap_btn;
-    Gtk::ComboBoxText *m_camera_test_combo_box;
+    Gtk::ComboBoxText *m_snap_source_cbox;
     Gtk::DrawingArea *m_test_display_area;
     Gtk::Stack *m_content_stack;
     Gtk::Grid *m_cam_grid;
@@ -89,7 +90,7 @@ protected:
     void on_digital_io_line_source_changed();
     bool on_strobe_enable_state_set(bool state);
     void on_strobe_duration_value_changed();
-    
+
 
 
     void on_save_settings_clicked();
@@ -166,7 +167,7 @@ private:
     void show_camera_connect_warning(Gtk::Window& parent, std::string message);
     void *create_or_get_device_handle_by_serial_number(std::string sn);
     void start_capture(void *device_handle, double capture_interval_ms);
-    void start_detection();
+    void start_detection(const std::string digital_output_source);
     void stop_capture(void *device_handle);
     void stop_detection();
     void send_ws_message(std::string message);

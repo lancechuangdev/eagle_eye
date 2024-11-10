@@ -54,7 +54,9 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("content_stack", m_content_stack);
 
-    m_builder->get_widget("run_capture_source_cbox", m_camera_combo_box);
+    m_builder->get_widget("detection_source_cbox", m_detection_source_cbox);
+
+    m_builder->get_widget("digital_output_source_cbox", m_digital_output_source_cbox);
 
     m_builder->get_widget("capture_rate_sb", m_capture_rate_sb);
 
@@ -70,7 +72,7 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_stop_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_stop_clicked));
     }
 
-    m_builder->get_widget("test_capture_source_cbox", m_camera_test_combo_box);
+    m_builder->get_widget("snap_source_cbox", m_snap_source_cbox);
 
     m_builder->get_widget("snap_btn", m_snap_btn);
     if (m_snap_btn)
@@ -1416,12 +1418,13 @@ void MainWindow::on_window_shown()
             {
                 // Add the camera name to the combo box
                 auto serialNumber = pDeviceInfo->SpecialInfo.stGigEInfo.chSerialNumber;
-                m_camera_combo_box->append(std::string((char *)serialNumber));
-                m_camera_test_combo_box->append(std::string((char *)serialNumber));
+                m_detection_source_cbox->append(std::string((char *)serialNumber));
+                m_digital_output_source_cbox->append(std::string((char *)serialNumber));
+                m_snap_source_cbox->append(std::string((char *)serialNumber));
                 m_toolkit_capture_source_cbox->append(std::string((char *)serialNumber));
             }
         }
-        m_camera_combo_box->append("All Cameras");
+        m_detection_source_cbox->append("All Cameras");
     }
     else
     {
@@ -1775,12 +1778,12 @@ void MainWindow::on_start_clicked()
 
     std::vector<std::string> serial_numbers;
     
-    if (m_camera_combo_box)
+    if (m_detection_source_cbox)
     {
-        auto selected_capture_source = m_camera_combo_box->get_active_text();
-        if (selected_capture_source == "All Cameras")
+        auto selected_detection_source = m_detection_source_cbox->get_active_text();
+        if (selected_detection_source == "All Cameras")
         {
-            auto model = m_camera_combo_box->get_model();
+            auto model = m_detection_source_cbox->get_model();
             if (model)
             {
                 for (auto& row : model->children())
@@ -1799,7 +1802,7 @@ void MainWindow::on_start_clicked()
         }
         else
         {
-            serial_numbers.push_back(selected_capture_source);
+            serial_numbers.push_back(selected_detection_source);
         }
     }
 
@@ -1932,7 +1935,12 @@ void MainWindow::on_start_clicked()
         start_capture(handle, capture_interval_ms);
     }
 
-    start_detection();
+    std::string digital_output_source_sn;
+    if (m_digital_output_source_cbox)
+    {
+        digital_output_source_sn = m_digital_output_source_cbox->get_active_text();
+    }
+    start_detection(digital_output_source_sn);
 
     m_start_btn->set_label("Start");
 }
@@ -1973,7 +1981,7 @@ void MainWindow::on_stop_clicked()
 
 void MainWindow::on_snap_clicked()
 {    
-    auto sn = m_camera_test_combo_box->get_active_text();
+    auto sn = m_snap_source_cbox->get_active_text();
     if (!connect_camera(sn))
     {
         std::cout << "Failed to connect to the camera: " << sn << std::endl;
@@ -2462,7 +2470,7 @@ void MainWindow::stop_capture(void *device_handle)
     m_capturing_threads.erase(camera_handle);
 }
 
-void MainWindow::start_detection()
+void MainWindow::start_detection(const std::string digital_output_source)
 {
     // Ensure there's no existing processing thread running
     if (m_processing_thread.joinable()) 
@@ -2471,7 +2479,7 @@ void MainWindow::start_detection()
     }
 
     // Start the frame processing thread
-    m_processing_thread = std::thread([this]()
+    m_processing_thread = std::thread([this, digital_output_source]()
     {
         FrameData frame_data(nullptr, nullptr); // Initialize FrameData with null pointers
 
@@ -2548,9 +2556,12 @@ void MainWindow::start_detection()
                 continue;
             }
 
+            // Generate a transaction ID
+            auto trans_id = generate_transaction_id();
+
             // Send the command to the ws server
             nlohmann::json json_data;
-            json_data["transaction_id"] = generate_transaction_id();
+            json_data["transaction_id"] = trans_id;
             for (const auto& info : frame_offsets)
             {
                 json_data["frames"].push_back({
@@ -2563,6 +2574,38 @@ void MainWindow::start_detection()
             std::string frame_info_string = json_data.dump(); // Convert JSON to string
             send_ws_message(frame_info_string);
             
+            // Parse the JSON response
+            nlohmann::json response_json = nlohmann::json::parse(m_ws_response);
+
+            // Extract values from the JSON object
+            std::string res_trans_id = response_json["transaction_id"];
+            std::string status = response_json["status"];
+            int total_anomalies = response_json["total_anomalies"];
+            if (res_trans_id == trans_id && status == "complete" && total_anomalies > 0)
+            {
+                if (m_connected_device_handles.find(digital_output_source) != m_connected_device_handles.end())
+                {
+                    void *device_handle = m_connected_device_handles[digital_output_source];
+                    // Trigger digital output
+                    int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
+                    if (nRet != MV_OK)
+                    {
+                        std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
+                        m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
+                    }
+                    else
+                    {
+                        std::cout << "Trigger digital output via software succeeded" << std::endl;
+                        m_logger->log("Trigger digital output via software succeeded");
+                    }
+                }
+                else
+                {
+                    std::cerr << "Digital output source not found: " << digital_output_source << std::endl;
+                    m_logger->log("Digital output source not found: " + digital_output_source, Logger::ERROR);
+                }
+            }
+
             // std::cout << "Exiting processing loop" << std::endl;
         }
 

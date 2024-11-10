@@ -251,7 +251,8 @@ def message_received(client, server, message):
 
     result_json = {
         "transaction_id": transaction_id,
-        "status": "complete"
+        "status": "complete",
+        "total_anomalies": total_anomalies
     }
     result = json.dumps(result_json)
     server.send_message(client, result)
