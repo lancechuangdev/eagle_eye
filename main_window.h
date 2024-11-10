@@ -46,6 +46,11 @@ protected:
     Gtk::SpinButton *m_height_sb;
     Gtk::SpinButton *m_offset_x_sb;
     Gtk::SpinButton *m_offset_y_sb;
+    Gtk::ComboBoxText *m_settings_digital_io_line_number_cbox;
+    Gtk::ComboBoxText *m_settings_digital_io_line_mode_cbox;
+    Gtk::ComboBoxText *m_settings_digital_io_line_source_cbox;
+    Gtk::Switch *m_settings_strobe_enable_switch;
+    Gtk::SpinButton *m_settings_strobe_duration_sb;
     Glib::RefPtr<Gtk::Adjustment> m_width_adj;
     Glib::RefPtr<Gtk::Adjustment> m_height_adj;
     Glib::RefPtr<Gtk::Adjustment> m_offset_x_adj;
@@ -54,7 +59,15 @@ protected:
     Gtk::Stack *m_toolkit_stack;
     Gtk::RadioButton *m_toolkit_anomaly_detection_rbtn;
     Gtk::RadioButton *m_toolkit_digital_io_rbtn;
-
+    Gtk::Button *m_check_service_status_btn;
+    Gtk::Label *m_service_status_lbl;
+    Gtk::ComboBoxText *m_toolkit_capture_source_cbox;
+    Gtk::ComboBoxText *m_toolkit_digital_io_line_number_cbox;
+    Gtk::Switch *m_toolkit_strobe_enable_switch;
+    Glib::RefPtr<Gtk::Adjustment> m_strobe_duration_adj;
+    Gtk::SpinButton *m_toolkit_strobe_duration_sb;
+    Gtk::Button *m_toolkit_test_digital_out_btn;
+    
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
     void on_menu_toggled();
@@ -71,8 +84,18 @@ protected:
     void on_height_value_changed();
     void on_offset_x_value_changed();
     void on_offset_y_value_changed();
+    void on_digital_io_line_number_changed();
+    void on_digital_io_line_mode_changed();
+    void on_digital_io_line_source_changed();
+    bool on_strobe_enable_state_set(bool state);
+    void on_strobe_duration_value_changed();
+    
+
+
     void on_save_settings_clicked();
     void on_toolkit_toggled();
+    void on_check_service_status_clicked();
+    void on_test_digital_out_clicked();
 
     // Key events
     bool on_key_press_event(GdkEventKey *key_event) override;
@@ -157,6 +180,7 @@ private:
     void populate_camera_settings(void *device_handle);
     void clear_camera_settings();
     void snap_and_display(void *device_handle);
+    std::string run_command(const std::string& command);
 };
 
 #endif

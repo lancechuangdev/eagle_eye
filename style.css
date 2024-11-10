@@ -1,3 +1,13 @@
 .section_title_label {
-    font-weight: bold;        /* Make the label bold */
+    font-weight: bold;
+}
+
+.green-text {
+    color: green;
+    font-weight: bold;
+}
+
+.red-text {
+    color: red;
+    font-weight: bold;
 }

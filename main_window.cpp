@@ -152,6 +152,36 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_offset_y_sb->signal_value_changed().connect(sigc::mem_fun(*this, &MainWindow::on_offset_y_value_changed));
     }
 
+    m_builder->get_widget("settings_digital_io_line_number_cbox", m_settings_digital_io_line_number_cbox);
+    if (m_settings_digital_io_line_number_cbox)
+    {
+        m_settings_digital_io_line_number_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_digital_io_line_number_changed));
+    }
+
+    m_builder->get_widget("settings_digital_io_line_mode_cbox", m_settings_digital_io_line_mode_cbox);
+    if (m_settings_digital_io_line_mode_cbox)
+    {
+        m_settings_digital_io_line_mode_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_digital_io_line_mode_changed));
+    }
+
+    m_builder->get_widget("settings_digital_io_line_source_cbox", m_settings_digital_io_line_source_cbox);
+    if (m_settings_digital_io_line_source_cbox)
+    {
+        m_settings_digital_io_line_source_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_digital_io_line_source_changed));
+    }
+
+    m_builder->get_widget("settings_strobe_enable_switch", m_settings_strobe_enable_switch);
+    if (m_settings_strobe_enable_switch)
+    {
+        m_settings_strobe_enable_switch->signal_state_set().connect(sigc::mem_fun(*this, &MainWindow::on_strobe_enable_state_set));
+    }
+
+    m_builder->get_widget("settings_strobe_duration_sb", m_settings_strobe_duration_sb);
+    if (m_settings_strobe_duration_sb)
+    {
+        m_settings_strobe_duration_sb->signal_value_changed().connect(sigc::mem_fun(*this, &MainWindow::on_strobe_duration_value_changed));
+    }
+    
     m_builder->get_widget("save_settings_btn", m_save_settings_btn);
     if (m_save_settings_btn)
     {
@@ -170,6 +200,327 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     if (m_toolkit_digital_io_rbtn)
     {
         m_toolkit_digital_io_rbtn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_toolkit_toggled));
+    }
+
+    m_builder->get_widget("check_service_status_btn", m_check_service_status_btn);
+    if (m_check_service_status_btn)
+    {
+        m_check_service_status_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_check_service_status_clicked));
+    }
+
+    m_builder->get_widget("service_status_lbl", m_service_status_lbl);
+
+    m_builder->get_widget("toolkit_capture_source_cbox", m_toolkit_capture_source_cbox);
+
+    m_builder->get_widget("toolkit_digital_io_line_number_cbox", m_toolkit_digital_io_line_number_cbox);
+
+    m_builder->get_widget("toolkit_strobe_enable_switch", m_toolkit_strobe_enable_switch);
+
+    m_strobe_duration_adj = Glib::RefPtr<Gtk::Adjustment>::cast_dynamic(m_builder->get_object("strobe_duration_adjustment"));
+
+    m_builder->get_widget("toolkit_strobe_duration_sb", m_toolkit_strobe_duration_sb);
+
+    m_builder->get_widget("toolkit_test_digital_out_btn", m_toolkit_test_digital_out_btn);
+    if (m_toolkit_test_digital_out_btn)
+    {
+        m_toolkit_test_digital_out_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_test_digital_out_clicked));
+    }
+}
+
+void MainWindow::on_digital_io_line_number_changed()
+{
+    auto sn = m_sn_lbl->get_text();
+    if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
+    {
+        void *device_handle = m_connected_device_handles[sn];
+        std::string selected_line_number = m_settings_digital_io_line_number_cbox->get_active_text();
+
+        if (selected_line_number != "")
+        {
+            int nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", selected_line_number.c_str());
+            if (nRet == MV_OK)
+            {
+                // Wait a bit or Network error occurs - MV_E_NETER (0x80000206)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+                // Update LineMode
+                m_settings_digital_io_line_mode_cbox->remove_all();
+
+                MVCC_ENUMVALUE line_mode = {0};
+                nRet = MV_CC_GetEnumValue(device_handle, "LineMode", &line_mode);
+                if (nRet == MV_OK)
+                {
+                    std::string active_text = "";
+                    for (unsigned int i = 0; i < line_mode.nSupportedNum; ++i)
+                    {
+                        MVCC_ENUMENTRY line_entry = {0};
+                        line_entry.nValue = line_mode.nSupportValue[i];
+                        nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineMode", &line_entry);
+                        if (nRet == MV_OK)
+                        {
+                            m_settings_digital_io_line_mode_cbox->append(line_entry.chSymbolic);
+                            if (line_entry.nValue == line_mode.nCurValue)
+                            {
+                                active_text = line_entry.chSymbolic;
+                            }
+                        }
+                        else
+                        {
+                            std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
+                        }
+                    }
+                }
+                else
+                {
+                    std::cerr << "Failed to get line_mode. Error code: " << nRet << std::endl;
+                }
+            }
+            else
+            {
+                std::cerr << "Failed to set line_number. Error code: " << nRet << std::endl;
+            }
+        }
+    }
+}
+
+void MainWindow::on_digital_io_line_mode_changed()
+{
+    auto sn = m_sn_lbl->get_text();
+    if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
+    {
+        void *device_handle = m_connected_device_handles[sn];
+        std::string selected_line_mode = m_settings_digital_io_line_mode_cbox->get_active_text();
+
+        if (selected_line_mode != "")
+        {
+            int nRet = MV_CC_SetEnumValueByString(device_handle, "LineMode", selected_line_mode.c_str());
+            if (nRet == MV_OK)
+            {
+                // Wait a bit or Network error occurs - MV_E_NETER (0x80000206)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+                // Update Line Source
+                m_settings_digital_io_line_source_cbox->remove_all();
+
+                MVCC_ENUMVALUE line_source = {0};
+                nRet = MV_CC_GetEnumValue(device_handle, "LineSource", &line_source);
+                if (nRet == MV_OK)
+                {
+                    std::string active_text = "";
+                    for (unsigned int i = 0; i < line_source.nSupportedNum; ++i)
+                    {
+                        MVCC_ENUMENTRY line_entry = {0};
+                        line_entry.nValue = line_source.nSupportValue[i];
+                        nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineSource", &line_entry);
+                        if (nRet == MV_OK)
+                        {
+                            m_settings_digital_io_line_source_cbox->append(line_entry.chSymbolic);
+                            if (line_entry.nValue == line_source.nCurValue)
+                            {
+                                active_text = line_entry.chSymbolic;
+                            }
+                        }
+                        else
+                        {
+                            std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
+                        }
+                    }
+                }
+                else
+                {
+                    std::cerr << "Failed to get line_source. Error code: " << nRet << std::endl;
+                }
+            }
+            else
+            {
+                std::cerr << "Failed to set line_mode to " << selected_line_mode << " Error code: " << nRet << std::endl;
+            }
+        }
+    }
+}
+
+void MainWindow::on_digital_io_line_source_changed()
+{
+    auto sn = m_sn_lbl->get_text();
+    if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
+    {
+        void *device_handle = m_connected_device_handles[sn];
+        std::string selected_line_source = m_settings_digital_io_line_source_cbox->get_active_text();
+
+        if (selected_line_source != "")
+        {
+            int nRet = MV_CC_SetEnumValueByString(device_handle, "LineSource", selected_line_source.c_str());
+            if (nRet != MV_OK)
+            {
+                std::cerr << "Error to set LineSource to SoftTriggerActive. Error code: " << nRet << std::endl;
+                m_logger->log("Error on MV_CC_SetEnumValue(LineSource) to SoftTriggerActive: " + std::to_string(nRet), Logger::ERROR);
+            }
+        }
+    }
+}
+
+bool MainWindow::on_strobe_enable_state_set(bool state)
+{
+    auto sn = m_sn_lbl->get_text();
+    if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
+    {
+        void *device_handle = m_connected_device_handles[sn];
+        int nRet = MV_CC_SetBoolValue(device_handle, "StrobeEnable", state);
+        if (nRet != MV_OK)
+        {
+            std::cerr << "Error to set StrobeEnable to " << state << " Error code: " << nRet << std::endl;
+            m_logger->log("Error on MV_CC_SetBoolValue(StrobeEnable). Error code: " + std::to_string(nRet), Logger::ERROR);
+        }
+    }
+
+    return false; // Returning false allows the default handler to run
+}
+
+void MainWindow::on_strobe_duration_value_changed()
+{
+    auto sn = m_sn_lbl->get_text();
+    if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
+    {
+        void *device_handle = m_connected_device_handles[sn];
+        double strobe_duration = m_settings_strobe_duration_sb->get_value();
+        int nRet = MV_CC_SetIntValue(device_handle, "StrobeLineDuration", static_cast<int>(strobe_duration));
+        if (nRet != MV_OK)
+        {
+            std::cerr << "Error to set StrobeLineDuration to " << static_cast<int>(strobe_duration) << " Error code: " << nRet << std::endl;
+            m_logger->log("Error on MV_CC_SetIntValue(StrobeLineDuration). Error code: " + std::to_string(nRet), Logger::ERROR);
+        }
+    }
+}
+
+void MainWindow::on_test_digital_out_clicked()
+{
+    auto sn = m_toolkit_capture_source_cbox->get_active_text();
+    auto line_number = m_toolkit_digital_io_line_number_cbox->get_active_text();
+    bool strobe_enable = m_toolkit_strobe_enable_switch->get_active();
+    double strobe_duration = m_toolkit_strobe_duration_sb->get_value();
+
+    if (!connect_camera(sn))
+    {
+        std::cout << "Failed to connect to the camera: " << sn << std::endl;
+        m_logger->log("Failed to connect to the camera: " + sn, Logger::ERROR);
+        return;
+    }
+
+    auto device_handle = create_or_get_device_handle_by_serial_number(sn);
+
+    int nRet = MV_CC_SetEnumValue(device_handle, "LineSelector", std::stoi(line_number));
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error to set LineSelector. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetEnumValue(LineSelector): " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+    nRet = MV_CC_SetEnumValue(device_handle, "LineMode", 8); // 8:Strobe
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error to set LineMode to Strobe. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetEnumValue(LineMode) to Strobe: " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+    nRet = MV_CC_SetEnumValue(device_handle, "LineSource", 5); // 5:SoftTriggerActive
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error to set LineSource to SoftTriggerActive. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetEnumValue(LineSource) to SoftTriggerActive: " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+    nRet = MV_CC_SetBoolValue(device_handle, "StrobeEnable", strobe_enable);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error to set StrobeEnable to " << strobe_enable << " Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetBoolValue(StrobeEnable). Error code: " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+    nRet = MV_CC_SetIntValue(device_handle, "StrobeLineDuration", static_cast<int>(strobe_duration));
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error to set StrobeLineDuration to " << static_cast<int>(strobe_duration) << " Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetIntValue(StrobeLineDuration). Error code: " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+    nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
+    }
+    else
+    {
+        std::cout << "Trigger digital output via software succeeded" << std::endl;
+    }
+
+    if (!disconnect_camera(sn))
+    {
+        std::cout << "Failed to disconnect from the camera: " << sn << std::endl;
+        m_logger->log("Failed to disconnect from the camera: " + sn, Logger::ERROR);
+    }
+}
+
+std::string MainWindow::run_command(const std::string& command)
+{
+    std::array<char, 128> buffer;
+    std::string result = "";
+
+    // Open a pipe to the command.
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+    if (!pipe)
+    {
+        throw std::runtime_error("popen() failed!");
+    }
+
+    // Read the output of the command.
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr)
+    {
+        result += buffer.data();
+    }
+
+    return result;
+}
+
+void MainWindow::on_check_service_status_clicked()
+{
+    std::string command = "systemctl status eagle_eye_detection.service";
+
+    try
+    {
+        std::string output = run_command(command);
+        std::cout << "Command Output:\n" << output << std::endl;
+
+        // Regular expression to match the status after 'Active:' (captures any status)
+        std::regex status_regex(R"(Active:\s*(\S.*))");
+        std::smatch matches;
+        std::string status = "status unknown";
+        
+        if (std::regex_search(output, matches, status_regex))
+        {
+            status = matches[1];
+        }
+
+        std::cout << status << std::endl;
+        m_service_status_lbl->set_text(status);
+        
+        // Remove previous style classes
+        m_service_status_lbl->get_style_context()->remove_class("green-text");
+        m_service_status_lbl->get_style_context()->remove_class("red-text");
+
+        // Apply new style based on status
+        if (status.find("active (running)") != std::string::npos)
+        {
+            m_service_status_lbl->get_style_context()->add_class("green-text");
+        }
+        else if (status.find("inactive (dead)") != std::string::npos)
+        {
+            m_service_status_lbl->get_style_context()->add_class("red-text");
+        }
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error executing command: " << e.what() << std::endl;
     }
 }
 
@@ -222,6 +573,26 @@ void MainWindow::on_save_settings_clicked()
     if (m_offset_y_sb)
     {
         sectionContent << "offsetY=" << m_offset_y_sb->get_value() << std::endl;
+    }
+    if (m_settings_digital_io_line_number_cbox)
+    {
+        sectionContent << "lineNumber=" << m_settings_digital_io_line_number_cbox->get_active_text() << std::endl;
+    }
+    if (m_settings_digital_io_line_mode_cbox)
+    {
+        sectionContent << "lineMode=" << m_settings_digital_io_line_mode_cbox->get_active_text() << std::endl;
+    }
+    if (m_settings_digital_io_line_source_cbox)
+    {
+        sectionContent << "lineSource=" << m_settings_digital_io_line_source_cbox->get_active_text() << std::endl;
+    }
+    if (m_settings_strobe_enable_switch)
+    {
+        sectionContent << "strobeEnable=" << m_settings_strobe_enable_switch->get_active() << std::endl;
+    }
+    if (m_settings_strobe_duration_sb)
+    {
+        sectionContent << "strobeDuration=" << m_settings_strobe_duration_sb->get_value() << std::endl;
     }
     sectionContent << std::endl; // Add a blank line after the new section
 
@@ -400,7 +771,7 @@ void MainWindow::on_width_value_changed()
             // Update offset_x adjustment
             MVCC_INTVALUE offset_x = {0};
             nRet = MV_CC_GetIntValue(device_handle, "OffsetX", &offset_x);
-            if (MV_OK == nRet && m_offset_x_adj)
+            if (nRet == MV_OK && m_offset_x_adj)
             {
                 m_offset_x_adj->set_lower(offset_x.nMin);
                 m_offset_x_adj->set_upper(offset_x.nMax);
@@ -430,7 +801,7 @@ void MainWindow::on_height_value_changed()
             // Update offset_y adjustment
             MVCC_INTVALUE offset_y = {0};
             nRet = MV_CC_GetIntValue(device_handle, "OffsetY", &offset_y);
-            if (MV_OK == nRet && m_offset_y_adj)
+            if (nRet == MV_OK && m_offset_y_adj)
             {
                 m_offset_y_adj->set_lower(offset_y.nMin);
                 m_offset_y_adj->set_upper(offset_y.nMax);
@@ -460,7 +831,7 @@ void MainWindow::on_offset_x_value_changed()
             // Update width adjustment
             MVCC_INTVALUE width = {0};
             nRet = MV_CC_GetIntValue(device_handle, "Width", &width);
-            if (MV_OK == nRet && m_width_adj)
+            if (nRet == MV_OK && m_width_adj)
             {
                 m_width_adj->set_lower(width.nMin);
                 m_width_adj->set_upper(width.nMax);
@@ -490,7 +861,7 @@ void MainWindow::on_offset_y_value_changed()
             // Update height adjustment
             MVCC_INTVALUE height = {0};
             nRet = MV_CC_GetIntValue(device_handle, "Height", &height);
-            if (MV_OK == nRet && m_height_adj)
+            if (nRet == MV_OK && m_height_adj)
             {
                 m_height_adj->set_lower(height.nMin);
                 m_height_adj->set_upper(height.nMax);
@@ -746,7 +1117,7 @@ void MainWindow::populate_camera_settings(void *device_handle)
     // Serial number
     MVCC_STRINGVALUE sn = {0};
     int nRet = MV_CC_GetStringValue(device_handle, "DeviceSerialNumber", &sn);
-    if (MV_OK == nRet && m_sn_lbl)
+    if (nRet == MV_OK && m_sn_lbl)
     {
         m_sn_lbl->set_text(Glib::ustring(sn.chCurValue));
     }
@@ -754,7 +1125,7 @@ void MainWindow::populate_camera_settings(void *device_handle)
     // Exposure time
     MVCC_FLOATVALUE exposure_time = {0};
     nRet = MV_CC_GetFloatValue(device_handle, "ExposureTime", &exposure_time);
-    if (MV_OK == nRet && m_exposure_time_entry)
+    if (nRet == MV_OK && m_exposure_time_entry)
     {
         // Convert float to string
         std::ostringstream oss;
@@ -772,7 +1143,7 @@ void MainWindow::populate_camera_settings(void *device_handle)
     // Width
     MVCC_INTVALUE width = {0};
     nRet = MV_CC_GetIntValue(device_handle, "Width", &width);
-    if (MV_OK == nRet && m_width_adj && m_width_sb)
+    if (nRet == MV_OK && m_width_adj && m_width_sb)
     {
         m_width_adj->set_lower(width.nMin);
         m_width_adj->set_upper(width.nMax);
@@ -788,7 +1159,7 @@ void MainWindow::populate_camera_settings(void *device_handle)
     // Height
     MVCC_INTVALUE height = {0};
     nRet = MV_CC_GetIntValue(device_handle, "Height", &height);
-    if (MV_OK == nRet && m_height_adj && m_height_sb)
+    if (nRet == MV_OK && m_height_adj && m_height_sb)
     {
         m_height_adj->set_lower(height.nMin);
         m_height_adj->set_upper(height.nMax);
@@ -804,7 +1175,7 @@ void MainWindow::populate_camera_settings(void *device_handle)
     // Offset X
     MVCC_INTVALUE offset_x = {0};
     nRet = MV_CC_GetIntValue(device_handle, "OffsetX", &offset_x);
-    if (MV_OK == nRet && m_offset_x_adj && m_offset_x_sb)
+    if (nRet == MV_OK && m_offset_x_adj && m_offset_x_sb)
     {
         m_offset_x_adj->set_lower(offset_x.nMin);
         m_offset_x_adj->set_upper(offset_x.nMax);
@@ -820,7 +1191,7 @@ void MainWindow::populate_camera_settings(void *device_handle)
     // Offset Y
     MVCC_INTVALUE offset_y = {0};
     nRet = MV_CC_GetIntValue(device_handle, "OffsetY", &offset_y);
-    if (MV_OK == nRet && m_offset_y_adj && m_offset_y_sb)
+    if (nRet == MV_OK && m_offset_y_adj && m_offset_y_sb)
     {
         m_offset_y_adj->set_lower(offset_y.nMin);
         m_offset_y_adj->set_upper(offset_y.nMax);
@@ -831,6 +1202,133 @@ void MainWindow::populate_camera_settings(void *device_handle)
     {
         std::cout << "Failed to get offsetY. Error code: " << nRet << std::endl;
         m_logger->log("Error on MV_CC_GetIntValue(OffsetY): " + std::to_string(nRet), Logger::ERROR);
+    }
+
+    // Digital IO Line Number
+    m_settings_digital_io_line_number_cbox->remove_all();
+
+    MVCC_ENUMVALUE line_number = {0};
+    nRet = MV_CC_GetEnumValue(device_handle, "LineSelector", &line_number);
+    if (nRet == MV_OK)
+    {
+        std::string active_text = "";
+        for (unsigned int i = 0; i < line_number.nSupportedNum; ++i)
+        {
+            MVCC_ENUMENTRY line_entry = {0};
+            line_entry.nValue = line_number.nSupportValue[i];
+            nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineSelector", &line_entry);
+            if (nRet == MV_OK)
+            {
+                m_settings_digital_io_line_number_cbox->append(line_entry.chSymbolic);
+                if (line_entry.nValue == line_number.nCurValue)
+                {
+                    active_text = line_entry.chSymbolic;
+                }
+            }
+            else
+            {
+                std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
+            }
+        }
+        m_settings_digital_io_line_number_cbox->set_active_text(active_text);
+    }
+    else
+    {
+        std::cerr << "Failed to get line_number. Error code: " << nRet << std::endl;
+    }
+
+    // Digital IO Line Mode
+    m_settings_digital_io_line_mode_cbox->remove_all();
+
+    MVCC_ENUMVALUE line_mode = {0};
+    nRet = MV_CC_GetEnumValue(device_handle, "LineMode", &line_mode);
+    if (nRet == MV_OK)
+    {
+        std::string active_text = "";
+        for (unsigned int i = 0; i < line_mode.nSupportedNum; ++i)
+        {
+            MVCC_ENUMENTRY line_entry = {0};
+            line_entry.nValue = line_mode.nSupportValue[i];
+            nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineMode", &line_entry);
+            if (nRet == MV_OK)
+            {
+                m_settings_digital_io_line_mode_cbox->append(line_entry.chSymbolic);
+                if (line_entry.nValue == line_mode.nCurValue)
+                {
+                    active_text = line_entry.chSymbolic;
+                }
+            }
+            else
+            {
+                std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
+            }
+        }
+        m_settings_digital_io_line_mode_cbox->set_active_text(active_text);
+    }
+    else
+    {
+        std::cerr << "Failed to get line_mode. Error code: " << nRet << std::endl;
+    }
+
+    // Digital IO Line Source
+    m_settings_digital_io_line_source_cbox->remove_all();
+
+    MVCC_ENUMVALUE line_source = {0};
+    nRet = MV_CC_GetEnumValue(device_handle, "LineSource", &line_source);
+    if (nRet == MV_OK)
+    {
+        std::string active_text = "";
+        for (unsigned int i = 0; i < line_source.nSupportedNum; ++i)
+        {
+            MVCC_ENUMENTRY line_entry = {0};
+            line_entry.nValue = line_source.nSupportValue[i];
+            nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineSource", &line_entry);
+            if (nRet == MV_OK)
+            {
+                m_settings_digital_io_line_source_cbox->append(line_entry.chSymbolic);
+                if (line_entry.nValue == line_source.nCurValue)
+                {
+                    active_text = line_entry.chSymbolic;
+                }
+            }
+            else
+            {
+                std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
+            }
+        }
+        m_settings_digital_io_line_source_cbox->set_active_text(active_text);
+    }
+    else
+    {
+        std::cerr << "Failed to get line_source. Error code: " << nRet << std::endl;
+    }
+
+    // Strobe Enable
+    bool strobe_enable = false;
+    nRet = MV_CC_GetBoolValue(device_handle, "StrobeEnable", &strobe_enable);
+    if (nRet == MV_OK)
+    {
+        m_settings_strobe_enable_switch->set_active(strobe_enable);
+    }
+    else
+    {
+        std::cerr << "Failed to get strobe_enable. Error code: " << nRet << std::endl;
+    }
+
+    // Strobe Duration
+    MVCC_INTVALUE strobe_duration = {0};
+    nRet = MV_CC_GetIntValue(device_handle, "StrobeLineDuration", &strobe_duration);
+    if (nRet == MV_OK && m_strobe_duration_adj && m_settings_strobe_duration_sb)
+    {
+        m_strobe_duration_adj->set_lower(strobe_duration.nMin);
+        m_strobe_duration_adj->set_upper(strobe_duration.nMax);
+        m_strobe_duration_adj->set_step_increment(strobe_duration.nInc);
+        m_settings_strobe_duration_sb->set_value(strobe_duration.nCurValue);
+    }
+    else
+    {
+        std::cout << "Failed to get StrobeLineDuration. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_GetIntValue(StrobeLineDuration): " + std::to_string(nRet), Logger::ERROR);
     }
 }
 
@@ -859,6 +1357,26 @@ void MainWindow::clear_camera_settings()
     if (m_offset_y_sb)
     {
         m_offset_y_sb->set_text("");
+    }
+    if (m_settings_digital_io_line_number_cbox)
+    {
+        m_settings_digital_io_line_number_cbox->remove_all();
+    }
+    if (m_settings_digital_io_line_mode_cbox)
+    {
+        m_settings_digital_io_line_mode_cbox->remove_all();
+    }
+    if (m_settings_digital_io_line_source_cbox)
+    {
+        m_settings_digital_io_line_source_cbox->remove_all();
+    }
+    if (m_settings_strobe_enable_switch)
+    {
+        m_settings_strobe_enable_switch->set_active(false);
+    }
+    if (m_settings_strobe_duration_sb)
+    {
+        m_settings_strobe_duration_sb->set_text("");
     }
 }
 
@@ -900,6 +1418,7 @@ void MainWindow::on_window_shown()
                 auto serialNumber = pDeviceInfo->SpecialInfo.stGigEInfo.chSerialNumber;
                 m_camera_combo_box->append(std::string((char *)serialNumber));
                 m_camera_test_combo_box->append(std::string((char *)serialNumber));
+                m_toolkit_capture_source_cbox->append(std::string((char *)serialNumber));
             }
         }
         m_camera_combo_box->append("All Cameras");
@@ -969,7 +1488,7 @@ bool MainWindow::connect_camera(const std::string& sn)
     }
     else
     {
-        m_logger->log("Connected to device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
+        m_logger->log("Connected to camera: " + sn);
         m_connected_device_handles[sn] = device_handle;
     }
 
@@ -1092,6 +1611,54 @@ bool MainWindow::configure_camera(const std::string sn)
                             std::cerr << "Error to set offsetY. Error code: " << nRet << std::endl;
                             m_logger->log("Error on MV_CC_SetIntValue(OffsetY): " + std::to_string(nRet), Logger::ERROR);
                             break;
+                        }
+                    }
+                    else if (key == "lineNumber" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", value.c_str());
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set LineSelector. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetEnumValueByString(LineSelector): " + std::to_string(nRet), Logger::ERROR);
+                            break;
+                        }
+                    }
+                    else if (key == "lineMode" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetEnumValueByString(device_handle, "LineMode", value.c_str());
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set LineMode. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetEnumValueByString(LineMode): " + std::to_string(nRet), Logger::ERROR);
+                            break;
+                        }
+                    }
+                    else if (key == "lineSource" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetEnumValueByString(device_handle, "LineSource", value.c_str());
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set LineSource. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetEnumValueByString(LineSource): " + std::to_string(nRet), Logger::ERROR);
+                            break;
+                        }
+                    }
+                    else if (key == "strobeEnable" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetBoolValue(device_handle, "StrobeEnable", value == "1");
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set StrobeEnable to " << value << " Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetBoolValue(StrobeEnable). Error code: " + std::to_string(nRet), Logger::ERROR);
+                        }
+                    }
+                    else if (key == "strobeDuration" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetIntValue(device_handle, "StrobeLineDuration", std::stoi(value));
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set StrobeLineDuration to " << std::stoi(value) << " Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetIntValue(StrobeLineDuration). Error code: " + std::to_string(nRet), Logger::ERROR);
                         }
                     }
                 }
@@ -1378,7 +1945,7 @@ void MainWindow::on_stop_clicked()
     for (const auto& pair : m_connected_device_handles)
     {
         void* device_handle = pair.second;
-        m_logger->log("Stop capture for device: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)));
+        m_logger->log("Stop capture for device: " + pair.first);
         stop_capture(device_handle);
     }
 
@@ -1607,8 +2174,8 @@ void MainWindow::on_snap_clicked()
 
     if (!disconnect_camera(sn))
     {
-        std::cout << "Failed to disconnect from the camera: " << std::to_string(reinterpret_cast<uintptr_t>(device_handle)) << std::endl;
-        m_logger->log("Failed to disconnect from the camera: " + std::to_string(reinterpret_cast<uintptr_t>(device_handle)), Logger::ERROR);
+        std::cout << "Failed to disconnect from the camera: " << sn << std::endl;
+        m_logger->log("Failed to disconnect from the camera: " + sn, Logger::ERROR);
     }
 }
 
