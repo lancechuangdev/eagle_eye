@@ -897,15 +897,23 @@ void MainWindow::update_cam_grid()
         m_cam_grid->remove(*widget);
     }
 
+    Gtk::Label* status = Gtk::make_managed<Gtk::Label>(Glib::ustring("status"));
     Gtk::Label* model = Gtk::make_managed<Gtk::Label>(Glib::ustring("Model"));
     Gtk::Label* ip = Gtk::make_managed<Gtk::Label>(Glib::ustring("IP Address"));
     Gtk::Label* sn = Gtk::make_managed<Gtk::Label>(Glib::ustring("Serial Number"));
     Gtk::Label* actions = Gtk::make_managed<Gtk::Label>(Glib::ustring("Actions"));
 
-    m_cam_grid->attach(*model, 0, 0);
-    m_cam_grid->attach(*ip, 1, 0);
-    m_cam_grid->attach(*sn, 2, 0);
-    m_cam_grid->attach(*actions, 3, 0);
+    status->get_style_context()->add_class("header_label");
+    model->get_style_context()->add_class("header_label");
+    ip->get_style_context()->add_class("header_label");
+    sn->get_style_context()->add_class("header_label");
+    actions->get_style_context()->add_class("header_label");
+
+    m_cam_grid->attach(*status, 0, 0);
+    m_cam_grid->attach(*model, 1, 0);
+    m_cam_grid->attach(*ip, 2, 0);
+    m_cam_grid->attach(*sn, 3, 0);
+    m_cam_grid->attach(*actions, 4, 0);
 
     // Populate camera grid content
     if (m_cam_list.nDeviceNum > 0)
@@ -926,13 +934,22 @@ void MainWindow::update_cam_grid()
                 auto serialNumber = pDeviceInfo->SpecialInfo.stGigEInfo.chSerialNumber;
 
                 // Create labels for each row's data
+                Gtk::Label* status_data = Gtk::make_managed<Gtk::Label>(Glib::ustring(""));
                 Gtk::Label* model_data = Gtk::make_managed<Gtk::Label>(Glib::ustring(reinterpret_cast<const char *>(modelName)));
                 Gtk::Label* ip_data = Gtk::make_managed<Gtk::Label>(convert_to_ip_address_str(pDeviceInfo->SpecialInfo.stGigEInfo.nCurrentIp));
                 Gtk::Label* sn_data = Gtk::make_managed<Gtk::Label>(Glib::ustring(reinterpret_cast<const char *>(serialNumber)));
 
-                m_cam_grid->attach(*model_data, 0, row_index);
-                m_cam_grid->attach(*ip_data, 1, row_index);
-                m_cam_grid->attach(*sn_data, 2, row_index);
+                // Create status indicator
+                status_data->set_size_request(16, 16);
+                status_data->get_style_context()->add_class("gray-indicator");
+                status_data->set_halign(Gtk::ALIGN_CENTER);
+                status_data->set_valign(Gtk::ALIGN_CENTER);
+
+                // Attach row data to the grid
+                m_cam_grid->attach(*status_data, 0, row_index);
+                m_cam_grid->attach(*model_data, 1, row_index);
+                m_cam_grid->attach(*ip_data, 2, row_index);
+                m_cam_grid->attach(*sn_data, 3, row_index);
 
                 // Create the edit and delete buttons
                 auto connect_button = Gtk::make_managed<Gtk::Button>();
@@ -943,6 +960,11 @@ void MainWindow::update_cam_grid()
                 set_button_icon(connect_button, "/com/example/eagle_eye/connect.svg");
                 set_button_icon(disconnect_button, "/com/example/eagle_eye/disconnect.svg");
                 set_button_icon(view_button, "/com/example/eagle_eye/view.svg");
+
+                // Set buttons' tooltip 
+                connect_button->set_tooltip_text("Connect");
+                disconnect_button->set_tooltip_text("Disconnect");
+                view_button->set_tooltip_text("View Settings");
 
                 // Pack buttons into a horizontal box for the action column
                 Gtk::Box* actions_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
@@ -956,7 +978,7 @@ void MainWindow::update_cam_grid()
                 view_button->signal_clicked().connect([=] { on_view_clicked(reinterpret_cast<const char *>(serialNumber)); });
 
                 // Attach buttons to grid
-                m_cam_grid->attach(*actions_box, 3, row_index);
+                m_cam_grid->attach(*actions_box, 4, row_index);
 
                 row_index++;
             }
@@ -982,6 +1004,23 @@ void MainWindow::on_connect_clicked(const std::string& sn)
         std::cout << "Failed to connect to the camera: " << sn << std::endl;
         m_logger->log("Failed to connect to the camera: " + sn, Logger::ERROR);
         return;
+    }
+
+    // Update status indicator
+    Gtk::Label *status_indicator = nullptr;
+    size_t children_size = m_cam_grid->get_children().size();
+    for (size_t i = 5; i < children_size; i += 5) {  // Each row has 5 columns, skip headers
+        size_t row = i / 5;
+        Gtk::Label* sn_label = dynamic_cast<Gtk::Label*>(m_cam_grid->get_child_at(3, row));  // Serial number is at column 3
+        if (sn_label && sn_label->get_text() == sn) {
+            status_indicator = dynamic_cast<Gtk::Label*>(m_cam_grid->get_child_at(0, row));  // Status label is at column 0
+            break;
+        }
+    }
+    if (status_indicator)
+    {
+        status_indicator->get_style_context()->remove_class("gray-indicator");
+        status_indicator->get_style_context()->add_class("green-indicator");
     }
 
     if (!configure_camera(sn))
@@ -1091,6 +1130,23 @@ void MainWindow::on_disconnect_clicked(const std::string& sn)
     }
     else
     {
+        // Update status indicator
+        Gtk::Label *status_indicator = nullptr;
+        size_t children_size = m_cam_grid->get_children().size();
+        for (size_t i = 5; i < children_size; i += 5) {  // Each row has 5 columns, skip headers
+            size_t row = i / 5;
+            Gtk::Label* sn_label = dynamic_cast<Gtk::Label*>(m_cam_grid->get_child_at(3, row));  // Serial number is at column 3
+            if (sn_label && sn_label->get_text() == sn) {
+                status_indicator = dynamic_cast<Gtk::Label*>(m_cam_grid->get_child_at(0, row));  // Status label is at column 0
+                break;
+            }
+        }
+        if (status_indicator)
+        {
+            status_indicator->get_style_context()->remove_class("green-indicator");
+            status_indicator->get_style_context()->add_class("gray-indicator");
+        }
+
         clear_camera_settings();
         if (m_image_pixbuf_settings)
         {

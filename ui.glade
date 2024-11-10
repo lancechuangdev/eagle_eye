@@ -431,7 +431,7 @@ Coming Soon...</property>
                                         <property name="margin-bottom">5</property>
                                         <property name="label" translatable="yes">Service Status</property>
                                         <style>
-                                          <class name="section_title_label"/>
+                                          <class name="header_label"/>
                                         </style>
                                       </object>
                                       <packing>
@@ -536,7 +536,7 @@ Coming Soon...</property>
                                         <property name="margin-bottom">5</property>
                                         <property name="label" translatable="yes">Test Anomaly Detection</property>
                                         <style>
-                                          <class name="section_title_label"/>
+                                          <class name="header_label"/>
                                         </style>
                                       </object>
                                       <packing>
@@ -875,7 +875,7 @@ Coming Soon...</property>
                 <property name="margin-bottom">10</property>
                 <property name="column-spacing">10</property>
                 <child>
-                  <!-- n-columns=4 n-rows=2 -->
+                  <!-- n-columns=5 n-rows=2 -->
                   <object class="GtkGrid" id="cam_grid">
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
@@ -885,21 +885,10 @@ Coming Soon...</property>
                       <object class="GtkLabel">
                         <property name="visible">True</property>
                         <property name="can-focus">False</property>
-                        <property name="label" translatable="yes">Model</property>
+                        <property name="label" translatable="yes">Actions</property>
                       </object>
                       <packing>
-                        <property name="left-attach">0</property>
-                        <property name="top-attach">0</property>
-                      </packing>
-                    </child>
-                    <child>
-                      <object class="GtkLabel">
-                        <property name="visible">True</property>
-                        <property name="can-focus">False</property>
-                        <property name="label" translatable="yes">IP Address</property>
-                      </object>
-                      <packing>
-                        <property name="left-attach">1</property>
+                        <property name="left-attach">4</property>
                         <property name="top-attach">0</property>
                       </packing>
                     </child>
@@ -910,6 +899,17 @@ Coming Soon...</property>
                         <property name="label" translatable="yes">Serial Number</property>
                       </object>
                       <packing>
+                        <property name="left-attach">3</property>
+                        <property name="top-attach">0</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="visible">True</property>
+                        <property name="can-focus">False</property>
+                        <property name="label" translatable="yes">IP Address</property>
+                      </object>
+                      <packing>
                         <property name="left-attach">2</property>
                         <property name="top-attach">0</property>
                       </packing>
@@ -918,12 +918,26 @@ Coming Soon...</property>
                       <object class="GtkLabel">
                         <property name="visible">True</property>
                         <property name="can-focus">False</property>
-                        <property name="label" translatable="yes">Actions</property>
+                        <property name="label" translatable="yes">Model</property>
                       </object>
                       <packing>
-                        <property name="left-attach">3</property>
+                        <property name="left-attach">1</property>
                         <property name="top-attach">0</property>
                       </packing>
+                    </child>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="visible">True</property>
+                        <property name="can-focus">False</property>
+                        <property name="label" translatable="yes">Status</property>
+                      </object>
+                      <packing>
+                        <property name="left-attach">0</property>
+                        <property name="top-attach">0</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <placeholder/>
                     </child>
                     <child>
                       <placeholder/>

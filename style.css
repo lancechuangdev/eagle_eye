@@ -1,4 +1,4 @@
-.section_title_label {
+.header_label {
     font-weight: bold;
 }
 
@@ -10,4 +10,14 @@
 .red-text {
     color: red;
     font-weight: bold;
+}
+
+.green-indicator {
+    background-color: green;
+    border-radius: 8px;
+}
+
+.gray-indicator {
+    background-color: gray;
+    border-radius: 8px;
 }
