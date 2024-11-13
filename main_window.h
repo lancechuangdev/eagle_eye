@@ -31,7 +31,6 @@ protected:
     Gtk::RadioButton *m_explore_btn;
     Gtk::RadioButton *m_settings_btn;
     Gtk::ComboBoxText *m_detection_source_cbox;
-    Gtk::ComboBoxText *m_digital_output_source_cbox;
     Gtk::SpinButton *m_capture_rate_sb;
     Gtk::Button *m_start_btn;
     Gtk::Button *m_stop_btn;
@@ -90,9 +89,6 @@ protected:
     void on_digital_io_line_source_changed();
     bool on_strobe_enable_state_set(bool state);
     void on_strobe_duration_value_changed();
-
-
-
     void on_save_settings_clicked();
     void on_toolkit_toggled();
     void on_check_service_status_clicked();
@@ -119,6 +115,16 @@ private:
         size_t frame_size;
         size_t frame_width;
         size_t frame_height;
+        std::string serial_number;
+    };
+
+    struct CaptureCallbackData
+    {
+        MainWindow *main_window_ptr;
+        std::string serial_number;
+
+        CaptureCallbackData(MainWindow *ptr, const std::string sn)
+            : main_window_ptr(ptr), serial_number(sn) {}
     };
 
     Glib::RefPtr<Gtk::Builder> m_builder;
@@ -167,7 +173,7 @@ private:
     void show_camera_connect_warning(Gtk::Window& parent, std::string message);
     void *create_or_get_device_handle_by_serial_number(std::string sn);
     void start_capture(void *device_handle, double capture_interval_ms);
-    void start_detection(const std::string digital_output_source);
+    void start_detection();
     void stop_capture(void *device_handle);
     void stop_detection();
     void send_ws_message(std::string message);

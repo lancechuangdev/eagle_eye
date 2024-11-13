@@ -56,8 +56,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("detection_source_cbox", m_detection_source_cbox);
 
-    m_builder->get_widget("digital_output_source_cbox", m_digital_output_source_cbox);
-
     m_builder->get_widget("capture_rate_sb", m_capture_rate_sb);
 
     m_builder->get_widget("start_btn", m_start_btn);
@@ -1475,7 +1473,6 @@ void MainWindow::on_window_shown()
                 // Add the camera name to the combo box
                 auto serialNumber = pDeviceInfo->SpecialInfo.stGigEInfo.chSerialNumber;
                 m_detection_source_cbox->append(std::string((char *)serialNumber));
-                m_digital_output_source_cbox->append(std::string((char *)serialNumber));
                 m_snap_source_cbox->append(std::string((char *)serialNumber));
                 m_toolkit_capture_source_cbox->append(std::string((char *)serialNumber));
             }
@@ -1926,18 +1923,10 @@ void MainWindow::on_start_clicked()
         return;
     }
 
-    std::vector<void*> device_handles;
+    size_t num_registed = 0;
     for (const std::string sn : connected_serial_numbers)
     {
-        if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
-        {
-            device_handles.push_back(m_connected_device_handles[sn]);
-        }
-    }
-
-    size_t num_registed = 0;
-    for (void *device_handle : device_handles)
-    {
+        void *device_handle = m_connected_device_handles[sn];
         // Register image callback
         auto image_capture_callback = [](unsigned char *pData, MV_FRAME_OUT_INFO_EX *pFrameInfo, void *pUser)
         {
@@ -1948,15 +1937,19 @@ void MainWindow::on_start_clicked()
             //             << ", nHostTimeStamp: " << pFrameInfo->nHostTimeStamp
             //             << std::endl;
             // }
-            MainWindow *pThis = static_cast<MainWindow *>(pUser); // Cast pUser to MainWindow*
-            pThis->m_frame_queue.enqueue(FrameData(pData, pFrameInfo));
+            CaptureCallbackData* cb_data = static_cast<CaptureCallbackData*>(pUser);
+            MainWindow *ptr = static_cast<MainWindow*>(cb_data->main_window_ptr);
+            std::string sn = cb_data->serial_number;
+            ptr->m_frame_queue.enqueue(FrameData(pData, pFrameInfo, sn));
         };
 
-        int nRet = MV_CC_RegisterImageCallBackEx(device_handle, image_capture_callback, this);
+        auto cb_data = new CaptureCallbackData(this, sn);
+        int nRet = MV_CC_RegisterImageCallBackEx(device_handle, image_capture_callback, cb_data);
         if (nRet != MV_OK)
         {
             std::cerr << "MV_CC_RegisterImageCallBackEx fail. Error code: " << nRet << std::endl;
             m_logger->log("Error on MV_CC_RegisterImageCallBackEx: " + std::to_string(nRet), Logger::ERROR);
+            delete cb_data; // Free memory if registration fails
             break;
         }
         num_registed++;
@@ -1979,24 +1972,18 @@ void MainWindow::on_start_clicked()
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    for (size_t i = 0; i < connected_serial_numbers.size(); ++i)
+    for (const std::string sn : connected_serial_numbers)
     {
-        const std::string &sn = connected_serial_numbers[i];
-        void *handle = device_handles[i];
+        void *device_handle = m_connected_device_handles[sn];
 
         auto currentTimeInMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         std::cerr << "Begin capture for device: " << sn << " at " << currentTimeInMs << std::endl;
         m_logger->log("Begin capture for device: " + sn);
 
-        start_capture(handle, capture_interval_ms);
+        start_capture(device_handle, capture_interval_ms);
     }
 
-    std::string digital_output_source_sn;
-    if (m_digital_output_source_cbox)
-    {
-        digital_output_source_sn = m_digital_output_source_cbox->get_active_text();
-    }
-    start_detection(digital_output_source_sn);
+    start_detection();
 
     m_start_btn->set_label("Start");
 }
@@ -2214,37 +2201,35 @@ void MainWindow::on_snap_clicked()
         std::string res_trans_id = response_json["transaction_id"];
         std::string status = response_json["status"];
         int total_anomalies = response_json["total_anomalies"];
+        auto serial_numbers = response_json["serial_numbers"];
         
         if (res_trans_id == trans_id && status == "complete" && total_anomalies > 0)
         {
             display_test_masks(res_trans_id);
 
-            std::string digital_output_source;
-            if (m_digital_output_source_cbox)
+            for (std::string sn : serial_numbers)
             {
-                digital_output_source = m_digital_output_source_cbox->get_active_text();
-            }
-
-            if (m_connected_device_handles.find(digital_output_source) != m_connected_device_handles.end())
-            {
-                void *device_handle = m_connected_device_handles[digital_output_source];
-                // Trigger digital output
-                int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
-                if (nRet != MV_OK)
+                if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
                 {
-                    std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
-                    m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
+                    void *device_handle = m_connected_device_handles[sn];
+                    // Trigger digital output
+                    int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
+                    if (nRet != MV_OK)
+                    {
+                        std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
+                        m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
+                    }
+                    else
+                    {
+                        std::cout << "Trigger digital output via software succeeded" << std::endl;
+                        m_logger->log("Trigger digital output via software succeeded");
+                    }
                 }
                 else
                 {
-                    std::cout << "Trigger digital output via software succeeded" << std::endl;
-                    m_logger->log("Trigger digital output via software succeeded");
+                    std::cerr << "Digital output source not found: " << sn << std::endl;
+                    m_logger->log("Digital output source not found: " + sn, Logger::ERROR);
                 }
-            }
-            else
-            {
-                std::cerr << "Digital output source not found: " << digital_output_source << std::endl;
-                m_logger->log("Digital output source not found: " + digital_output_source, Logger::ERROR);
             }
         }
     }
@@ -2555,7 +2540,7 @@ void MainWindow::stop_capture(void *device_handle)
     m_capturing_threads.erase(camera_handle);
 }
 
-void MainWindow::start_detection(const std::string digital_output_source)
+void MainWindow::start_detection()
 {
     // Ensure there's no existing processing thread running
     if (m_processing_thread.joinable()) 
@@ -2564,9 +2549,9 @@ void MainWindow::start_detection(const std::string digital_output_source)
     }
 
     // Start the frame processing thread
-    m_processing_thread = std::thread([this, digital_output_source]()
+    m_processing_thread = std::thread([this]()
     {
-        FrameData frame_data(nullptr, nullptr); // Initialize FrameData with null pointers
+        FrameData frame_data(nullptr, nullptr, ""); // Initialize FrameData with null pointers
 
         std::string shm_name = "/ee_shared_memory";
         size_t buffer = 2448 * 2048 * 3;
@@ -2618,9 +2603,10 @@ void MainWindow::start_detection(const std::string digital_output_source)
                     auto frame_size = frame_data.pMetadata->nFrameLen;
                     auto frame_width = frame_data.pMetadata->nWidth;
                     auto frame_height = frame_data.pMetadata->nHeight;
+                    auto serial_number = frame_data.serial_number;
 
                     // Save the frame metadata
-                    frame_offsets.push_back({ offset, frame_size, frame_width, frame_height });
+                    frame_offsets.push_back({ offset, frame_size, frame_width, frame_height, serial_number });
 
                     // Calculate the memory address to copy this frame
                     void* frame_ptr = static_cast<uint8_t*>(shm_ptr) + offset;
@@ -2653,7 +2639,8 @@ void MainWindow::start_detection(const std::string digital_output_source)
                     {"offset", info.offset},
                     {"frame_size", info.frame_size},
                     {"frame_width", info.frame_width},
-                    {"frame_height", info.frame_height}
+                    {"frame_height", info.frame_height},
+                    {"serial_number", info.serial_number}
                 });
             }
             std::string frame_info_string = json_data.dump(); // Convert JSON to string
@@ -2666,28 +2653,33 @@ void MainWindow::start_detection(const std::string digital_output_source)
             std::string res_trans_id = response_json["transaction_id"];
             std::string status = response_json["status"];
             int total_anomalies = response_json["total_anomalies"];
+            auto serial_numbers = response_json["serial_numbers"];
+
             if (res_trans_id == trans_id && status == "complete" && total_anomalies > 0)
             {
-                if (m_connected_device_handles.find(digital_output_source) != m_connected_device_handles.end())
+                for (std::string sn : serial_numbers)
                 {
-                    void *device_handle = m_connected_device_handles[digital_output_source];
-                    // Trigger digital output
-                    int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
-                    if (nRet != MV_OK)
+                    if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
                     {
-                        std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
-                        m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
+                        void *device_handle = m_connected_device_handles[sn];
+                        // Trigger digital output
+                        int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
+                        }
+                        else
+                        {
+                            std::cout << "Trigger digital output via software succeeded" << std::endl;
+                            m_logger->log("Trigger digital output via software succeeded");
+                        }
                     }
                     else
                     {
-                        std::cout << "Trigger digital output via software succeeded" << std::endl;
-                        m_logger->log("Trigger digital output via software succeeded");
+                        std::cerr << "Digital output source not found: " << sn << std::endl;
+                        m_logger->log("Digital output source not found: " + sn, Logger::ERROR);
                     }
-                }
-                else
-                {
-                    std::cerr << "Digital output source not found: " << digital_output_source << std::endl;
-                    m_logger->log("Digital output source not found: " + digital_output_source, Logger::ERROR);
                 }
             }
 

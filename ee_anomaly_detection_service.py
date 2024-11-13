@@ -74,6 +74,7 @@ def read_frames_from_shared_memory(shm_name, frames_array):
         frame_height = frame_data['frame_height']
         frame_width = frame_data['frame_width']
         offset = frame_data['offset']
+        serial_number = frame_data['serial_number']
 
         if frame_width * frame_height != frame_size:
             print("Error: frame width x height is not equal to the frame size.")
@@ -90,14 +91,13 @@ def read_frames_from_shared_memory(shm_name, frames_array):
         reshaped_frame = frame[:patch_size, :]
         print(f"reshaped_frame shape: {reshaped_frame.shape}")
 
-        frames.append((reshaped_frame, frame_width, frame_height))
+        frames.append((reshaped_frame, frame_width, frame_height, serial_number))
     
     return frames
-    
 
 def build_batch_from_frames(frames, patch_size, shared_memory_name):
     batch = []
-    for frame, frame_width, _ in frames:        
+    for frame, frame_width, _, _ in frames:
         # Normalize frame to [0, 1] range
         frame = frame.astype(np.float32) / 255.0
 
@@ -149,6 +149,7 @@ def message_received(client, server, message):
     transaction_id = data.get('transaction_id', 0)
     total_anomalies = 0
     output_path = os.path.join(output_dir, transaction_id)
+    serial_numbers = []
 
     # Build the initial transaction json object
     transaction_json = {
@@ -160,13 +161,17 @@ def message_received(client, server, message):
         # Notify client about prediction start
         initial_message = f"Transaction {transaction_id} started: Starting prediction on {len(frames_array)} image(s)\n"
 
+        num_frames = len(frames)
+        num_patches = len(batch)
+        patches_per_frame = num_patches / num_frames
+
         # Read frames from shared memory
         frames = read_frames_from_shared_memory(shared_memory_name, frames_array)
-        transaction_json["num_frames"] = len(frames)
+        transaction_json["num_frames"] = num_frames
 
         # Build batch from frames
         batch = build_batch_from_frames(frames, patch_size, shared_memory_name)
-        transaction_json["num_patches"] = len(batch)
+        transaction_json["num_patches"] = num_patches
 
         if batch:
             # Convert list to numpy array with batch shape (num_patches, patch_size, patch_size, 1)
@@ -179,6 +184,7 @@ def message_received(client, server, message):
             # print(f"predictions shape: {predictions.shape}")
             
             prediction_files = []
+            prediction_frame_ids = []
 
             # List to accumulate messages to send to the client
             client_messages = [initial_message]
@@ -198,6 +204,12 @@ def message_received(client, server, message):
                     # Build the prediction file name
                     prediction_filename = os.path.join(output_path, f"prediction_{i}.png")
                     prediction_files.append((prediction_image, i, prediction_filename))
+
+                    # Store the corresponding frame id for the patch with anomaly pixels
+                    prediction_frame_id = i / patches_per_frame
+                    if prediction_frame_id not in prediction_frame_ids:
+                        prediction_frame_ids.append(prediction_frame_id)
+
                     total_anomalies += 1
 
             if total_anomalies > 0:
@@ -207,7 +219,7 @@ def message_received(client, server, message):
                 # Ensure the directory exists
                 os.makedirs(output_path, exist_ok=True)
 
-                for i, (frame, frame_width, frame_height) in enumerate(frames):
+                for i, (frame, frame_width, frame_height, serial_number) in enumerate(frames):
                     # Convert the reshaped frame to an image
                     frame = Image.fromarray(frame.astype(np.uint8))
                     # Save the frame to a file
@@ -215,11 +227,15 @@ def message_received(client, server, message):
                     frame.save(frame_filename)
                     client_messages.append(f"Saved frame {i}: {frame_filename}.\n")
 
+                    if i in prediction_frame_ids and serial_number not in serial_numbers:
+                        serial_numbers.append(serial_number)
+
                     # Add frame info to list
                     frames_data.append({
                         "frame_id": i,
                         "frame_width": frame_width,
                         "frame_height": frame_height,
+                        "serial_number": serial_number,
                         "filename": frame_filename
                     })
 
@@ -252,7 +268,8 @@ def message_received(client, server, message):
     result_json = {
         "transaction_id": transaction_id,
         "status": "complete",
-        "total_anomalies": total_anomalies
+        "total_anomalies": total_anomalies,
+        "serial_numbers": serial_numbers
     }
     result = json.dumps(result_json)
     server.send_message(client, result)
