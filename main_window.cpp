@@ -2213,10 +2213,39 @@ void MainWindow::on_snap_clicked()
         // Extract values from the JSON object
         std::string res_trans_id = response_json["transaction_id"];
         std::string status = response_json["status"];
-
-        if (res_trans_id == trans_id && status == "complete")
+        int total_anomalies = response_json["total_anomalies"];
+        
+        if (res_trans_id == trans_id && status == "complete" && total_anomalies > 0)
         {
             display_test_masks(res_trans_id);
+
+            std::string digital_output_source;
+            if (m_digital_output_source_cbox)
+            {
+                digital_output_source = m_digital_output_source_cbox->get_active_text();
+            }
+
+            if (m_connected_device_handles.find(digital_output_source) != m_connected_device_handles.end())
+            {
+                void *device_handle = m_connected_device_handles[digital_output_source];
+                // Trigger digital output
+                int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
+                if (nRet != MV_OK)
+                {
+                    std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
+                    m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
+                }
+                else
+                {
+                    std::cout << "Trigger digital output via software succeeded" << std::endl;
+                    m_logger->log("Trigger digital output via software succeeded");
+                }
+            }
+            else
+            {
+                std::cerr << "Digital output source not found: " << digital_output_source << std::endl;
+                m_logger->log("Digital output source not found: " + digital_output_source, Logger::ERROR);
+            }
         }
     }
 
