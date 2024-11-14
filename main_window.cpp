@@ -2163,7 +2163,7 @@ void MainWindow::on_snap_clicked()
     for (int i = 0; i < num_frames; ++i)
     {
         // Save the frame metadata
-        frame_offsets.push_back({ offset, frame_size, frame_width, patch_size });
+        frame_offsets.push_back({ offset, frame_size, frame_width, patch_size, sn });
 
         // Calculate the memory address to copy this frame
         void* frame_ptr = static_cast<uint8_t*>(shm_ptr) + offset;
@@ -2187,7 +2187,8 @@ void MainWindow::on_snap_clicked()
                 {"offset", info.offset},
                 {"frame_size", info.frame_size},
                 {"frame_width", info.frame_width},
-                {"frame_height", info.frame_height}
+                {"frame_height", info.frame_height},
+                {"serial_number", info.serial_number}
             });
         }
 
