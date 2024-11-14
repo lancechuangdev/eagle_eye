@@ -161,17 +161,17 @@ def message_received(client, server, message):
         # Notify client about prediction start
         initial_message = f"Transaction {transaction_id} started: Starting prediction on {len(frames_array)} image(s)\n"
 
-        num_frames = len(frames)
-        num_patches = len(batch)
-        patches_per_frame = num_patches / num_frames
-
         # Read frames from shared memory
         frames = read_frames_from_shared_memory(shared_memory_name, frames_array)
+        num_frames = len(frames)
         transaction_json["num_frames"] = num_frames
 
         # Build batch from frames
         batch = build_batch_from_frames(frames, patch_size, shared_memory_name)
+        num_patches = len(batch)
         transaction_json["num_patches"] = num_patches
+
+        patches_per_frame = num_patches / num_frames
 
         if batch:
             # Convert list to numpy array with batch shape (num_patches, patch_size, patch_size, 1)
