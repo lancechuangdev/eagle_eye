@@ -182,10 +182,10 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_settings_strobe_duration_sb->signal_value_changed().connect(sigc::mem_fun(*this, &MainWindow::on_strobe_duration_value_changed));
     }
     
-    m_builder->get_widget("save_settings_btn", m_save_settings_btn);
-    if (m_save_settings_btn)
+    m_builder->get_widget("save_camera_settings_btn", m_save_camera_settings_btn);
+    if (m_save_camera_settings_btn)
     {
-        m_save_settings_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_save_settings_clicked));
+        m_save_camera_settings_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_save_camera_settings_clicked));
     }
 
     m_builder->get_widget("toolkit_stack", m_toolkit_stack);
@@ -225,6 +225,104 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     {
         m_toolkit_test_digital_out_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_test_digital_out_clicked));
     }
+
+    m_builder->get_widget("settings_stack", m_settings_stack);
+
+    m_builder->get_widget("anomaly_detection_settings_rbtn", m_anomaly_detection_settings_rbtn);
+    if (m_anomaly_detection_settings_rbtn)
+    {
+        m_anomaly_detection_settings_rbtn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_settings_toggled));
+    }
+
+    m_builder->get_widget("camera_settings_rbtn", m_camera_settings_rbtn);
+    if (m_camera_settings_rbtn)
+    {
+        m_camera_settings_rbtn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_settings_toggled));
+    }
+
+    m_builder->get_widget("detection_sensitivity_scale", m_detection_sensitivity_scale);
+    if (m_detection_sensitivity_scale)
+    {
+        m_detection_sensitivity_scale->signal_format_value().connect([](double value)
+        {
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(0) << (value * 100) << "%";
+            return oss.str(); 
+        });
+    }
+
+    m_builder->get_widget("anomaly_size_threshold_scale", m_anomaly_size_threshold_scale);
+    if (m_anomaly_size_threshold_scale)
+    {
+        m_anomaly_size_threshold_scale->signal_format_value().connect([](double value)
+        {
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(0) << (value * 100) << "%";
+            return oss.str(); 
+        });
+    }
+
+    m_builder->get_widget("cancel_detection_settings_btn", m_cancel_detection_settings_btn);
+    if (m_cancel_detection_settings_btn)
+    {
+        m_cancel_detection_settings_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_cancel_detection_settings_clicked));
+    }
+
+    m_builder->get_widget("save_detection_settings_btn", m_save_detection_settings_btn);
+    if (m_save_detection_settings_btn)
+    {
+        m_save_detection_settings_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_save_detection_settings_clicked));
+    }
+}
+
+void MainWindow::on_cancel_detection_settings_clicked()
+{
+    auto settings = get_settings("[detection]");
+
+    for (const auto &[key, value] : settings)
+    {
+        if (key == "confidence_threshold")
+        {
+            if (m_detection_sensitivity_scale)
+            {
+                m_detection_sensitivity_scale->set_value(std::stod(value));
+            }
+        }
+        else if (key == "pixel_threshold")
+        {
+            if (m_anomaly_size_threshold_scale)
+            {
+                m_anomaly_size_threshold_scale->set_value(std::stod(value));
+            }
+        }
+    }
+}
+
+void MainWindow::on_save_detection_settings_clicked()
+{
+    // Create settings header
+    std::string settings_header = "[detection]";
+
+    // Build settings content
+    std::stringstream settings_content;
+    settings_content << settings_header << std::endl;
+    if (m_detection_sensitivity_scale)
+    {
+        auto confidence_threshold = m_detection_sensitivity_scale->get_value();
+        settings_content << "confidence_threshold=" << confidence_threshold << std::endl;
+    }
+    if (m_anomaly_size_threshold_scale)
+    {
+        auto pixel_threshold = m_anomaly_size_threshold_scale->get_value();
+        settings_content << "pixel_threshold=" << pixel_threshold << std::endl;
+    }
+    settings_content << std::endl; // Add a blank line after the new section
+
+    // Convert to a normal string
+    std::string settings_string = settings_content.str();
+
+    // Save detection settings
+    save_settings(settings_string, settings_header);
 }
 
 void MainWindow::on_digital_io_line_number_changed()
@@ -524,7 +622,138 @@ void MainWindow::on_check_service_status_clicked()
     }
 }
 
-void MainWindow::on_save_settings_clicked()
+void MainWindow::on_save_camera_settings_clicked()
+{
+    // Create settings header
+    std::string serialNumber;
+    if (m_sn_lbl)
+    {
+        serialNumber = m_sn_lbl->get_text();
+    }
+    std::string settings_header = "[" + serialNumber + "]";
+
+    // Build settings content
+    std::stringstream settings_content;
+    settings_content << settings_header << std::endl;
+    if (m_exposure_time_entry)
+    {
+        settings_content << "exposureTime=" << m_exposure_time_entry->get_text() << std::endl;
+    }
+    if (m_width_sb)
+    {
+        settings_content << "width=" << m_width_sb->get_value() << std::endl;
+    }
+    if (m_height_sb)
+    {
+        settings_content << "height=" << m_height_sb->get_value() << std::endl;
+    }
+    if (m_offset_x_sb)
+    {
+        settings_content << "offsetX=" << m_offset_x_sb->get_value() << std::endl;
+    }
+    if (m_offset_y_sb)
+    {
+        settings_content << "offsetY=" << m_offset_y_sb->get_value() << std::endl;
+    }
+    if (m_settings_digital_io_line_number_cbox)
+    {
+        settings_content << "lineNumber=" << m_settings_digital_io_line_number_cbox->get_active_text() << std::endl;
+    }
+    if (m_settings_digital_io_line_mode_cbox)
+    {
+        settings_content << "lineMode=" << m_settings_digital_io_line_mode_cbox->get_active_text() << std::endl;
+    }
+    if (m_settings_digital_io_line_source_cbox)
+    {
+        settings_content << "lineSource=" << m_settings_digital_io_line_source_cbox->get_active_text() << std::endl;
+    }
+    if (m_settings_strobe_enable_switch)
+    {
+        settings_content << "strobeEnable=" << m_settings_strobe_enable_switch->get_active() << std::endl;
+    }
+    if (m_settings_strobe_duration_sb)
+    {
+        settings_content << "strobeDuration=" << m_settings_strobe_duration_sb->get_value() << std::endl;
+    }
+    settings_content << std::endl; // Add a blank line after the new section
+
+    // Convert to a normal string
+    std::string settings_string = settings_content.str();
+
+    // Save detection settings
+    save_settings(settings_string, settings_header);
+}
+
+std::map<std::string, std::string> MainWindow::get_settings(const std::string &settings_header)
+{
+    std::map<std::string, std::string> settings;
+
+    // Step 1: Read the content of the settings file
+    std::ifstream settingsFile(Settings_File_Path);
+    if (!settingsFile.is_open())
+    {
+        std::cerr << "Unable to open settings file: " << Settings_File_Path << std::endl;
+        m_logger->log("Unable to open settings file: " + Settings_File_Path, Logger::ERROR);
+        return settings;
+    }
+
+    std::stringstream buffer;
+    buffer << settingsFile.rdbuf();
+    settingsFile.close();
+    std::string content = buffer.str();
+
+    // Step 2: Find the requested section
+    size_t sectionPos = content.find(settings_header);
+    if (sectionPos == std::string::npos)
+    {
+        // Section not found
+        return settings;
+    }
+
+    // Step 3: Extract the section content
+    size_t nextSectionPos = content.find('[', sectionPos + 1); // Find the next section's starting position
+    std::string sectionContent;
+    if (nextSectionPos == std::string::npos)
+    {
+        // Section is the last one in the file
+        sectionContent = content.substr(sectionPos + settings_header.length());
+    }
+    else
+    {
+        // Extract content up to the next section
+        sectionContent = content.substr(sectionPos + settings_header.length(), nextSectionPos - sectionPos - settings_header.length());
+    }
+
+    // Step 4: Parse the key-value pairs
+    std::istringstream sectionStream(sectionContent);
+    std::string line;
+    while (std::getline(sectionStream, line))
+    {
+        // Trim whitespace
+        line.erase(0, line.find_first_not_of(" \t\r\n"));
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+
+        // Split the line into key and value
+        size_t delimiterPos = line.find('=');
+        if (delimiterPos != std::string::npos)
+        {
+            std::string key = line.substr(0, delimiterPos);
+            std::string value = line.substr(delimiterPos + 1);
+
+            // Trim whitespace from key and value
+            key.erase(0, key.find_first_not_of(" \t\r\n"));
+            key.erase(key.find_last_not_of(" \t\r\n") + 1);
+            value.erase(0, value.find_first_not_of(" \t\r\n"));
+            value.erase(value.find_last_not_of(" \t\r\n") + 1);
+
+            settings[key] = value;
+        }
+    }
+
+    return settings;
+}
+
+void MainWindow::save_settings(std::string &settings_to_save, std::string &settings_header)
 {
     if (!FileUtils::createFile(Settings_File_Path))
     {
@@ -544,60 +773,10 @@ void MainWindow::on_save_settings_clicked()
         std::cerr << "Unable to open settings file: " << Settings_File_Path << std::endl;
         m_logger->log("Unable to open settings file: " + Settings_File_Path, Logger::ERROR);
     }
-
     std::string content = buffer.str();
-    std::string serialNumber;
-    if (m_sn_lbl)
-    {
-        serialNumber = m_sn_lbl->get_text();
-    }
-    std::string sectionHeader = "[" + serialNumber + "]";
-    std::stringstream sectionContent;
-    sectionContent << sectionHeader << std::endl;
-    if (m_exposure_time_entry)
-    {
-        sectionContent << "exposureTime=" << m_exposure_time_entry->get_text() << std::endl;
-    }
-    if (m_width_sb)
-    {
-        sectionContent << "width=" << m_width_sb->get_value() << std::endl;
-    }
-    if (m_height_sb)
-    {
-        sectionContent << "height=" << m_height_sb->get_value() << std::endl;
-    }
-    if (m_offset_x_sb)
-    {
-        sectionContent << "offsetX=" << m_offset_x_sb->get_value() << std::endl;
-    }
-    if (m_offset_y_sb)
-    {
-        sectionContent << "offsetY=" << m_offset_y_sb->get_value() << std::endl;
-    }
-    if (m_settings_digital_io_line_number_cbox)
-    {
-        sectionContent << "lineNumber=" << m_settings_digital_io_line_number_cbox->get_active_text() << std::endl;
-    }
-    if (m_settings_digital_io_line_mode_cbox)
-    {
-        sectionContent << "lineMode=" << m_settings_digital_io_line_mode_cbox->get_active_text() << std::endl;
-    }
-    if (m_settings_digital_io_line_source_cbox)
-    {
-        sectionContent << "lineSource=" << m_settings_digital_io_line_source_cbox->get_active_text() << std::endl;
-    }
-    if (m_settings_strobe_enable_switch)
-    {
-        sectionContent << "strobeEnable=" << m_settings_strobe_enable_switch->get_active() << std::endl;
-    }
-    if (m_settings_strobe_duration_sb)
-    {
-        sectionContent << "strobeDuration=" << m_settings_strobe_duration_sb->get_value() << std::endl;
-    }
-    sectionContent << std::endl; // Add a blank line after the new section
 
     // Step 2: Find if the section for the device already exists
-    size_t sectionPos = content.find(sectionHeader);
+    size_t sectionPos = content.find(settings_header);
     bool sectionExists = (sectionPos != std::string::npos);
 
     if (sectionExists)
@@ -609,18 +788,18 @@ void MainWindow::on_save_settings_clicked()
         if (nextSectionPos == std::string::npos)
         {
             // The section is the last one, so replace to the end of the file
-            content.replace(sectionPos, std::string::npos, sectionContent.str());
+            content.replace(sectionPos, std::string::npos, settings_to_save);
         }
         else
         {
             // Replace up to the next section
-            content.replace(sectionPos, nextSectionPos - sectionPos, sectionContent.str());
+            content.replace(sectionPos, nextSectionPos - sectionPos, settings_to_save);
         }
     }
     else
     {
         // Step 4: If the section doesn't exist, append the new section at the end
-        content += sectionContent.str();
+        content += settings_to_save;
     }
 
     // Step 5: Write the updated content back to the file (overwrite)
@@ -1812,6 +1991,18 @@ void MainWindow::on_toolkit_toggled()
     else if (m_toolkit_digital_io_rbtn->get_active())
     {
         m_toolkit_stack->set_visible_child("page_digital_io");
+    }
+}
+
+void MainWindow::on_settings_toggled()
+{
+    if (m_anomaly_detection_settings_rbtn->get_active())
+    {
+        m_settings_stack->set_visible_child("page_anomaly_detection_settings");
+    }
+    else if (m_camera_settings_rbtn->get_active())
+    {
+        m_settings_stack->set_visible_child("page_camera_settings");
     }
 }
 

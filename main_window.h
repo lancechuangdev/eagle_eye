@@ -55,7 +55,7 @@ protected:
     Glib::RefPtr<Gtk::Adjustment> m_height_adj;
     Glib::RefPtr<Gtk::Adjustment> m_offset_x_adj;
     Glib::RefPtr<Gtk::Adjustment> m_offset_y_adj;
-    Gtk::Button *m_save_settings_btn;
+    Gtk::Button *m_save_camera_settings_btn;
     Gtk::Stack *m_toolkit_stack;
     Gtk::RadioButton *m_toolkit_anomaly_detection_rbtn;
     Gtk::RadioButton *m_toolkit_digital_io_rbtn;
@@ -67,7 +67,14 @@ protected:
     Glib::RefPtr<Gtk::Adjustment> m_strobe_duration_adj;
     Gtk::SpinButton *m_toolkit_strobe_duration_sb;
     Gtk::Button *m_toolkit_test_digital_out_btn;
-    
+    Gtk::Stack *m_settings_stack;
+    Gtk::RadioButton *m_anomaly_detection_settings_rbtn;
+    Gtk::RadioButton *m_camera_settings_rbtn;
+    Gtk::Scale *m_detection_sensitivity_scale;
+    Gtk::Scale *m_anomaly_size_threshold_scale;
+    Gtk::Button *m_cancel_detection_settings_btn;
+    Gtk::Button *m_save_detection_settings_btn;
+
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
     void on_menu_toggled();
@@ -89,10 +96,13 @@ protected:
     void on_digital_io_line_source_changed();
     bool on_strobe_enable_state_set(bool state);
     void on_strobe_duration_value_changed();
-    void on_save_settings_clicked();
+    void on_save_camera_settings_clicked();
     void on_toolkit_toggled();
     void on_check_service_status_clicked();
     void on_test_digital_out_clicked();
+    void on_settings_toggled();
+    void on_cancel_detection_settings_clicked();
+    void on_save_detection_settings_clicked();
 
     // Key events
     bool on_key_press_event(GdkEventKey *key_event) override;
@@ -188,6 +198,8 @@ private:
     void clear_camera_settings();
     void snap_and_display(void *device_handle);
     std::string run_command(const std::string& command);
+    std::map<std::string, std::string> get_settings(const std::string &settings_header);
+    void save_settings(std::string &settings_to_save, std::string &section_header);
 };
 
 #endif
