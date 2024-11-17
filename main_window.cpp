@@ -1,6 +1,7 @@
 #include "main_window.h"
 
 const std::string MainWindow::Settings_File_Path = std::string(std::getenv("HOME")) + "/.config/eagle_eye/settings.ini";
+const std::filesystem::path MainWindow::Detection_Results_Path = std::filesystem::path(std::getenv("HOME")) / "eagle_eye" / "detection_results";
 
 MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &refBuilder, std::shared_ptr<Logger> logger)
     : Gtk::Window(obj),
@@ -78,20 +79,20 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_snap_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_snap_clicked));
     }
 
-    m_builder->get_widget("test_drawing_area", m_test_display_area);
-    if (m_test_display_area)
+    m_builder->get_widget("toolkit_drawing_area", m_toolkit_display_area);
+    if (m_toolkit_display_area)
     {
-        m_test_display_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_draw));
+        m_toolkit_display_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_draw));
 
         // Connect mouse scroll event
-        m_test_display_area->add_events(Gdk::SCROLL_MASK);
-        m_test_display_area->signal_scroll_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_scroll_event));
+        m_toolkit_display_area->add_events(Gdk::SCROLL_MASK);
+        m_toolkit_display_area->signal_scroll_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_scroll_event));
 
         // Connect mouse press and motion events
-        m_test_display_area->add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
-        m_test_display_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_btn_press_event));
-        m_test_display_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_btn_release_event));
-        m_test_display_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_motion_notify_event));
+        m_toolkit_display_area->add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
+        m_toolkit_display_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_btn_press_event));
+        m_toolkit_display_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_btn_release_event));
+        m_toolkit_display_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_motion_notify_event));
     }
 
     m_builder->get_widget("cam_grid", m_cam_grid);
@@ -273,6 +274,238 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     {
         m_save_detection_settings_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_save_detection_settings_clicked));
     }
+
+    m_builder->get_widget("recent_detection_results_selector_cbox", m_recent_detection_results_selector_cbox);
+
+    m_builder->get_widget("detection_results_listbox", m_detection_results_listbox);
+    if (m_detection_results_listbox)
+    {
+        m_detection_results_listbox->signal_row_selected().connect(sigc::mem_fun(*this, &MainWindow::on_detection_result_selected));
+    }
+
+    m_builder->get_widget("detection_results_display_area", m_detection_results_display_area);
+    if (m_detection_results_display_area)
+    {
+        m_detection_results_display_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_detection_results_display_area_draw));
+    }
+}
+
+void MainWindow::load_detection_results()
+{
+    // Clear the resutls before loading
+    for (auto *child : m_detection_results_listbox->get_children())
+    {
+        m_detection_results_listbox->remove(*child);
+    }
+
+    if (m_recent_detection_results_selector_cbox)
+    {
+        auto result_count = std::stoi(m_recent_detection_results_selector_cbox->get_active_id());
+        const char* home = std::getenv("HOME");
+        auto recent_results_folders = FileUtils::get_recent_folders(Detection_Results_Path, result_count);
+        
+        // Populating the detection results list box with rows
+        for (const auto &result_folder : recent_results_folders)
+        {
+            std::cout << result_folder << std::endl;
+
+            auto row_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+            auto trans_label = Gtk::make_managed<Gtk::Label>(result_folder.filename().string());
+            row_box->set_tooltip_text(result_folder.string());
+            row_box->pack_start(*trans_label, Gtk::PACK_SHRINK);
+            // Create a Gtk::ListBoxRow to wrap the box
+            auto listbox_row = Gtk::make_managed<Gtk::ListBoxRow>();
+            listbox_row->add(*row_box);
+            // Set margin around the row
+            listbox_row->set_margin_top(5);      // Space above the row
+            listbox_row->set_margin_bottom(5);   // Space below the row
+            listbox_row->set_margin_start(5);   // Space to the left of the row
+            listbox_row->set_margin_end(5);     // Space to the right of the row
+            // Add the Gtk::ListBoxRow to the list box
+            m_detection_results_listbox->append(*listbox_row);
+            // Show all the newly added widgets
+            listbox_row->show_all();
+        }
+
+        // Select the first row
+        auto most_recent_result = m_detection_results_listbox->get_row_at_index(0);
+        if (most_recent_result)
+        {
+            m_detection_results_listbox->select_row(*most_recent_result);
+        }
+    }
+}
+
+void MainWindow::on_detection_result_selected(Gtk::ListBoxRow* row)
+{
+    if (row)
+    {
+        auto row_box = dynamic_cast<Gtk::Box*>(row->get_child());
+        if (row_box)
+        {
+            std::string result_folder = row_box->get_tooltip_text();
+            std::cout << "Selected row: " << result_folder << std::endl;
+            load_detection_result(result_folder);
+        }
+    }
+    else
+    {
+        std::cout << "No row selected!" << std::endl;
+    }
+}
+
+void MainWindow::load_detection_result(std::string &detection_result_folder)
+{
+    std::filesystem::path trans_json = std::filesystem::path(detection_result_folder) / "transaction_data.json";
+    if (!std::filesystem::exists(trans_json))
+    {
+        std::cerr << "File not exists: transaction_data.json" << std::endl;
+        return;
+    }
+
+    // Read the content of the JSON file
+    std::ifstream json_file(trans_json);
+    if (!json_file.is_open())
+    {
+        std::cerr << "Failed to open the file." << std::endl;
+        return;
+    }
+
+    // Parse the JSON content
+    nlohmann::json json_data;
+    json_file >> json_data;
+
+    int patch_size = json_data["patch_size"].get<int>();
+    int frame_width = json_data["frame_width"].get<int>();
+    int frame_height = json_data["frame_height"].get<int>();
+    int num_frames = json_data["num_frames"].get<int>();
+    int total_height = frame_height * num_frames;
+
+    // Create the combined pixbuf for detection images.
+    // Gdk::Pixbuf does not directly support a single-channel format, 
+    // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
+    m_image_pixbuf_detection_result = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
+    m_image_pixbuf_detection_result->fill(0x00000000); // Fill with black
+
+    int current_y = 0;
+    bool load_images_error = false;
+
+    // Load and position each image
+    for (const auto &frame : json_data["frames"])
+    {
+        const std::string& path = frame["file_name"];
+        auto pixbuf_image = Gdk::Pixbuf::create_from_file(path, frame_width, frame_height);
+        if (!pixbuf_image)
+        {
+            load_images_error = true;
+            std::cerr << "Failed to load image(s): " << path << std::endl;
+            break;
+        }
+
+        // Copy the current image into the combined pixbuf
+        pixbuf_image->copy_area(
+            0, 
+            0, 
+            frame_width, 
+            frame_height, 
+            m_image_pixbuf_detection_result, 
+            0, 
+            current_y);
+
+        // Update the y-offset for the next image
+        current_y += frame_height;
+    }
+
+    if (load_images_error)
+    {
+        // TODO, show a popup
+        return;
+    }
+
+    // Create a transparent mask pixbuf of the same size as the image
+    m_mask_pixbuf_detection_result = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
+    // m_mask_pixbuf_detection_result->fill(0xffffffbe); // For testing
+    m_mask_pixbuf_detection_result->fill(0x00000000); // Initialize the mask to be fully transparent black
+
+    // Load and position each prediction
+    int predictions_per_row = frame_width / patch_size;
+    if (frame_width % patch_size != 0)
+    {
+        predictions_per_row++; // Allow for an additional prediction if there's remaining space
+    }
+    for (const auto &prediction : json_data["predictions"])
+    {
+        int prediction_id = prediction["prediction_id"].get<int>();
+        std::string filename = prediction["file_name"].get<std::string>();
+        
+        // Load the prediction image
+        auto prediction_pixbuf = Gdk::Pixbuf::create_from_file(filename);
+        if (!prediction_pixbuf)
+        {
+            std::cerr << "Failed to load prediction image" << std::endl;
+            continue;
+        }
+
+        // Calculate row and column based on the index
+        int row = prediction_id / predictions_per_row;
+        int col = prediction_id % predictions_per_row;
+
+        // Calculate position_x
+        int position_x = col * patch_size; // Standard position in the row
+
+        // Adjust position_x if this is the last column and it exceeds frame width
+        if (col == predictions_per_row - 1 && position_x + patch_size > frame_width)
+        {
+            position_x = frame_width - patch_size;
+        }
+
+        // Calculate position_y
+        int position_y = row * patch_size; // Each row is separated by the height of the patch
+
+        // Copy the prediction image into m_mask_pixbuf_toolkit at the specified position
+        prediction_pixbuf->Gdk::Pixbuf::copy_area(
+            0,
+            0,
+            prediction_pixbuf->get_width(),
+            prediction_pixbuf->get_height(),
+            m_mask_pixbuf_detection_result,
+            position_x,
+            position_y
+        );
+    }
+
+    // Update mask pixel buf
+    if (m_mask_pixbuf_detection_result)
+    {
+        update_mask_color(m_mask_pixbuf_detection_result);
+        update_mask_alpha(m_mask_pixbuf_detection_result, m_mask_alpha * 255);
+    }
+
+    // Queue the frame for display
+    if (m_image_pixbuf_detection_result)
+    {
+        m_detection_results_display_area->set_size_request(frame_width, total_height);
+        m_detection_results_display_area->queue_draw();
+    }
+}
+
+bool MainWindow::on_detection_results_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+{
+    // Draw the images
+    if (m_image_pixbuf_detection_result)
+    {
+        Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_detection_result, 0, 0);
+        cr->paint();
+    }
+
+    // Draw the masks
+    if (m_mask_pixbuf_detection_result)
+    {
+        Gdk::Cairo::set_source_pixbuf(cr, m_mask_pixbuf_detection_result, 0, 0);
+        cr->paint();
+    }
+
+    return true;
 }
 
 void MainWindow::on_cancel_detection_settings_clicked()
@@ -1664,6 +1897,8 @@ void MainWindow::on_window_shown()
         m_logger->log("No camera found.");
     }
 
+    load_detection_results();
+
     // Set up websocket callbacks
     m_ws_client.on_connect([this]() {
         std::cout << "Successfully connected to the WebSocket server!" << std::endl;
@@ -2282,15 +2517,15 @@ void MainWindow::on_snap_clicked()
     save_tmp_image(pData, stImageInfo, device_handle);
 
     // Reset image pixel buffer
-    if (m_image_pixbuf_test)
+    if (m_image_pixbuf_toolkit)
     {
-        m_image_pixbuf_test.reset();
+        m_image_pixbuf_toolkit.reset();
     }
 
     // Load the frame from file    
     try
     {
-        m_image_pixbuf_test = Gdk::Pixbuf::create_from_file("/tmp/eagle_eye/tmp.jpeg");
+        m_image_pixbuf_toolkit = Gdk::Pixbuf::create_from_file("/tmp/eagle_eye/tmp.jpeg");
     }
     catch (const Glib::FileError &ex)
     {
@@ -2306,11 +2541,11 @@ void MainWindow::on_snap_clicked()
     m_offset_x_test = 0.0;
     m_offset_y_test = 0.0;
 
-    // Queue the frame for diaplay
-    if (m_image_pixbuf_test)
+    // Queue the frame for display
+    if (m_image_pixbuf_toolkit)
     {
-        m_test_display_area->set_size_request(frame_width, frame_height);
-        m_test_display_area->queue_draw();
+        m_toolkit_display_area->set_size_request(frame_width, frame_height);
+        m_toolkit_display_area->queue_draw();
     }
 
     // Start detection
@@ -2354,7 +2589,7 @@ void MainWindow::on_snap_clicked()
     for (int i = 0; i < num_frames; ++i)
     {
         // Save the frame metadata
-        frame_offsets.push_back({ offset, frame_size, frame_width, patch_size, sn });
+        frame_offsets.push_back({ offset, frame_size, sn });
 
         // Calculate the memory address to copy this frame
         void* frame_ptr = static_cast<uint8_t*>(shm_ptr) + offset;
@@ -2369,16 +2604,37 @@ void MainWindow::on_snap_clicked()
     if (!frame_offsets.empty())
     {
         // Send the command to the ws server
-        nlohmann::json json_data;
         auto trans_id = generate_transaction_id();
+
+        // Get confidence threshold and pixel threshold from settings file
+        auto settings = get_settings("[detection]");
+        double confidence_threshold;
+        double pixel_threshold;
+
+        for (const auto &[key, value] : settings)
+        {
+            if (key == "confidence_threshold")
+            {
+                confidence_threshold = std::stod(value);
+            }
+            else if (key == "pixel_threshold")
+            {
+                pixel_threshold = std::stod(value);
+            }
+        }
+
+        // Build JSON transaction data
+        nlohmann::json json_data;
         json_data["transaction_id"] = trans_id;
+        json_data["confidence_threshold"] = confidence_threshold;
+        json_data["pixel_threshold"] = pixel_threshold;
+        json_data["frame_width"] = frame_width;
+        json_data["frame_height"] = frame_height;
         for (const auto& info : frame_offsets)
         {
             json_data["frames"].push_back({
                 {"offset", info.offset},
                 {"frame_size", info.frame_size},
-                {"frame_width", info.frame_width},
-                {"frame_height", info.frame_height},
                 {"serial_number", info.serial_number}
             });
         }
@@ -2451,8 +2707,7 @@ void MainWindow::on_snap_clicked()
 
 void MainWindow::display_test_masks(std::string trans_id)
 {
-    const char* home = std::getenv("HOME");
-    std::filesystem::path trans_json = std::filesystem::path(home) / "eagle_eye" / "test_result" / trans_id / "transaction_data.json";
+    std::filesystem::path trans_json = Detection_Results_Path / trans_id / "transaction_data.json";
     if (!std::filesystem::exists(trans_json))
     {
         std::cerr << "File not exists: transaction_data.json" << std::endl;
@@ -2461,7 +2716,8 @@ void MainWindow::display_test_masks(std::string trans_id)
 
     // Read the content of the JSON file
     std::ifstream json_file(trans_json);
-    if (!json_file.is_open()) {
+    if (!json_file.is_open())
+    {
         std::cerr << "Failed to open the file." << std::endl;
         return;
     }
@@ -2486,26 +2742,20 @@ void MainWindow::display_test_masks(std::string trans_id)
     }
 
     int patch_size = json_data["patch_size"].get<int>();
-    int frame_width = 0;
-    int total_height = 0;
-
-    // Access frames array
-    for (const auto &frame : json_data["frames"])
-    {
-        frame_width = frame["frame_width"].get<int>();
-        total_height += frame["frame_height"].get<int>();
-    }
+    int frame_width = json_data["frame_width"].get<int>();
+    int num_frames = json_data["num_frames"].get<int>();
+    int total_height = json_data["frame_height"].get<int>() * num_frames;
 
     // Reset mask pixel buffer
-    if (m_maskPixbuf)
+    if (m_mask_pixbuf_toolkit)
     {
-        m_maskPixbuf.reset();
+        m_mask_pixbuf_toolkit.reset();
     }
 
     // Create a transparent mask pixbuf of the same size as the image
-    m_maskPixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
-    // m_maskPixbuf->fill(0xffffffbe); // For testing
-    m_maskPixbuf->fill(0x00000000); // Initialize the mask to be fully transparent black
+    m_mask_pixbuf_toolkit = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
+    // m_mask_pixbuf_toolkit->fill(0xffffffbe); // For testing
+    m_mask_pixbuf_toolkit->fill(0x00000000); // Initialize the mask to be fully transparent black
 
     int predictions_per_row = frame_width / patch_size;
     if (frame_width % patch_size != 0)
@@ -2517,7 +2767,7 @@ void MainWindow::display_test_masks(std::string trans_id)
     for (const auto &prediction : json_data["predictions"])
     {
         int prediction_id = prediction["prediction_id"].get<int>();
-        std::string filename = prediction["filename"].get<std::string>();
+        std::string filename = prediction["file_name"].get<std::string>();
         
         // Load the prediction image
         auto prediction_pixbuf = Gdk::Pixbuf::create_from_file(filename);
@@ -2543,39 +2793,42 @@ void MainWindow::display_test_masks(std::string trans_id)
         // Calculate position_y
         int position_y = row * patch_size; // Each row is separated by the height of the patch
 
-        // Copy the prediction image into m_maskPixbuf at the specified position
+        // Copy the prediction image into m_mask_pixbuf_toolkit at the specified position
         prediction_pixbuf->Gdk::Pixbuf::copy_area(
             0,
             0,
             prediction_pixbuf->get_width(),
             prediction_pixbuf->get_height(),
-            m_maskPixbuf,
+            m_mask_pixbuf_toolkit,
             position_x,
             position_y
         );
     }
 
     // Update mask pixel buf
-    update_mask_color();
-    update_mask_alpha(m_mask_alpha * 255);
+    update_mask_color(m_mask_pixbuf_toolkit);
+    update_mask_alpha(m_mask_pixbuf_toolkit, m_mask_alpha * 255);
 
-    m_test_display_area->queue_draw();
+    m_toolkit_display_area->queue_draw();
 }
 
-void MainWindow::update_mask_color()
+void MainWindow::update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf)
 {
+    if (!mask_pixbuf)
+        return;
+
     const int AmberRed = 255;
     const int AmberGreen = 191;
     const int AmberBlue = 0;
 
     // Get pixbuf properties
-    int mask_width = m_maskPixbuf->get_width();
-    int mask_height = m_maskPixbuf->get_height();
-    int mask_rowstride = m_maskPixbuf->get_rowstride();
-    int mask_n_channels = m_maskPixbuf->get_n_channels();
+    int mask_width = mask_pixbuf->get_width();
+    int mask_height = mask_pixbuf->get_height();
+    int mask_rowstride = mask_pixbuf->get_rowstride();
+    int mask_n_channels = mask_pixbuf->get_n_channels();
 
     // Get pointer to the pixel data
-    guchar *pixels = m_maskPixbuf->get_pixels();
+    guchar *pixels = mask_pixbuf->get_pixels();
 
     // Iterate through the pixels and modify the alpha channel
     for (int y = 0; y < mask_height; ++y)
@@ -2594,19 +2847,19 @@ void MainWindow::update_mask_color()
     }
 }
 
-void MainWindow::update_mask_alpha(gint32 alpha)
+void MainWindow::update_mask_alpha(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf, gint32 alpha)
 {
-    if (!m_maskPixbuf)
+    if (!mask_pixbuf)
         return;
 
     // Get pixbuf properties
-    int width = m_maskPixbuf->get_width();
-    int height = m_maskPixbuf->get_height();
-    int rowstride = m_maskPixbuf->get_rowstride();
-    int n_channels = m_maskPixbuf->get_n_channels();
+    int width = mask_pixbuf->get_width();
+    int height = mask_pixbuf->get_height();
+    int rowstride = mask_pixbuf->get_rowstride();
+    int n_channels = mask_pixbuf->get_n_channels();
 
     // Get pointer to the pixel data
-    guchar *pixels = m_maskPixbuf->get_pixels();
+    guchar *pixels = mask_pixbuf->get_pixels();
 
     // Iterate through the pixels and modify the alpha channel
     for (int y = 0; y < height; ++y)
@@ -2786,6 +3039,8 @@ void MainWindow::start_detection()
             size_t offset = 0;
             frame_offsets.clear();
             int frames_dequeued = 0;
+            int frame_width = 0;
+            int frame_height = 0;
 
             // Copy each frame into its respective memory offset
             while (!m_frame_queue.isEmpty() && frames_dequeued < 2)
@@ -2793,12 +3048,12 @@ void MainWindow::start_detection()
                 if (m_frame_queue.dequeue(frame_data))
                 {
                     auto frame_size = frame_data.pMetadata->nFrameLen;
-                    auto frame_width = frame_data.pMetadata->nWidth;
-                    auto frame_height = frame_data.pMetadata->nHeight;
+                    frame_width = frame_data.pMetadata->nWidth;
+                    frame_height = frame_data.pMetadata->nHeight;
                     auto serial_number = frame_data.serial_number;
 
                     // Save the frame metadata
-                    frame_offsets.push_back({ offset, frame_size, frame_width, frame_height, serial_number });
+                    frame_offsets.push_back({ offset, frame_size, serial_number });
 
                     // Calculate the memory address to copy this frame
                     void* frame_ptr = static_cast<uint8_t*>(shm_ptr) + offset;
@@ -2844,13 +3099,13 @@ void MainWindow::start_detection()
             json_data["transaction_id"] = trans_id;
             json_data["confidence_threshold"] = confidence_threshold;
             json_data["pixel_threshold"] = pixel_threshold;
+            json_data["frame_width"] = frame_width;
+            json_data["frame_height"] = frame_height;
             for (const auto& info : frame_offsets)
             {
                 json_data["frames"].push_back({
                     {"offset", info.offset},
                     {"frame_size", info.frame_size},
-                    {"frame_width", info.frame_width},
-                    {"frame_height", info.frame_height},
                     {"serial_number", info.serial_number}
                 });
             }
@@ -2995,15 +3250,15 @@ bool MainWindow::on_test_display_area_draw(const Cairo::RefPtr<Cairo::Context> &
     cr->scale(m_zoom_factor_test, m_zoom_factor_test); // Apply zoom
 
     // Draw the image
-    if (m_image_pixbuf_test)
+    if (m_image_pixbuf_toolkit)
     {
-        Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_test, 0, 0);
+        Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_toolkit, 0, 0);
         cr->paint();
     }
 
-    if (m_maskPixbuf)
+    if (m_mask_pixbuf_toolkit)
     {
-        Gdk::Cairo::set_source_pixbuf(cr, m_maskPixbuf, 0, 0);
+        Gdk::Cairo::set_source_pixbuf(cr, m_mask_pixbuf_toolkit, 0, 0);
         cr->paint();
     }
 
@@ -3024,7 +3279,7 @@ bool MainWindow::on_test_display_area_scroll_event(GdkEventScroll *scroll_event)
             m_mask_alpha = std::max(m_mask_alpha - 0.1, 0.1); // Min alpha is 0.1
         }
 
-        update_mask_alpha(m_mask_alpha * 255);
+        update_mask_alpha(m_mask_pixbuf_toolkit, m_mask_alpha * 255);
     }
     else
     {
@@ -3041,7 +3296,7 @@ bool MainWindow::on_test_display_area_scroll_event(GdkEventScroll *scroll_event)
     }
 
     // Trigger a redraw of the drawing area
-    m_test_display_area->queue_draw();
+    m_toolkit_display_area->queue_draw();
 
     // Return true to indicate that the event has been handled
     return true;
@@ -3105,7 +3360,7 @@ bool MainWindow::on_test_display_area_motion_notify_event(GdkEventMotion *motion
     }
 
     // Trigger a redraw of the drawing area
-    m_test_display_area->queue_draw();
+    m_toolkit_display_area->queue_draw();
 
     return true;
 }

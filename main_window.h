@@ -36,7 +36,7 @@ protected:
     Gtk::Button *m_stop_btn;
     Gtk::Button *m_snap_btn;
     Gtk::ComboBoxText *m_snap_source_cbox;
-    Gtk::DrawingArea *m_test_display_area;
+    Gtk::DrawingArea *m_toolkit_display_area;
     Gtk::Stack *m_content_stack;
     Gtk::Grid *m_cam_grid;
     Gtk::DrawingArea *m_settings_display_area;
@@ -74,6 +74,9 @@ protected:
     Gtk::Scale *m_anomaly_size_threshold_scale;
     Gtk::Button *m_cancel_detection_settings_btn;
     Gtk::Button *m_save_detection_settings_btn;
+    Gtk::ListBox *m_detection_results_listbox;
+    Gtk::DrawingArea *m_detection_results_display_area;
+    Gtk::ComboBoxText *m_recent_detection_results_selector_cbox;
 
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
@@ -103,6 +106,8 @@ protected:
     void on_settings_toggled();
     void on_cancel_detection_settings_clicked();
     void on_save_detection_settings_clicked();
+    void on_detection_result_selected(Gtk::ListBoxRow* row);
+    bool on_detection_results_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
 
     // Key events
     bool on_key_press_event(GdkEventKey *key_event) override;
@@ -123,8 +128,6 @@ private:
     {
         size_t offset;
         size_t frame_size;
-        size_t frame_width;
-        size_t frame_height;
         std::string serial_number;
     };
 
@@ -152,8 +155,8 @@ private:
     std::condition_variable m_ws_response_cv;
     bool m_ws_response_ready = false; // Condition to wait on
 
-    Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_test;
-    Glib::RefPtr<Gdk::Pixbuf> m_maskPixbuf;
+    Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_toolkit;
+    Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_toolkit;
     double m_mask_alpha = 0.5;
     bool m_ctrl_pressed = false; // Flag to check if Ctrl key is pressed
     bool m_is_dragging_test = false; // Track whether the user is dragging on test page
@@ -171,8 +174,11 @@ private:
     double m_offset_y_settings = 0.0;    // Vertical pan offset on settings page
     double m_zoom_factor_settings = 1.0; // Zoom factor (1.0 = no zoom) on settings page
 
-    static const std::string Settings_File_Path;
+    Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_detection_result;
+    Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_detection_result;
 
+    static const std::string Settings_File_Path;
+    static const std::filesystem::path Detection_Results_Path;
     std::shared_ptr<Logger> m_logger;
 
     void discover_cameras();
@@ -189,8 +195,8 @@ private:
     void send_ws_message(std::string message);
     void save_tmp_image(unsigned char *pData, MV_FRAME_OUT_INFO_EX FrameInfo, void *deviceHandle);
     std::string generate_transaction_id();
-    void update_mask_color();
-    void update_mask_alpha(gint32 alpha);
+    void update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf);
+    void update_mask_alpha(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf, gint32 alpha);
     void display_test_masks(std::string trans_id);
     std::string convert_to_ip_address_str(uint32_t ip);
     void set_button_icon(Gtk::Button* button, const Glib::ustring& resource_path);
@@ -200,6 +206,8 @@ private:
     std::string run_command(const std::string& command);
     std::map<std::string, std::string> get_settings(const std::string &settings_header);
     void save_settings(std::string &settings_to_save, std::string &section_header);
+    void load_detection_results();
+    void load_detection_result(std::string &detection_result_folder);
 };
 
 #endif

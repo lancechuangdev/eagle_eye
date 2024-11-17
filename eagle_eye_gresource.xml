@@ -7,5 +7,6 @@
     <file>connect.svg</file>
     <file>disconnect.svg</file>
     <file>view.svg</file>
+    <file>refresh.svg</file>
   </gresource>
 </gresources>

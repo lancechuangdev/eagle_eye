@@ -122,3 +122,31 @@ bool FileUtils::directoryExists(const std::string &parent, const std::string &su
     // Check if the directory already exists
     return Glib::file_test(path, Glib::FILE_TEST_IS_DIR);
 }
+
+std::vector<std::filesystem::path> FileUtils::get_recent_folders(const std::filesystem::path& directory, size_t count)
+{
+    std::vector<std::filesystem::path> folders;
+
+    // Iterate through the directory and collect only folders
+    for (const auto &entry : std::filesystem::directory_iterator(directory))
+    {
+        if (std::filesystem::is_directory(entry.status()))
+        {
+            folders.push_back(entry.path());
+        }
+    }
+
+    // Sort the folders by last write time (modification time)
+    std::sort(folders.begin(), folders.end(), [](const std::filesystem::path &a, const std::filesystem::path &b)
+    {
+        return std::filesystem::last_write_time(a) > std::filesystem::last_write_time(b); // Descending order
+    });
+
+    // Return the last 'count' folders (or fewer if there aren't enough)
+    if (folders.size() > count)
+    {
+        folders.resize(count);
+    }
+
+    return folders;
+}

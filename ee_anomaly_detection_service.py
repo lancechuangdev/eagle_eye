@@ -14,8 +14,9 @@ from websocket_server import WebsocketServer
 shared_memory_name = '/ee_shared_memory' # DONOT CHANGE
 model_path = '/usr/local/share/eagle_eye/ds.keras'
 patch_size = 256
+detection_frame_height = 256
 home_dir = os.path.expanduser("~")
-output_dir = os.path.join(home_dir, "eagle_eye", "test_result")
+output_dir = os.path.join(home_dir, "eagle_eye", "detection_results")
 os.makedirs(output_dir, exist_ok=True)
 
 def print_with_ts(message):
@@ -64,13 +65,11 @@ def read_frame_from_shared_memory(shm_name, frame_size, frame_width, frame_heigh
     
     return frame
 
-def read_frames_from_shared_memory(shm_name, frames_array):
+def read_frames_from_shared_memory(shm_name, frame_width, frame_height, frames_array):
     frames = []
 
     for frame_data in frames_array:
         frame_size = frame_data['frame_size']
-        frame_height = frame_data['frame_height']
-        frame_width = frame_data['frame_width']
         offset = frame_data['offset']
         serial_number = frame_data['serial_number']
 
@@ -86,16 +85,16 @@ def read_frames_from_shared_memory(shm_name, frames_array):
         frame = read_frame_from_shared_memory(shm_name, frame_size, frame_width, frame_height, offset)
 
         # Reshape the frame to patch_size height
-        reshaped_frame = frame[:patch_size, :]
+        reshaped_frame = frame[:detection_frame_height, :]
         print(f"reshaped_frame shape: {reshaped_frame.shape}")
 
-        frames.append((reshaped_frame, frame_width, frame_height, serial_number))
+        frames.append((reshaped_frame, serial_number))
     
     return frames
 
-def build_batch_from_frames(frames, patch_size, shared_memory_name):
+def build_batch_from_frames(frames, frame_width, frame_height):
     batch = []
-    for frame, frame_width, _, _ in frames:
+    for frame, _ in frames:
         # Normalize frame to [0, 1] range
         frame = frame.astype(np.float32) / 255.0
 
@@ -148,6 +147,9 @@ def message_received(client, server, message):
     pixel_threshold = data.get('pixel_threshold', 0.03)
     pixel_threshold = pixel_threshold * patch_size * patch_size
     # print(f'pixel_threshold: {pixel_threshold}')
+    frame_width = data.get('frame_width', 0)
+    # frame_height = data.get('frame_height', 0)
+    frame_height = detection_frame_height
     total_anomalies = 0
     output_path = os.path.join(output_dir, transaction_id)
     serial_numbers = []
@@ -155,7 +157,11 @@ def message_received(client, server, message):
     # Build the initial transaction json object
     transaction_json = {
         "transaction_id": transaction_id,
-        "patch_size": patch_size
+        "patch_size": patch_size,
+        "confidence_threshold": confidence_threshold,
+        "pixel_threshold": pixel_threshold,
+        "frame_width": frame_width,
+        "frame_height": detection_frame_height
     }
 
     if frames_array and transaction_id:
@@ -163,12 +169,12 @@ def message_received(client, server, message):
         print_with_ts(f"Transaction {transaction_id} started: Starting prediction on {len(frames_array)} image(s)\n")
 
         # Read frames from shared memory
-        frames = read_frames_from_shared_memory(shared_memory_name, frames_array)
+        frames = read_frames_from_shared_memory(shared_memory_name, frame_width, frame_height, frames_array)
         num_frames = len(frames)
         transaction_json["num_frames"] = num_frames
 
         # Build batch from frames
-        batch = build_batch_from_frames(frames, patch_size, shared_memory_name)
+        batch = build_batch_from_frames(frames, frame_width, frame_height)
         num_patches = len(batch)
         transaction_json["num_patches"] = num_patches
 
@@ -193,7 +199,7 @@ def message_received(client, server, message):
                 anomaly_count = np.sum(prediction == 1)
                 
                 # Print per-patch anomaly count
-                print_with_ts(f"Patch {i}: {anomaly_count} anomaly pixels detected.\n")
+                print_with_ts(f"Patch {i}: {anomaly_count} anomaly pixels detected w/ confidence threshold {confidence_threshold}.\n")
                 
                 if anomaly_count >= pixel_threshold:
                     # Convert arrays to image format
@@ -217,7 +223,7 @@ def message_received(client, server, message):
                 # Ensure the directory exists
                 os.makedirs(output_path, exist_ok=True)
 
-                for i, (frame, frame_width, frame_height, serial_number) in enumerate(frames):
+                for i, (frame, serial_number) in enumerate(frames):
                     # Convert the reshaped frame to an image
                     frame = Image.fromarray(frame.astype(np.uint8))
                     # Save the frame to a file
@@ -231,10 +237,8 @@ def message_received(client, server, message):
                     # Add frame info to list
                     frames_data.append({
                         "frame_id": i,
-                        "frame_width": frame_width,
-                        "frame_height": frame_height,
                         "serial_number": serial_number,
-                        "filename": frame_filename
+                        "file_name": frame_filename
                     })
 
                 for prediction_image, i, prediction_filename in prediction_files:
@@ -243,7 +247,7 @@ def message_received(client, server, message):
                     # Add prediction info to list
                     predictions_data.append({
                         "prediction_id": i,
-                        "filename": prediction_filename
+                        "file_name": prediction_filename
                     })
 
                 # Update the transaction JSON structure
@@ -255,7 +259,7 @@ def message_received(client, server, message):
                 with open(os.path.join(output_path, "transaction_data.json"), "w") as trans_json_file:
                     json.dump(transaction_json, trans_json_file, indent=4)
 
-            # Send a final summary of the prediction results
+            # Print a final summary of the prediction results
             print_with_ts(f"Transaction {transaction_id} completed: {total_anomalies} patches with anomalies are more than the detection threshold.\n")
 
     result_json = {
