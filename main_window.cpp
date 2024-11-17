@@ -2822,9 +2822,28 @@ void MainWindow::start_detection()
             // Generate a transaction ID
             auto trans_id = generate_transaction_id();
 
+            // Get confidence threshold and pixel threshold from settings file
+            auto settings = get_settings("[detection]");
+            double confidence_threshold;
+            double pixel_threshold;
+
+            for (const auto &[key, value] : settings)
+            {
+                if (key == "confidence_threshold")
+                {
+                    confidence_threshold = std::stod(value);
+                }
+                else if (key == "pixel_threshold")
+                {
+                    pixel_threshold = std::stod(value);
+                }
+            }
+
             // Send the command to the ws server
             nlohmann::json json_data;
             json_data["transaction_id"] = trans_id;
+            json_data["confidence_threshold"] = confidence_threshold;
+            json_data["pixel_threshold"] = pixel_threshold;
             for (const auto& info : frame_offsets)
             {
                 json_data["frames"].push_back({

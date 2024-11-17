@@ -14,8 +14,6 @@ from websocket_server import WebsocketServer
 shared_memory_name = '/ee_shared_memory' # DONOT CHANGE
 model_path = '/usr/local/share/eagle_eye/ds.keras'
 patch_size = 256
-confidence_threshold = 0.8
-pixel_threshold = 2000
 home_dir = os.path.expanduser("~")
 output_dir = os.path.join(home_dir, "eagle_eye", "test_result")
 os.makedirs(output_dir, exist_ok=True)
@@ -127,8 +125,6 @@ def get_welcome_message():
             f"Configuration:\n"
             f"Model Path: {model_path}\n"
             f"Patch Size: {patch_size}\n"
-            f"Confidence Threshold: {confidence_threshold}\n"
-            f"Pixel Threshold: {pixel_threshold}\n"
             f"Output Directory: {output_dir}\n")
 
 # Called for every client connecting (after handshake)
@@ -147,6 +143,11 @@ def message_received(client, server, message):
     data = json.loads(message)
     frames_array = data.get('frames', [])
     transaction_id = data.get('transaction_id', 0)
+    confidence_threshold = data.get('confidence_threshold', 0.8)
+    # print(f'confidence_threshold: {confidence_threshold}')
+    pixel_threshold = data.get('pixel_threshold', 0.03)
+    pixel_threshold = pixel_threshold * patch_size * patch_size
+    # print(f'pixel_threshold: {pixel_threshold}')
     total_anomalies = 0
     output_path = os.path.join(output_dir, transaction_id)
     serial_numbers = []
@@ -159,7 +160,7 @@ def message_received(client, server, message):
 
     if frames_array and transaction_id:
         # Notify client about prediction start
-        initial_message = f"Transaction {transaction_id} started: Starting prediction on {len(frames_array)} image(s)\n"
+        print_with_ts(f"Transaction {transaction_id} started: Starting prediction on {len(frames_array)} image(s)\n")
 
         # Read frames from shared memory
         frames = read_frames_from_shared_memory(shared_memory_name, frames_array)
@@ -185,17 +186,14 @@ def message_received(client, server, message):
             
             prediction_files = []
             prediction_frame_ids = []
-
-            # List to accumulate messages to send to the client
-            client_messages = [initial_message]
             
             # Check each prediction for anomaly
             for i, prediction in enumerate(predictions):
                 # Threshold check for anomalies
                 anomaly_count = np.sum(prediction == 1)
                 
-                # Accumulate per-patch anomaly count in client_messages
-                client_messages.append(f"Patch {i}: {anomaly_count} anomaly pixels detected.\n")
+                # Print per-patch anomaly count
+                print_with_ts(f"Patch {i}: {anomaly_count} anomaly pixels detected.\n")
                 
                 if anomaly_count >= pixel_threshold:
                     # Convert arrays to image format
@@ -225,7 +223,7 @@ def message_received(client, server, message):
                     # Save the frame to a file
                     frame_filename = os.path.join(output_path, f"frame_{i}.png")
                     frame.save(frame_filename)
-                    client_messages.append(f"Saved frame {i}: {frame_filename}.\n")
+                    # print(f"Saved frame {i}: {frame_filename}.\n")
 
                     if i in prediction_frame_ids and serial_number not in serial_numbers:
                         serial_numbers.append(serial_number)
@@ -241,7 +239,7 @@ def message_received(client, server, message):
 
                 for prediction_image, i, prediction_filename in prediction_files:
                     prediction_image.save(prediction_filename)
-                    client_messages.append(f"Saved prediction for patch {i}: {prediction_filename}.\n")
+                    # print(f"Saved prediction for patch {i}: {prediction_filename}.\n")
                     # Add prediction info to list
                     predictions_data.append({
                         "prediction_id": i,
@@ -258,12 +256,7 @@ def message_received(client, server, message):
                     json.dump(transaction_json, trans_json_file, indent=4)
 
             # Send a final summary of the prediction results
-            summary_message = f"Transaction {transaction_id} completed: {total_anomalies} patches with anomalies are more than the detection threshold.\n"
-            client_messages.append(summary_message)
-
-            # Join all messages into a single string and send to the client
-            final_message = ''.join(client_messages)
-            print_with_ts(final_message)
+            print_with_ts(f"Transaction {transaction_id} completed: {total_anomalies} patches with anomalies are more than the detection threshold.\n")
 
     result_json = {
         "transaction_id": transaction_id,
