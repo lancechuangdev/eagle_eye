@@ -77,6 +77,8 @@ protected:
     Gtk::ListBox *m_detection_results_listbox;
     Gtk::DrawingArea *m_detection_results_display_area;
     Gtk::ComboBoxText *m_recent_detection_results_selector_cbox;
+    Gtk::Button *m_detection_results_refresh_btn;
+    Gtk::Label *m_last_detection_results_refresh_time_lbl;
 
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
@@ -108,7 +110,9 @@ protected:
     void on_save_detection_settings_clicked();
     void on_detection_result_selected(Gtk::ListBoxRow* row);
     bool on_detection_results_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
-
+    void on_detection_results_refresh_clicked();
+    void on_recent_detection_results_selector_changed();
+    
     // Key events
     bool on_key_press_event(GdkEventKey *key_event) override;
     bool on_key_release_event(GdkEventKey *key_event) override;
@@ -179,6 +183,8 @@ private:
 
     static const std::string Settings_File_Path;
     static const std::filesystem::path Detection_Results_Path;
+    Glib::RefPtr<Gio::FileMonitor> m_detection_results_monitor;
+    std::chrono::steady_clock::time_point m_last_load_time;
     std::shared_ptr<Logger> m_logger;
 
     void discover_cameras();
@@ -208,6 +214,8 @@ private:
     void save_settings(std::string &settings_to_save, std::string &section_header);
     void load_detection_results();
     void load_detection_result(std::string &detection_result_folder);
+    void setup_directory_monitor(const std::string &directory_path);
+    void on_directory_changed(const Glib::RefPtr<Gio::File> &file, const Glib::RefPtr<Gio::File> &other_file, Gio::FileMonitorEvent event_type);
 };
 
 #endif

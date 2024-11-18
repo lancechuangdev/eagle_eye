@@ -69,7 +69,7 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     if (m_stop_btn)
     {
         m_stop_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_stop_clicked));
-    }
+    }    
 
     m_builder->get_widget("snap_source_cbox", m_snap_source_cbox);
 
@@ -276,6 +276,10 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     }
 
     m_builder->get_widget("recent_detection_results_selector_cbox", m_recent_detection_results_selector_cbox);
+    if (m_recent_detection_results_selector_cbox)
+    {
+        m_recent_detection_results_selector_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_recent_detection_results_selector_changed));
+    }
 
     m_builder->get_widget("detection_results_listbox", m_detection_results_listbox);
     if (m_detection_results_listbox)
@@ -288,6 +292,65 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     {
         m_detection_results_display_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_detection_results_display_area_draw));
     }
+
+    m_builder->get_widget("detection_results_refresh_btn", m_detection_results_refresh_btn);
+    if (m_detection_results_refresh_btn)
+    {
+        m_detection_results_refresh_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_detection_results_refresh_clicked));
+    }
+
+    m_builder->get_widget("last_detection_results_refresh_time", m_last_detection_results_refresh_time_lbl);
+
+    setup_directory_monitor(Detection_Results_Path.string());
+
+    // Set the default time to one second before the app starts
+    m_last_load_time = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+}
+
+void MainWindow::setup_directory_monitor(const std::string &directory_path)
+{
+    auto directory = Gio::File::create_for_path(directory_path);
+
+    // Create a file monitor
+    m_detection_results_monitor = directory->monitor_directory();
+
+    // Connect the signal
+    m_detection_results_monitor->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_directory_changed));
+}
+
+void MainWindow::on_directory_changed(
+    const Glib::RefPtr<Gio::File> &file,
+    const Glib::RefPtr<Gio::File> &other_file,
+    Gio::FileMonitorEvent event_type)
+{
+    // React to the change
+    if (event_type == Gio::FILE_MONITOR_EVENT_CREATED ||
+        event_type == Gio::FILE_MONITOR_EVENT_CHANGED)
+    {
+        auto now = std::chrono::steady_clock::now();
+        // Throttling mechanism
+        // if (std::chrono::duration_cast<std::chrono::seconds>(now - m_last_load_time).count() > 1)
+        // {
+        //     m_last_load_time = now;
+        //     load_detection_results();
+        // }
+
+        // Wait a bit for the detection results ready for loading
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        m_last_load_time = now;
+        load_detection_results();
+    }
+}
+
+void MainWindow::on_recent_detection_results_selector_changed()
+{
+    load_detection_results();
+}
+
+void MainWindow::on_detection_results_refresh_clicked()
+{
+    m_last_load_time = std::chrono::steady_clock::now();
+    load_detection_results();
 }
 
 void MainWindow::load_detection_results()
@@ -296,6 +359,19 @@ void MainWindow::load_detection_results()
     for (auto *child : m_detection_results_listbox->get_children())
     {
         m_detection_results_listbox->remove(*child);
+    }
+
+    if (m_last_detection_results_refresh_time_lbl)
+    {
+        // Convert m_last_load_time to a time_t (assuming steady_clock is close to system_clock)
+        auto now_c = std::chrono::system_clock::to_time_t(
+            std::chrono::system_clock::now() + (m_last_load_time - std::chrono::steady_clock::now()));
+
+        // Format time as a string
+        std::ostringstream time_stream;
+        time_stream << std::put_time(std::localtime(&now_c), "%Y-%m-%d %H:%M:%S");
+
+        m_last_detection_results_refresh_time_lbl->set_text(time_stream.str());
     }
 
     if (m_recent_detection_results_selector_cbox)
@@ -2585,6 +2661,8 @@ void MainWindow::on_snap_clicked()
     size_t offset = 0;
     int num_frames = frame_height / patch_size;
     auto frame_size = frame_width * patch_size;
+    // adjust frame height for each frame
+    frame_height = patch_size;
 
     for (int i = 0; i < num_frames; ++i)
     {

@@ -148,8 +148,7 @@ def message_received(client, server, message):
     pixel_threshold = pixel_threshold * patch_size * patch_size
     # print(f'pixel_threshold: {pixel_threshold}')
     frame_width = data.get('frame_width', 0)
-    # frame_height = data.get('frame_height', 0)
-    frame_height = detection_frame_height
+    frame_height = data.get('frame_height', 0)
     total_anomalies = 0
     output_path = os.path.join(output_dir, transaction_id)
     serial_numbers = []
@@ -161,7 +160,7 @@ def message_received(client, server, message):
         "confidence_threshold": confidence_threshold,
         "pixel_threshold": pixel_threshold,
         "frame_width": frame_width,
-        "frame_height": detection_frame_height
+        "frame_height": detection_frame_height # adjust the frame height for the detection results
     }
 
     if frames_array and transaction_id:
@@ -175,12 +174,12 @@ def message_received(client, server, message):
 
         # Build batch from frames
         batch = build_batch_from_frames(frames, frame_width, frame_height)
-        num_patches = len(batch)
-        transaction_json["num_patches"] = num_patches
-
-        patches_per_frame = num_patches / num_frames
 
         if batch:
+            num_patches = len(batch)
+            transaction_json["num_patches"] = num_patches
+            patches_per_frame = num_patches / num_frames
+
             # Convert list to numpy array with batch shape (num_patches, patch_size, patch_size, 1)
             frame_batch = np.array(batch)
             # print(f"frame_batch shape: {frame_batch.shape}")
