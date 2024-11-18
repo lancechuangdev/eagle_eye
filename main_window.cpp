@@ -584,10 +584,9 @@ bool MainWindow::on_detection_results_display_area_draw(const Cairo::RefPtr<Cair
     return true;
 }
 
-void MainWindow::on_cancel_detection_settings_clicked()
+void MainWindow::load_detection_settings()
 {
     auto settings = get_settings("[detection]");
-
     for (const auto &[key, value] : settings)
     {
         if (key == "confidence_threshold")
@@ -605,6 +604,11 @@ void MainWindow::on_cancel_detection_settings_clicked()
             }
         }
     }
+}
+
+void MainWindow::on_cancel_detection_settings_clicked()
+{
+    load_detection_settings();
 }
 
 void MainWindow::on_save_detection_settings_clicked()
@@ -1974,6 +1978,8 @@ void MainWindow::on_window_shown()
     }
 
     load_detection_results();
+
+    load_detection_settings();
 
     // Set up websocket callbacks
     m_ws_client.on_connect([this]() {

@@ -212,6 +212,7 @@ private:
     std::string run_command(const std::string& command);
     std::map<std::string, std::string> get_settings(const std::string &settings_header);
     void save_settings(std::string &settings_to_save, std::string &section_header);
+    void load_detection_settings();
     void load_detection_results();
     void load_detection_result(std::string &detection_result_folder);
     void setup_directory_monitor(const std::string &directory_path);
