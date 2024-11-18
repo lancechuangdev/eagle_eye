@@ -2691,10 +2691,10 @@ void MainWindow::on_snap_clicked()
         auto trans_id = generate_transaction_id();
 
         // Get confidence threshold and pixel threshold from settings file
-        auto settings = get_settings("[detection]");
-        double confidence_threshold;
-        double pixel_threshold;
+        double confidence_threshold = 0.5;
+        double pixel_threshold = 0.1;
 
+        auto settings = get_settings("[detection]");
         for (const auto &[key, value] : settings)
         {
             if (key == "confidence_threshold")
@@ -3162,10 +3162,10 @@ void MainWindow::start_detection()
             auto trans_id = generate_transaction_id();
 
             // Get confidence threshold and pixel threshold from settings file
-            auto settings = get_settings("[detection]");
-            double confidence_threshold;
-            double pixel_threshold;
+            double confidence_threshold = 0.5;
+            double pixel_threshold = 0.1;
 
+            auto settings = get_settings("[detection]");
             for (const auto &[key, value] : settings)
             {
                 if (key == "confidence_threshold")
