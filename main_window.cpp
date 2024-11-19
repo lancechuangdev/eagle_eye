@@ -82,17 +82,17 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     m_builder->get_widget("toolkit_drawing_area", m_toolkit_display_area);
     if (m_toolkit_display_area)
     {
-        m_toolkit_display_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_draw));
+        m_toolkit_display_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_toolkit_display_area_draw));
 
         // Connect mouse scroll event
         m_toolkit_display_area->add_events(Gdk::SCROLL_MASK);
-        m_toolkit_display_area->signal_scroll_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_scroll_event));
+        m_toolkit_display_area->signal_scroll_event().connect(sigc::mem_fun(*this, &MainWindow::on_toolkit_display_area_scroll_event));
 
         // Connect mouse press and motion events
         m_toolkit_display_area->add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
-        m_toolkit_display_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_btn_press_event));
-        m_toolkit_display_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_btn_release_event));
-        m_toolkit_display_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_test_display_area_motion_notify_event));
+        m_toolkit_display_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_toolkit_display_area_btn_press_event));
+        m_toolkit_display_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_toolkit_display_area_btn_release_event));
+        m_toolkit_display_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_toolkit_display_area_motion_notify_event));
     }
 
     m_builder->get_widget("cam_grid", m_cam_grid);
@@ -291,6 +291,16 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     if (m_detection_results_display_area)
     {
         m_detection_results_display_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_detection_results_display_area_draw));
+
+        // Connect mouse scroll event
+        m_detection_results_display_area->add_events(Gdk::SCROLL_MASK);
+        m_detection_results_display_area->signal_scroll_event().connect(sigc::mem_fun(*this, &MainWindow::on_detection_display_area_scroll_event));
+
+        // Connect mouse press and motion events
+        m_detection_results_display_area->add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
+        m_detection_results_display_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_detection_display_area_btn_press_event));
+        m_detection_results_display_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_detection_display_area_btn_release_event));
+        m_detection_results_display_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_detection_display_area_motion_notify_event));
     }
 
     m_builder->get_widget("detection_results_refresh_btn", m_detection_results_refresh_btn);
@@ -567,6 +577,10 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
 
 bool MainWindow::on_detection_results_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
 {
+    // Apply zoom and pan transformations
+    cr->translate(m_offset_x_detection, m_offset_y_detection);   // Apply panning offset
+    cr->scale(m_zoom_factor_detection, m_zoom_factor_detection); // Apply zoom
+
     // Draw the images
     if (m_image_pixbuf_detection_result)
     {
@@ -2619,9 +2633,9 @@ void MainWindow::on_snap_clicked()
     }
 
     // Reset zoom and pan when a new image is loaded
-    m_zoom_factor_test = 1.0;
-    m_offset_x_test = 0.0;
-    m_offset_y_test = 0.0;
+    m_zoom_factor_toolkit = 1.0;
+    m_offset_x_toolkit = 0.0;
+    m_offset_y_toolkit = 0.0;
 
     // Queue the frame for display
     if (m_image_pixbuf_toolkit)
@@ -3327,11 +3341,11 @@ std::string MainWindow::generate_transaction_id()
     return ss.str();
 }
 
-bool MainWindow::on_test_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+bool MainWindow::on_toolkit_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
 {
     // Apply zoom and pan transformations
-    cr->translate(m_offset_x_test, m_offset_y_test);   // Apply panning offset
-    cr->scale(m_zoom_factor_test, m_zoom_factor_test); // Apply zoom
+    cr->translate(m_offset_x_toolkit, m_offset_y_toolkit);   // Apply panning offset
+    cr->scale(m_zoom_factor_toolkit, m_zoom_factor_toolkit); // Apply zoom
 
     // Draw the image
     if (m_image_pixbuf_toolkit)
@@ -3346,43 +3360,6 @@ bool MainWindow::on_test_display_area_draw(const Cairo::RefPtr<Cairo::Context> &
         cr->paint();
     }
 
-    return true;
-}
-
-bool MainWindow::on_test_display_area_scroll_event(GdkEventScroll *scroll_event)
-{
-    if (m_ctrl_pressed)
-    {
-        // Adjust alpha when Ctrl is pressed
-        if (scroll_event->direction == GDK_SCROLL_UP)
-        {
-            m_mask_alpha = std::min(m_mask_alpha + 0.1, 1.0); // Max alpha is 1.0
-        }
-        else if (scroll_event->direction == GDK_SCROLL_DOWN)
-        {
-            m_mask_alpha = std::max(m_mask_alpha - 0.1, 0.1); // Min alpha is 0.1
-        }
-
-        update_mask_alpha(m_mask_pixbuf_toolkit, m_mask_alpha * 255);
-    }
-    else
-    {
-        const double zoom_step = 0.1;
-
-        if (scroll_event->direction == GDK_SCROLL_UP)
-        {
-            m_zoom_factor_test += zoom_step;
-        }
-        else if (scroll_event->direction == GDK_SCROLL_DOWN)
-        {
-            m_zoom_factor_test = std::max(zoom_step, m_zoom_factor_test - zoom_step);
-        }
-    }
-
-    // Trigger a redraw of the drawing area
-    m_toolkit_display_area->queue_draw();
-
-    // Return true to indicate that the event has been handled
     return true;
 }
 
@@ -3404,43 +3381,80 @@ bool MainWindow::on_key_release_event(GdkEventKey *key_event)
     return Gtk::Window::on_key_release_event(key_event);
 }
 
-bool MainWindow::on_test_display_area_btn_press_event(GdkEventButton *button_event)
+bool MainWindow::on_toolkit_display_area_btn_press_event(GdkEventButton *button_event)
 {
     if (button_event->button == 1)
     {
         // Start dragging
-        m_is_dragging_test = true;
-        m_drag_start_x_test = button_event->x;
-        m_drag_start_y_test = button_event->y;
+        m_is_dragging_toolkit = true;
+        m_drag_start_x_toolkit = button_event->x;
+        m_drag_start_y_toolkit = button_event->y;
     }
     return true;
 }
 
-bool MainWindow::on_test_display_area_btn_release_event(GdkEventButton *button_event)
+bool MainWindow::on_toolkit_display_area_btn_release_event(GdkEventButton *button_event)
 {
     if (button_event->button == 1)
     {
         // Stop dragging
-        m_is_dragging_test = false;
+        m_is_dragging_toolkit = false;
     }
     return true;
 }
 
-bool MainWindow::on_test_display_area_motion_notify_event(GdkEventMotion *motion_event)
+bool MainWindow::on_toolkit_display_area_scroll_event(GdkEventScroll *scroll_event)
 {
-    if (m_is_dragging_test)
+    if (m_ctrl_pressed)
+    {
+        // Adjust alpha when Ctrl is pressed
+        if (scroll_event->direction == GDK_SCROLL_UP)
+        {
+            m_mask_alpha = std::min(m_mask_alpha + 0.1, 1.0); // Max alpha is 1.0
+        }
+        else if (scroll_event->direction == GDK_SCROLL_DOWN)
+        {
+            m_mask_alpha = std::max(m_mask_alpha - 0.1, 0.1); // Min alpha is 0.1
+        }
+
+        update_mask_alpha(m_mask_pixbuf_toolkit, m_mask_alpha * 255);
+    }
+    else
+    {
+        const double zoom_step = 0.1;
+
+        if (scroll_event->direction == GDK_SCROLL_UP)
+        {
+            m_zoom_factor_toolkit += zoom_step;
+        }
+        else if (scroll_event->direction == GDK_SCROLL_DOWN)
+        {
+            m_zoom_factor_toolkit = std::max(zoom_step, m_zoom_factor_toolkit - zoom_step);
+        }
+    }
+
+    // Trigger a redraw of the drawing area
+    m_toolkit_display_area->queue_draw();
+
+    // Return true to indicate that the event has been handled
+    return true;
+}
+
+bool MainWindow::on_toolkit_display_area_motion_notify_event(GdkEventMotion *motion_event)
+{
+    if (m_is_dragging_toolkit)
     {
         // Calculate the distance moved
-        double deltaX = motion_event->x - m_drag_start_x_test;
-        double deltaY = motion_event->y - m_drag_start_y_test;
+        double deltaX = motion_event->x - m_drag_start_x_toolkit;
+        double deltaY = motion_event->y - m_drag_start_y_toolkit;
 
         // Update the panning offset
-        m_offset_x_test += deltaX;
-        m_offset_y_test += deltaY;
+        m_offset_x_toolkit += deltaX;
+        m_offset_y_toolkit += deltaY;
 
         // Update the start position for the next motion event
-        m_drag_start_x_test = motion_event->x;
-        m_drag_start_y_test = motion_event->y;
+        m_drag_start_x_toolkit = motion_event->x;
+        m_drag_start_y_toolkit = motion_event->y;
     }
 
     // Trigger a redraw of the drawing area
@@ -3526,6 +3540,88 @@ bool MainWindow::on_settings_display_area_motion_notify_event(GdkEventMotion *mo
 
     // Trigger a redraw of the drawing area
     m_settings_display_area->queue_draw();
+
+    return true;
+}
+
+bool MainWindow::on_detection_display_area_scroll_event(GdkEventScroll *scroll_event)
+{
+    if (m_ctrl_pressed)
+    {
+        // Adjust alpha when Ctrl is pressed
+        if (scroll_event->direction == GDK_SCROLL_UP)
+        {
+            m_mask_alpha = std::min(m_mask_alpha + 0.1, 1.0); // Max alpha is 1.0
+        }
+        else if (scroll_event->direction == GDK_SCROLL_DOWN)
+        {
+            m_mask_alpha = std::max(m_mask_alpha - 0.1, 0.1); // Min alpha is 0.1
+        }
+
+        update_mask_alpha(m_mask_pixbuf_detection_result, m_mask_alpha * 255);
+    }
+    else
+    {
+        const double zoom_step = 0.1;
+
+        if (scroll_event->direction == GDK_SCROLL_UP)
+        {
+            m_zoom_factor_detection += zoom_step;
+        }
+        else if (scroll_event->direction == GDK_SCROLL_DOWN)
+        {
+            m_zoom_factor_detection = std::max(zoom_step, m_zoom_factor_detection - zoom_step);
+        }
+    }
+
+    // Trigger a redraw of the drawing area
+    m_detection_results_display_area->queue_draw();
+
+    // Return true to indicate that the event has been handled
+    return true;
+}
+
+bool MainWindow::on_detection_display_area_btn_press_event(GdkEventButton *button_event)
+{
+    if (button_event->button == 1)
+    {
+        // Start dragging
+        m_is_dragging_detection = true;
+        m_drag_start_x_detection = button_event->x;
+        m_drag_start_y_detection = button_event->y;
+    }
+    return true;
+}
+
+bool MainWindow::on_detection_display_area_btn_release_event(GdkEventButton *button_event)
+{
+    if (button_event->button == 1)
+    {
+        // Stop dragging
+        m_is_dragging_detection = false;
+    }
+    return true;
+}
+
+bool MainWindow::on_detection_display_area_motion_notify_event(GdkEventMotion *motion_event)
+{
+    if (m_is_dragging_detection)
+    {
+        // Calculate the distance moved
+        double deltaX = motion_event->x - m_drag_start_x_detection;
+        double deltaY = motion_event->y - m_drag_start_y_detection;
+
+        // Update the panning offset
+        m_offset_x_detection += deltaX;
+        m_offset_y_detection += deltaY;
+
+        // Update the start position for the next motion event
+        m_drag_start_x_detection = motion_event->x;
+        m_drag_start_y_detection = motion_event->y;
+    }
+
+    // Trigger a redraw of the drawing area
+    m_detection_results_display_area->queue_draw();
 
     return true;
 }
