@@ -2523,7 +2523,19 @@ void MainWindow::on_stop_clicked()
 }
 
 void MainWindow::on_snap_clicked()
-{    
+{
+    // Reset image pixel buffer
+    if (m_image_pixbuf_toolkit)
+    {
+        m_image_pixbuf_toolkit.reset();
+    }
+    // Reset mask pixel buffer
+    if (m_mask_pixbuf_toolkit)
+    {
+        m_mask_pixbuf_toolkit.reset();
+    }
+    m_toolkit_display_area->queue_draw();
+
     auto sn = m_snap_source_cbox->get_active_text();
     if (!connect_camera(sn))
     {
@@ -2590,12 +2602,6 @@ void MainWindow::on_snap_clicked()
     // Save the frame to file
     save_tmp_image(pData, stImageInfo, device_handle);
 
-    // Reset image pixel buffer
-    if (m_image_pixbuf_toolkit)
-    {
-        m_image_pixbuf_toolkit.reset();
-    }
-
     // Load the frame from file    
     try
     {
@@ -2614,14 +2620,7 @@ void MainWindow::on_snap_clicked()
     m_zoom_factor_toolkit = 1.0;
     m_offset_x_toolkit = 0.0;
     m_offset_y_toolkit = 0.0;
-
-    // Queue the frame for display
-    if (m_image_pixbuf_toolkit)
-    {
-        m_toolkit_display_area->set_size_request(frame_width, frame_height);
-        m_toolkit_display_area->queue_draw();
-    }
-
+    
     // Start detection
     auto patch_size = 256;
     std::string shm_name = "/ee_shared_memory";
@@ -2659,8 +2658,6 @@ void MainWindow::on_snap_clicked()
     size_t offset = 0;
     int num_frames = frame_height / patch_size;
     auto frame_size = frame_width * patch_size;
-    // adjust frame height for each frame
-    frame_height = patch_size;
 
     for (int i = 0; i < num_frames; ++i)
     {
@@ -2705,7 +2702,7 @@ void MainWindow::on_snap_clicked()
         json_data["confidence_threshold"] = confidence_threshold;
         json_data["pixel_threshold"] = pixel_threshold;
         json_data["frame_width"] = frame_width;
-        json_data["frame_height"] = frame_height;
+        json_data["frame_height"] = patch_size; // adjust frame height for each frame
         for (const auto& info : frame_offsets)
         {
             json_data["frames"].push_back({
@@ -2729,7 +2726,7 @@ void MainWindow::on_snap_clicked()
         
         if (res_trans_id == trans_id && status == "complete" && total_anomalies > 0)
         {
-            display_test_masks(res_trans_id);
+            update_snap_masks(res_trans_id);
 
             for (std::string sn : serial_numbers)
             {
@@ -2758,6 +2755,12 @@ void MainWindow::on_snap_clicked()
         }
     }
 
+    if (m_toolkit_display_area)
+    {
+        m_toolkit_display_area->set_size_request(frame_width, frame_height);
+        m_toolkit_display_area->queue_draw();
+    }
+
     // Clean up
     std::cout << "Clean up shared memory object" << std::endl; 
     if (munmap(shm_ptr, buffer) == -1) // Unmap the shared memory
@@ -2781,7 +2784,7 @@ void MainWindow::on_snap_clicked()
     }
 }
 
-void MainWindow::display_test_masks(std::string trans_id)
+void MainWindow::update_snap_masks(std::string trans_id)
 {
     std::filesystem::path trans_json = AppPaths::Detection_Results_Path / trans_id / "transaction_data.json";
     if (!std::filesystem::exists(trans_json))
@@ -2821,12 +2824,6 @@ void MainWindow::display_test_masks(std::string trans_id)
     int frame_width = json_data["frame_width"].get<int>();
     int num_frames = json_data["num_frames"].get<int>();
     int total_height = json_data["frame_height"].get<int>() * num_frames;
-
-    // Reset mask pixel buffer
-    if (m_mask_pixbuf_toolkit)
-    {
-        m_mask_pixbuf_toolkit.reset();
-    }
 
     // Create a transparent mask pixbuf of the same size as the image
     m_mask_pixbuf_toolkit = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
@@ -2884,8 +2881,6 @@ void MainWindow::display_test_masks(std::string trans_id)
     // Update mask pixel buf
     update_mask_color(m_mask_pixbuf_toolkit);
     update_mask_alpha(m_mask_pixbuf_toolkit, m_mask_alpha * 255);
-
-    m_toolkit_display_area->queue_draw();
 }
 
 void MainWindow::update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf)

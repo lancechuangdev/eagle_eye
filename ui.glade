@@ -743,9 +743,21 @@
                                       </packing>
                                     </child>
                                     <child>
-                                      <object class="GtkDrawingArea" id="toolkit_drawing_area">
+                                      <object class="GtkFrame">
                                         <property name="visible">True</property>
                                         <property name="can-focus">False</property>
+                                        <property name="label-xalign">0</property>
+                                        <property name="label-yalign">0</property>
+                                        <property name="shadow-type">in</property>
+                                        <child>
+                                          <object class="GtkDrawingArea" id="toolkit_drawing_area">
+                                            <property name="visible">True</property>
+                                            <property name="can-focus">False</property>
+                                          </object>
+                                        </child>
+                                        <child type="label_item">
+                                          <placeholder/>
+                                        </child>
                                       </object>
                                       <packing>
                                         <property name="expand">False</property>

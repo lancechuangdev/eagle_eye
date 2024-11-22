@@ -217,7 +217,7 @@ private:
     std::string generate_transaction_id();
     void update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf);
     void update_mask_alpha(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf, gint32 alpha);
-    void display_test_masks(std::string trans_id);
+    void update_snap_masks(std::string trans_id);
     std::string convert_to_ip_address_str(uint32_t ip);
     void set_button_icon(Gtk::Button* button, const Glib::ustring& resource_path);
     void populate_camera_settings(void *device_handle);
