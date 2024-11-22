@@ -79,6 +79,11 @@ protected:
     Gtk::ComboBoxText *m_recent_detection_results_selector_cbox;
     Gtk::Button *m_detection_results_refresh_btn;
     Gtk::Label *m_last_detection_results_refresh_time_lbl;
+    Gtk::Label *m_detection_results_path_lbl;
+    Gtk::SpinButton *m_max_per_day_sb;
+    Gtk::SpinButton *m_days_to_retain_sb;
+    Gtk::Label *m_detection_results_memory_usage_lbl;
+    Gtk::Button *m_delete_detection_results_btn;
 
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
@@ -112,7 +117,8 @@ protected:
     bool on_detection_results_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     void on_detection_results_refresh_clicked();
     void on_recent_detection_results_selector_changed();
-    
+    void on_delete_detection_results_clicked();
+
     // Key events
     bool on_key_press_event(GdkEventKey *key_event) override;
     bool on_key_release_event(GdkEventKey *key_event) override;
@@ -191,8 +197,6 @@ private:
     double m_offset_y_detection = 0.0;    // Vertical pan offset on detection results page
     double m_zoom_factor_detection = 1.0; // Zoom factor (1.0 = no zoom) on detection results page
 
-    static const std::string Settings_File_Path;
-    static const std::filesystem::path Detection_Results_Path;
     Glib::RefPtr<Gio::FileMonitor> m_detection_results_monitor;
     std::chrono::steady_clock::time_point m_last_load_time;
     std::shared_ptr<Logger> m_logger;
@@ -220,13 +224,13 @@ private:
     void clear_camera_settings();
     void snap_and_display(void *device_handle);
     std::string run_command(const std::string& command);
-    std::map<std::string, std::string> get_settings(const std::string &settings_header);
-    void save_settings(std::string &settings_to_save, std::string &section_header);
     void load_detection_settings();
     void load_detection_results();
     void load_detection_result(std::string &detection_result_folder);
     void setup_directory_monitor(const std::string &directory_path);
     void on_directory_changed(const Glib::RefPtr<Gio::File> &file, const Glib::RefPtr<Gio::File> &other_file, Gio::FileMonitorEvent event_type);
+    double calc_detection_results_memory_usage_in_gb(size_t max_per_day, size_t days_to_retain);
+    void update_detection_results_memory_usage_label(size_t max_per_day, size_t days_to_retain);
 };
 
 #endif

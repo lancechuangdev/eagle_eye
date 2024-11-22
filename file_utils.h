@@ -18,6 +18,7 @@ public:
     static std::string getCssFilePath();
     static bool directoryExists(const std::string &parent, const std::string &sub);
     static std::vector<std::filesystem::path> get_recent_folders(const std::filesystem::path& directory, size_t count);
+    static void delete_all_in_directory(std::filesystem::path dir_path);
 };
 
 #endif // EAGLE_EYE_FILE_UTILS_H

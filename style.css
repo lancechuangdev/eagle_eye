@@ -21,3 +21,9 @@
     background-color: gray;
     border-radius: 8px;
 }
+
+.delete-button {
+    color: white;
+    background-image: none;
+    background-color: #aa0000; /* Red background */
+}

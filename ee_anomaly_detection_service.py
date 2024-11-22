@@ -209,7 +209,7 @@ def message_received(client, server, message):
                     prediction_files.append((prediction_image, i, prediction_filename))
 
                     # Store the corresponding frame id for the patch with anomaly pixels
-                    prediction_frame_id = i / patches_per_frame
+                    prediction_frame_id = i // patches_per_frame
                     if prediction_frame_id not in prediction_frame_ids:
                         prediction_frame_ids.append(prediction_frame_id)
 

@@ -1,7 +1,6 @@
 #include "main_window.h"
-
-const std::string MainWindow::Settings_File_Path = std::string(std::getenv("HOME")) + "/.config/eagle_eye/settings.ini";
-const std::filesystem::path MainWindow::Detection_Results_Path = std::filesystem::path(std::getenv("HOME")) / "eagle_eye" / "detection_results";
+#include "app_paths.h"
+#include "settings_service.h"
 
 MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &refBuilder, std::shared_ptr<Logger> logger)
     : Gtk::Window(obj),
@@ -311,10 +310,59 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("last_detection_results_refresh_time", m_last_detection_results_refresh_time_lbl);
 
-    setup_directory_monitor(Detection_Results_Path.string());
+    setup_directory_monitor(AppPaths::Detection_Results_Path.string());
 
     // Set the default time to one second before the app starts
     m_last_load_time = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+
+    m_builder->get_widget("detection_results_path_lbl", m_detection_results_path_lbl);
+
+    m_builder->get_widget("max_per_day_sb", m_max_per_day_sb);
+    if (m_max_per_day_sb)
+    {
+        m_max_per_day_sb->signal_value_changed().connect([this]() {
+            auto max_per_day = m_max_per_day_sb->get_value_as_int();
+            auto days_to_retain = m_days_to_retain_sb->get_value_as_int();
+            update_detection_results_memory_usage_label(max_per_day, days_to_retain);
+        });
+    }
+
+    m_builder->get_widget("days_to_retain_sb", m_days_to_retain_sb);
+    if (m_days_to_retain_sb)
+    {
+        m_days_to_retain_sb->signal_value_changed().connect([this]() {
+            auto max_per_day = m_max_per_day_sb->get_value_as_int();
+            auto days_to_retain = m_days_to_retain_sb->get_value_as_int();
+            update_detection_results_memory_usage_label(max_per_day, days_to_retain);
+        });
+    }
+
+    m_builder->get_widget("results_memory_usage_lbl", m_detection_results_memory_usage_lbl);
+
+    m_builder->get_widget("delete_results_btn", m_delete_detection_results_btn);
+    if (m_delete_detection_results_btn)
+    {
+        m_delete_detection_results_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_delete_detection_results_clicked));
+    }
+}
+
+void MainWindow::on_delete_detection_results_clicked()
+{
+    Gtk::MessageDialog dialog(*this, "Are you sure you want to delete all files?",
+                              false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_YES_NO);
+    dialog.set_secondary_text("This action cannot be undone.");
+
+    // Show the dialog and get user response
+    int response = dialog.run();
+
+    if (response == Gtk::RESPONSE_YES)
+    {
+        FileUtils::delete_all_in_directory(AppPaths::Detection_Results_Path); // Replace with your directory path
+    }
+    else
+    {
+        std::cout << "Deletion canceled by the user." << std::endl;
+    }
 }
 
 void MainWindow::setup_directory_monitor(const std::string &directory_path)
@@ -388,7 +436,7 @@ void MainWindow::load_detection_results()
     {
         auto result_count = std::stoi(m_recent_detection_results_selector_cbox->get_active_id());
         const char* home = std::getenv("HOME");
-        auto recent_results_folders = FileUtils::get_recent_folders(Detection_Results_Path, result_count);
+        auto recent_results_folders = FileUtils::get_recent_folders(AppPaths::Detection_Results_Path, result_count);
         
         // Populating the detection results list box with rows
         for (const auto &result_folder : recent_results_folders)
@@ -600,24 +648,76 @@ bool MainWindow::on_detection_results_display_area_draw(const Cairo::RefPtr<Cair
 
 void MainWindow::load_detection_settings()
 {
-    auto settings = get_settings("[detection]");
+    auto confidence_threshold = 0.5;
+    auto pixel_threshold = 0.1;
+    auto max_per_day = 1000;
+    auto days_to_retain = 30;
+
+    auto settings = SettingsService::get_settings("[detection]");
     for (const auto &[key, value] : settings)
     {
         if (key == "confidence_threshold")
         {
-            if (m_detection_sensitivity_scale)
-            {
-                m_detection_sensitivity_scale->set_value(std::stod(value));
-            }
+            confidence_threshold = std::stod(value);
         }
         else if (key == "pixel_threshold")
         {
-            if (m_anomaly_size_threshold_scale)
-            {
-                m_anomaly_size_threshold_scale->set_value(std::stod(value));
-            }
+            pixel_threshold = std::stod(value);
+        }
+        else if (key == "max_per_day")
+        {
+            max_per_day = std::stod(value);
+        }
+        else if (key == "days_to_retain")
+        {
+            days_to_retain = std::stod(value);
         }
     }
+
+    if (m_detection_sensitivity_scale)
+    {
+        m_detection_sensitivity_scale->set_value(confidence_threshold);
+    }
+    if (m_anomaly_size_threshold_scale)
+    {
+        m_anomaly_size_threshold_scale->set_value(pixel_threshold);
+    }
+    if (m_detection_results_path_lbl)
+    {
+        m_detection_results_path_lbl->set_text(AppPaths::Detection_Results_Path.string());
+    }
+    if (m_max_per_day_sb)
+    {
+        m_max_per_day_sb->set_value(max_per_day);
+    }
+    if (m_days_to_retain_sb)
+    {
+        m_days_to_retain_sb->set_value(days_to_retain);
+    }
+    update_detection_results_memory_usage_label(max_per_day, days_to_retain);
+}
+
+void MainWindow::update_detection_results_memory_usage_label(size_t max_per_day, size_t days_to_retain)
+{
+    if (m_detection_results_memory_usage_lbl)
+    {
+        auto memory_usage_gb = calc_detection_results_memory_usage_in_gb(max_per_day, days_to_retain);
+
+        // Format the memory usage with 2 decimal places
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(2) << memory_usage_gb << " GB";
+
+        // Set the formatted string to the label
+        m_detection_results_memory_usage_lbl->set_text(oss.str());
+    }
+}
+
+double MainWindow::calc_detection_results_memory_usage_in_gb(size_t max_per_day, size_t days_to_retain)
+{
+    constexpr size_t file_size_kb = 400;      // Size of one file in KB
+    constexpr double kb_to_gb = 1.0 / 1048576.0; // Conversion factor from KB to GB
+    size_t total_kb = max_per_day * days_to_retain * file_size_kb; // Total memory in KB
+    return total_kb * kb_to_gb;
 }
 
 void MainWindow::on_cancel_detection_settings_clicked()
@@ -643,13 +743,23 @@ void MainWindow::on_save_detection_settings_clicked()
         auto pixel_threshold = m_anomaly_size_threshold_scale->get_value();
         settings_content << "pixel_threshold=" << pixel_threshold << std::endl;
     }
+    if (m_max_per_day_sb)
+    {
+        auto max_per_day = m_max_per_day_sb->get_value_as_int();
+        settings_content << "max_per_day=" << max_per_day << std::endl;
+    }
+    if (m_days_to_retain_sb)
+    {
+        auto days_to_retain = m_days_to_retain_sb->get_value_as_int();
+        settings_content << "days_to_retain=" << days_to_retain << std::endl;
+    }
     settings_content << std::endl; // Add a blank line after the new section
 
     // Convert to a normal string
     std::string settings_string = settings_content.str();
 
     // Save detection settings
-    save_settings(settings_string, settings_header);
+    SettingsService::save_settings(settings_string, settings_header);
 }
 
 void MainWindow::on_digital_io_line_number_changed()
@@ -1008,139 +1118,7 @@ void MainWindow::on_save_camera_settings_clicked()
     std::string settings_string = settings_content.str();
 
     // Save detection settings
-    save_settings(settings_string, settings_header);
-}
-
-std::map<std::string, std::string> MainWindow::get_settings(const std::string &settings_header)
-{
-    std::map<std::string, std::string> settings;
-
-    // Step 1: Read the content of the settings file
-    std::ifstream settingsFile(Settings_File_Path);
-    if (!settingsFile.is_open())
-    {
-        std::cerr << "Unable to open settings file: " << Settings_File_Path << std::endl;
-        m_logger->log("Unable to open settings file: " + Settings_File_Path, Logger::ERROR);
-        return settings;
-    }
-
-    std::stringstream buffer;
-    buffer << settingsFile.rdbuf();
-    settingsFile.close();
-    std::string content = buffer.str();
-
-    // Step 2: Find the requested section
-    size_t sectionPos = content.find(settings_header);
-    if (sectionPos == std::string::npos)
-    {
-        // Section not found
-        return settings;
-    }
-
-    // Step 3: Extract the section content
-    size_t nextSectionPos = content.find('[', sectionPos + 1); // Find the next section's starting position
-    std::string sectionContent;
-    if (nextSectionPos == std::string::npos)
-    {
-        // Section is the last one in the file
-        sectionContent = content.substr(sectionPos + settings_header.length());
-    }
-    else
-    {
-        // Extract content up to the next section
-        sectionContent = content.substr(sectionPos + settings_header.length(), nextSectionPos - sectionPos - settings_header.length());
-    }
-
-    // Step 4: Parse the key-value pairs
-    std::istringstream sectionStream(sectionContent);
-    std::string line;
-    while (std::getline(sectionStream, line))
-    {
-        // Trim whitespace
-        line.erase(0, line.find_first_not_of(" \t\r\n"));
-        line.erase(line.find_last_not_of(" \t\r\n") + 1);
-
-        // Split the line into key and value
-        size_t delimiterPos = line.find('=');
-        if (delimiterPos != std::string::npos)
-        {
-            std::string key = line.substr(0, delimiterPos);
-            std::string value = line.substr(delimiterPos + 1);
-
-            // Trim whitespace from key and value
-            key.erase(0, key.find_first_not_of(" \t\r\n"));
-            key.erase(key.find_last_not_of(" \t\r\n") + 1);
-            value.erase(0, value.find_first_not_of(" \t\r\n"));
-            value.erase(value.find_last_not_of(" \t\r\n") + 1);
-
-            settings[key] = value;
-        }
-    }
-
-    return settings;
-}
-
-void MainWindow::save_settings(std::string &settings_to_save, std::string &settings_header)
-{
-    if (!FileUtils::createFile(Settings_File_Path))
-    {
-        return;
-    }
-
-    // Step 1: Read the existing content of the file
-    std::ifstream settingsFile(Settings_File_Path);
-    std::stringstream buffer;
-    if (settingsFile.is_open())
-    {
-        buffer << settingsFile.rdbuf();
-        settingsFile.close();
-    }
-    else
-    {
-        std::cerr << "Unable to open settings file: " << Settings_File_Path << std::endl;
-        m_logger->log("Unable to open settings file: " + Settings_File_Path, Logger::ERROR);
-    }
-    std::string content = buffer.str();
-
-    // Step 2: Find if the section for the device already exists
-    size_t sectionPos = content.find(settings_header);
-    bool sectionExists = (sectionPos != std::string::npos);
-
-    if (sectionExists)
-    {
-        // Step 3: If the section exists, replace its contents
-        size_t nextSectionPos = content.find('[', sectionPos + 1); // Find the next section's starting position
-
-        // Replace the old section with the new one
-        if (nextSectionPos == std::string::npos)
-        {
-            // The section is the last one, so replace to the end of the file
-            content.replace(sectionPos, std::string::npos, settings_to_save);
-        }
-        else
-        {
-            // Replace up to the next section
-            content.replace(sectionPos, nextSectionPos - sectionPos, settings_to_save);
-        }
-    }
-    else
-    {
-        // Step 4: If the section doesn't exist, append the new section at the end
-        content += settings_to_save;
-    }
-
-    // Step 5: Write the updated content back to the file (overwrite)
-    std::ofstream outFile(Settings_File_Path);
-    if (outFile.is_open()) 
-    {
-        outFile << content;
-        outFile.close();
-    }
-    else
-    {
-        std::cerr << "Unable to open settings file for writing." << std::endl;
-        m_logger->log("Unable to open settings file for writing: " + Settings_File_Path, Logger::ERROR);
-    }
+    SettingsService::save_settings(settings_string, settings_header);
 }
 
 void MainWindow::snap_and_display(void *device_handle)
@@ -2104,7 +2082,7 @@ bool MainWindow::configure_camera(const std::string sn)
     }
 
     // Load settings from .ini file
-    std::ifstream settings_file(Settings_File_Path);
+    std::ifstream settings_file(AppPaths::Settings_File_Path.string());
     std::string line;
     bool is_current_device = false;
 
@@ -2708,7 +2686,7 @@ void MainWindow::on_snap_clicked()
         double confidence_threshold = 0.5;
         double pixel_threshold = 0.1;
 
-        auto settings = get_settings("[detection]");
+        auto settings = SettingsService::get_settings("[detection]");
         for (const auto &[key, value] : settings)
         {
             if (key == "confidence_threshold")
@@ -2805,7 +2783,7 @@ void MainWindow::on_snap_clicked()
 
 void MainWindow::display_test_masks(std::string trans_id)
 {
-    std::filesystem::path trans_json = Detection_Results_Path / trans_id / "transaction_data.json";
+    std::filesystem::path trans_json = AppPaths::Detection_Results_Path / trans_id / "transaction_data.json";
     if (!std::filesystem::exists(trans_json))
     {
         std::cerr << "File not exists: transaction_data.json" << std::endl;
@@ -3179,7 +3157,7 @@ void MainWindow::start_detection()
             double confidence_threshold = 0.5;
             double pixel_threshold = 0.1;
 
-            auto settings = get_settings("[detection]");
+            auto settings = SettingsService::get_settings("[detection]");
             for (const auto &[key, value] : settings)
             {
                 if (key == "confidence_threshold")

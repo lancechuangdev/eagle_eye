@@ -150,3 +150,31 @@ std::vector<std::filesystem::path> FileUtils::get_recent_folders(const std::file
 
     return folders;
 }
+
+void FileUtils::delete_all_in_directory(std::filesystem::path dir_path)
+{
+    try
+    {
+        // Check if the directory exists
+        if (std::filesystem::exists(dir_path) && std::filesystem::is_directory(dir_path))
+        {
+            for (const auto &entry : std::filesystem::directory_iterator(dir_path))
+            {
+                std::filesystem::remove_all(entry); // Remove both files and directories recursively
+            }
+            std::cout << "All contents in \"" << dir_path.string() << "\" have been deleted." << std::endl;
+        }
+        else
+        {
+            std::cerr << "The path \"" << dir_path.string() << "\" is not a valid directory." << std::endl;
+        }
+    }
+    catch (const std::filesystem::filesystem_error &e)
+    {
+        std::cerr << "Filesystem error: " << e.what() << std::endl;
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "General error: " << e.what() << std::endl;
+    }
+}
