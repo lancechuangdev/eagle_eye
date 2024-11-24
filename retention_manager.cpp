@@ -3,32 +3,68 @@
 #include <algorithm> // For std::sort
 #include "retention_manager.h"
 #include "app_paths.h"
+#include "settings_service.h"
 
-void RetentionManager::start_daily_limit_enforcer(int max_per_day, std::chrono::minutes interval)
+// void RetentionManager::start_daily_limit_enforcer(std::chrono::minutes interval)
+// {
+//     m_stop_enforcer = false;
+
+//     auto max_per_day = 1000;
+//     auto settings = SettingsService::get_settings("[detection]");
+//     for (const auto &[key, value] : settings)
+//     {
+//         if (key == "max_per_day")
+//         {
+//             max_per_day = std::stod(value);
+//             break;
+//         }
+//     }
+
+//     m_enforcer_thread = std::thread([this, max_per_day, interval]() {
+//         std::unique_lock<std::mutex> lock(m_enforcer_mutex);
+//         while (!m_stop_enforcer)
+//         {
+//             try
+//             {
+//                 enforce_daily_limit(AppPaths::Detection_Results_Path, max_per_day);
+//                 std::cout << "Daily limit enforcement executed.\n";
+//             }
+//             catch (const std::exception& e)
+//             {
+//                 std::cerr << "Error during daily limit enforcement: " << e.what() << "\n";
+//             }
+
+//             // Wait for the interval or until stopped
+//             if (m_stop_enforcer_cv.wait_for(lock, interval, [this] { return m_stop_enforcer.load(); }))
+//             {
+//                 break; // Exit the loop if stopped
+//             }
+//         }
+//     });
+// }
+
+void RetentionManager::enforce_daily_limit()
 {
-    m_stop_enforcer = false;
-
-    m_enforcer_thread = std::thread([this, max_per_day, interval]() {
-        std::unique_lock<std::mutex> lock(m_enforcer_mutex);
-        while (!m_stop_enforcer)
+    auto max_per_day = 1000;
+    auto settings = SettingsService::get_settings("[detection]");
+    for (const auto &[key, value] : settings)
+    {
+        if (key == "max_per_day")
         {
-            try
-            {
-                enforce_daily_limit(AppPaths::Detection_Results_Path, max_per_day);
-                std::cout << "Daily limit enforcement executed.\n";
-            }
-            catch (const std::exception& e)
-            {
-                std::cerr << "Error during daily limit enforcement: " << e.what() << "\n";
-            }
-
-            // Wait for the interval or until stopped
-            if (m_stop_enforcer_cv.wait_for(lock, interval, [this] { return m_stop_enforcer.load(); }))
-            {
-                break; // Exit the loop if stopped
-            }
+            max_per_day = std::stod(value);
+            break;
         }
-    });
+    }
+
+    try
+    {
+        enforce_daily_limit(AppPaths::Detection_Results_Path, max_per_day);
+        std::cout << "Daily limit enforcement executed.\n";
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Error during daily limit enforcement: " << e.what() << "\n";
+    }
 }
 
 void RetentionManager::enforce_daily_limit(const std::filesystem::path& path, int max_per_day)
@@ -54,29 +90,40 @@ void RetentionManager::enforce_daily_limit(const std::filesystem::path& path, in
     {
         for (size_t i = max_per_day; i < directories.size(); ++i)
         {
-            std::filesystem::remove_all(directories[i].path()); // Delete old results
+            std::filesystem::remove_all(directories[i].path());
         }
     }
 }
 
 // Stop the periodic enforcer
-void RetentionManager::stop_daily_limit_enforcer()
-{
-    {
-        // Notify the condition variable
-        std::lock_guard<std::mutex> lock(m_enforcer_mutex);
-        m_stop_enforcer = true;
-    }
-    m_stop_enforcer_cv.notify_all();
+// void RetentionManager::stop_daily_limit_enforcer()
+// {
+//     {
+//         // Notify the condition variable
+//         std::lock_guard<std::mutex> lock(m_enforcer_mutex);
+//         m_stop_enforcer = true;
+//     }
+//     m_stop_enforcer_cv.notify_all();
     
-    if (m_enforcer_thread.joinable())
-    {
-        m_enforcer_thread.join();
-    }
-}
+//     if (m_enforcer_thread.joinable())
+//     {
+//         m_enforcer_thread.join();
+//     }
+// }
 
-void RetentionManager::enforce_archive_retention(int max_to_retain)
+void RetentionManager::enforce_archive_retention()
 {
+    auto days_to_retain = 30;
+    auto settings = SettingsService::get_settings("[detection]");
+    for (const auto &[key, value] : settings)
+    {
+        if (key == "days_to_retain")
+        {
+            days_to_retain = std::stod(value);
+            break;
+        }
+    }
+
     // Enforce max_to_retain in archive path
     std::vector<std::filesystem::directory_entry> archive_folders;
     
@@ -103,7 +150,7 @@ void RetentionManager::enforce_archive_retention(int max_to_retain)
     auto newest_time = std::filesystem::last_write_time(archive_folders.front());
 
     // Calculate the oldest allowed time based on the max_to_retain days
-    auto oldest_allowed_time = newest_time - std::chrono::hours(24 * max_to_retain);
+    auto oldest_allowed_time = newest_time - std::chrono::hours(24 * days_to_retain);
 
     // Remove folders that are older than the oldest allowed time
     for (auto it = archive_folders.rbegin(); it != archive_folders.rend(); ++it)

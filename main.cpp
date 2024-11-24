@@ -49,34 +49,16 @@ int main(int argc, char **argv)
     builder->get_widget_derived("main_window", wnd, logger);
 
     // Apply Retention Policy
-    auto max_per_day = 1000;
-    auto days_to_retain = 30;
-
-    auto settings = SettingsService::get_settings("[detection]");
-    for (const auto &[key, value] : settings)
-    {
-        if (key == "max_per_day")
-        {
-            max_per_day = std::stod(value);
-        }
-        else if (key == "days_to_retain")
-        {
-            days_to_retain = std::stod(value);
-        }
-    }
-
     RetentionManager retention_manager;
     retention_manager.archive();
-    retention_manager.enforce_archive_retention(days_to_retain);
-    retention_manager.start_daily_limit_enforcer(max_per_day, std::chrono::minutes(5));
+    retention_manager.enforce_archive_retention();
+    retention_manager.enforce_daily_limit();
 
     // Shows the window and returns when it is closed.
     nRet = app->run(*wnd);
 
     // Ensure MV_CC_Finalize is called after the window is closed
     MV_CC_Finalize();
-
-    retention_manager.stop_daily_limit_enforcer();
 
     return nRet;
 }
