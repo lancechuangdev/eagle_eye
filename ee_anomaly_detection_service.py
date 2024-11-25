@@ -185,7 +185,9 @@ def message_received(client, server, message):
             # print(f"frame_batch shape: {frame_batch.shape}")
             
             # Perform prediction on the entire batch
+            print_with_ts("Prediction Started.\n")
             predictions = model.predict(frame_batch)
+            print_with_ts("Prediction Stopped.\n")
             predictions = (predictions > confidence_threshold).astype(np.float32)
             # print(f"predictions shape: {predictions.shape}")
             
