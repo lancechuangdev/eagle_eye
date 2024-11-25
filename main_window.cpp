@@ -1,6 +1,7 @@
 #include "main_window.h"
 #include "app_paths.h"
 #include "settings_service.h"
+#include "retention_manager.h"
 
 MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &refBuilder, std::shared_ptr<Logger> logger)
     : Gtk::Window(obj),
@@ -54,9 +55,9 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("content_stack", m_content_stack);
 
-    m_builder->get_widget("detection_source_cbox", m_detection_source_cbox);
+    m_builder->get_widget("detection_camera_lbl", m_detection_camera_lbl);
 
-    m_builder->get_widget("capture_rate_sb", m_capture_rate_sb);
+    m_builder->get_widget("detection_rate_lbl", m_detection_rate_lbl);
 
     m_builder->get_widget("start_btn", m_start_btn);
     if (m_start_btn)
@@ -128,6 +129,8 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_offset_y_adj = Glib::RefPtr<Gtk::Adjustment>::cast_dynamic(m_builder->get_object("offset_y_adjustment"));
 
+    m_debounce_time_adj = Glib::RefPtr<Gtk::Adjustment>::cast_dynamic(m_builder->get_object("debounce_time_adjustment"));
+
     m_builder->get_widget("width_sb", m_width_sb);
     if (m_width_sb)
     {
@@ -152,22 +155,22 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_offset_y_sb->signal_value_changed().connect(sigc::mem_fun(*this, &MainWindow::on_offset_y_value_changed));
     }
 
-    m_builder->get_widget("settings_digital_io_line_number_cbox", m_settings_digital_io_line_number_cbox);
-    if (m_settings_digital_io_line_number_cbox)
+    m_builder->get_widget("settings_digital_output_line_number_cbox", m_settings_digital_output_line_number_cbox);
+    if (m_settings_digital_output_line_number_cbox)
     {
-        m_settings_digital_io_line_number_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_digital_io_line_number_changed));
+        m_settings_digital_output_line_number_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_digital_output_line_number_changed));
     }
 
-    m_builder->get_widget("settings_digital_io_line_mode_cbox", m_settings_digital_io_line_mode_cbox);
-    if (m_settings_digital_io_line_mode_cbox)
+    m_builder->get_widget("settings_digital_output_line_mode_cbox", m_settings_digital_output_line_mode_cbox);
+    if (m_settings_digital_output_line_mode_cbox)
     {
-        m_settings_digital_io_line_mode_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_digital_io_line_mode_changed));
+        m_settings_digital_output_line_mode_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_digital_output_line_mode_changed));
     }
 
-    m_builder->get_widget("settings_digital_io_line_source_cbox", m_settings_digital_io_line_source_cbox);
-    if (m_settings_digital_io_line_source_cbox)
+    m_builder->get_widget("settings_digital_output_line_source_cbox", m_settings_digital_output_line_source_cbox);
+    if (m_settings_digital_output_line_source_cbox)
     {
-        m_settings_digital_io_line_source_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_digital_io_line_source_changed));
+        m_settings_digital_output_line_source_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_digital_output_line_source_changed));
     }
 
     m_builder->get_widget("settings_strobe_enable_switch", m_settings_strobe_enable_switch);
@@ -210,9 +213,9 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("service_status_lbl", m_service_status_lbl);
 
-    m_builder->get_widget("toolkit_capture_source_cbox", m_toolkit_capture_source_cbox);
+    m_builder->get_widget("toolkit_digital_output_source_cbox", m_toolkit_digital_output_source_cbox);
 
-    m_builder->get_widget("toolkit_digital_io_line_number_cbox", m_toolkit_digital_io_line_number_cbox);
+    m_builder->get_widget("toolkit_digital_output_line_number_cbox", m_toolkit_digital_output_line_number_cbox);
 
     m_builder->get_widget("toolkit_strobe_enable_switch", m_toolkit_strobe_enable_switch);
 
@@ -224,6 +227,28 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     if (m_toolkit_test_digital_out_btn)
     {
         m_toolkit_test_digital_out_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_test_digital_out_clicked));
+    }
+
+    m_builder->get_widget("toolkit_digital_input_sink_cbox", m_toolkit_digital_input_sink_cbox);
+
+    m_builder->get_widget("toolkit_digital_input_line_number_cbox", m_toolkit_digital_input_line_number_cbox);
+
+    m_builder->get_widget("toolkit_digital_input_debounce_time_sb", m_toolkit_digital_input_debounce_time_sb);
+
+    m_builder->get_widget("toolkit_digital_input_event_trigger_cbox", m_toolkit_digital_input_event_trigger_cbox);
+
+    m_builder->get_widget("toolkit_digital_input_notification_status_cbox", m_toolkit_digital_input_notification_status_cbox);
+
+    m_builder->get_widget("start_digital_input_event_listening_btn", m_start_digital_input_event_listening_btn);
+    if (m_start_digital_input_event_listening_btn)
+    {
+        m_start_digital_input_event_listening_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_start_listening_digital_input_event_clicked));
+    }
+
+    m_builder->get_widget("stop_digital_input_event_listening_btn", m_stop_digital_input_event_listening_btn);
+    if (m_stop_digital_input_event_listening_btn)
+    {
+        m_stop_digital_input_event_listening_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_stop_listening_digital_input_event_clicked));
     }
 
     m_builder->get_widget("settings_stack", m_settings_stack);
@@ -239,6 +264,26 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     {
         m_camera_settings_rbtn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_settings_toggled));
     }
+
+    m_builder->get_widget("select_detection_camera_cbox", m_select_detection_camera_cbox);
+
+    m_builder->get_widget("detection_rate_sb", m_detection_rate_sb);
+    
+    m_builder->get_widget("select_detection_digital_input_cbox", m_select_detection_digital_input_cbox);
+    if (m_select_detection_digital_input_cbox)
+    {
+        m_select_detection_digital_input_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_detection_digital_input_selection_changed));
+    }
+
+    m_builder->get_widget("settings_detection_digital_input_line_number_lbl", m_settings_detection_digital_input_line_number_lbl);
+
+    m_builder->get_widget("select_detection_digital_output_cbox", m_select_detection_digital_output_cbox);
+    if (m_select_detection_digital_output_cbox)
+    {
+        m_select_detection_digital_output_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_detection_digital_output_selection_changed));
+    }
+
+    m_builder->get_widget("settings_detection_digital_output_line_number_lbl", m_settings_detection_digital_output_line_number_lbl);
 
     m_builder->get_widget("detection_sensitivity_scale", m_detection_sensitivity_scale);
     if (m_detection_sensitivity_scale)
@@ -344,6 +389,84 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     {
         m_delete_detection_results_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_delete_detection_results_clicked));
     }
+
+    m_builder->get_widget("digital_io_type_cbox", m_digital_io_type_cbox);
+    if (m_digital_io_type_cbox)
+    {
+        m_digital_io_type_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_digital_io_type_changed));
+    }
+
+    m_builder->get_widget("digital_input_grid", m_digital_input_grid);
+
+    m_builder->get_widget("detection_digital_input_lbl", m_detection_digital_input_lbl);
+
+    m_builder->get_widget("detection_digital_output_lbl", m_detection_digital_output_lbl);
+
+    m_builder->get_widget("detection_digital_input_line_number_lbl", m_detection_digital_input_line_number_lbl);
+
+    m_builder->get_widget("digital_output_grid", m_digital_output_grid);
+
+    m_builder->get_widget("detection_digital_output_line_number_lbl", m_detection_digital_output_line_number_lbl);
+
+    m_builder->get_widget("settings_digital_input_line_number_cbox", m_settings_digital_input_line_number_cbox);
+
+    m_builder->get_widget("settings_digital_input_debouncer_time_sb", m_settings_digital_input_debouncer_time_sb);
+
+    m_builder->get_widget("settings_digital_input_event_trigger_cbox", m_settings_digital_input_event_trigger_cbox);
+
+    m_builder->get_widget("settings_digital_input_event_status_cbox", m_settings_digital_input_notification_status_cbox);
+
+    m_builder->get_widget("digital_input_event_status_lbl", m_digital_input_event_status_lbl);
+
+    m_builder->get_widget("digital_input_event_tv", m_digital_input_event_tv);
+}
+
+void MainWindow::on_detection_digital_input_selection_changed()
+{
+    std::string digital_input = m_select_detection_digital_input_cbox->get_active_text();
+    std::string digital_input_line_number;
+
+    if (digital_input != "")
+    {
+        auto settings = SettingsService::get_settings("[" + digital_input + "]");
+        for (const auto &[key, value] : settings)
+        {
+            if (key == "digital_input_line_number")
+            {
+                digital_input_line_number = value;
+                break;
+            }
+        }
+    }
+
+    if (m_settings_detection_digital_input_line_number_lbl)
+    {
+        m_settings_detection_digital_input_line_number_lbl->set_text(digital_input_line_number);
+    }    
+}
+
+void MainWindow::on_detection_digital_output_selection_changed()
+{
+    std::string digital_output = m_select_detection_digital_output_cbox->get_active_text();
+    std::string digital_output_line_number;
+
+    if (digital_output != "")
+    {
+        auto settings = SettingsService::get_settings("[" + digital_output + "]");
+        for (const auto &[key, value] : settings)
+        {
+            if (key == "digital_output_line_number")
+            {
+                digital_output_line_number = value;
+                break;
+            }
+        }
+    }
+
+    if (m_settings_detection_digital_output_line_number_lbl)
+    {
+        m_settings_detection_digital_output_line_number_lbl->set_text(digital_output_line_number);
+    }       
 }
 
 void MainWindow::on_delete_detection_results_clicked()
@@ -648,6 +771,12 @@ bool MainWindow::on_detection_results_display_area_draw(const Cairo::RefPtr<Cair
 
 void MainWindow::load_detection_settings()
 {
+    std::string detection_camera;
+    auto detection_rate = 0;
+    std::string digital_input;
+    std::string digital_input_line_number;
+    std::string digital_output;
+    std::string digital_output_line_number;
     auto confidence_threshold = 0.5;
     auto pixel_threshold = 0.1;
     auto max_per_day = 1000;
@@ -656,7 +785,23 @@ void MainWindow::load_detection_settings()
     auto settings = SettingsService::get_settings("[detection]");
     for (const auto &[key, value] : settings)
     {
-        if (key == "confidence_threshold")
+        if (key == "detection_camera")
+        {
+            detection_camera = value;
+        }
+        else if (key == "detection_rate")
+        {
+            detection_rate = std::stod(value);
+        }
+        else if (key == "digital_input")
+        {
+            digital_input = value;
+        }
+        else if (key == "digital_output")
+        {
+            digital_output = value;
+        }
+        else if (key == "confidence_threshold")
         {
             confidence_threshold = std::stod(value);
         }
@@ -674,6 +819,80 @@ void MainWindow::load_detection_settings()
         }
     }
 
+    if (digital_input != "")
+    {
+        auto settings = SettingsService::get_settings("[" + digital_input + "]");
+        for (const auto &[key, value] : settings)
+        {
+            if (key == "digital_input_line_number")
+            {
+                digital_input_line_number = value;
+                break;
+            }
+        }
+    }
+
+    if (digital_output != "")
+    {
+        auto settings = SettingsService::get_settings("[" + digital_output + "]");
+        for (const auto &[key, value] : settings)
+        {
+            if (key == "digital_output_line_number")
+            {
+                digital_output_line_number = value;
+                break;
+            }
+        }
+    }
+
+    if (m_detection_camera_lbl)
+    {
+        m_detection_camera_lbl->set_text(detection_camera);
+    }
+    if (m_select_detection_camera_cbox)
+    {
+        m_select_detection_camera_cbox->set_active_text(detection_camera);
+    }
+    if (m_detection_rate_lbl)
+    {
+        m_detection_rate_lbl->set_text(std::to_string(detection_rate));
+    }
+    if (m_detection_rate_sb)
+    {
+        m_detection_rate_sb->set_value(detection_rate);
+    }
+    if (m_detection_digital_input_lbl)
+    {
+        m_detection_digital_input_lbl->set_text(digital_input);
+    }
+    if (m_detection_digital_input_line_number_lbl)
+    {
+        m_detection_digital_input_line_number_lbl->set_text(digital_input_line_number);
+    }
+    if (m_select_detection_digital_input_cbox)
+    {
+        m_select_detection_digital_input_cbox->set_active_text(digital_input);
+    }
+    if (m_settings_detection_digital_input_line_number_lbl)
+    {
+        m_settings_detection_digital_input_line_number_lbl->set_text(digital_input_line_number);
+    }
+    if (m_detection_digital_output_lbl)
+    {
+        m_detection_digital_output_lbl->set_text(digital_output);
+    }
+    if (m_detection_digital_output_line_number_lbl)
+    {
+        m_detection_digital_output_line_number_lbl->set_text(digital_output_line_number);
+    }
+    if (m_select_detection_digital_output_cbox)
+    {
+        m_select_detection_digital_output_cbox->set_active_text(digital_output);
+    }
+    if (m_settings_detection_digital_output_line_number_lbl)
+    {
+        m_settings_detection_digital_output_line_number_lbl->set_text(digital_output_line_number);
+    }
     if (m_detection_sensitivity_scale)
     {
         m_detection_sensitivity_scale->set_value(confidence_threshold);
@@ -733,6 +952,28 @@ void MainWindow::on_save_detection_settings_clicked()
     // Build settings content
     std::stringstream settings_content;
     settings_content << settings_header << std::endl;
+    if (m_select_detection_camera_cbox)
+    {
+        auto detection_camera = m_select_detection_camera_cbox->get_active_text();
+        settings_content << "detection_camera=" << detection_camera << std::endl;
+        m_detection_camera_lbl->set_text(detection_camera);
+    }
+    if (m_detection_rate_sb)
+    {
+        auto detection_rate = m_detection_rate_sb->get_value_as_int();
+        settings_content << "detection_rate=" << detection_rate << std::endl;
+        m_detection_rate_lbl->set_text(std::to_string(detection_rate));
+    }
+    if (m_select_detection_digital_input_cbox)
+    {
+        auto digital_input = m_select_detection_digital_input_cbox->get_active_text();
+        settings_content << "digital_input=" << digital_input << std::endl;
+    }
+    if (m_select_detection_digital_output_cbox)
+    {
+        auto digital_output = m_select_detection_digital_output_cbox->get_active_text();
+        settings_content << "digital_output=" << digital_output << std::endl;
+    }
     if (m_detection_sensitivity_scale)
     {
         auto confidence_threshold = m_detection_sensitivity_scale->get_value();
@@ -762,13 +1003,33 @@ void MainWindow::on_save_detection_settings_clicked()
     SettingsService::save_settings(settings_string, settings_header);
 }
 
-void MainWindow::on_digital_io_line_number_changed()
+void MainWindow::on_digital_io_type_changed()
+{
+    std::string type = m_digital_io_type_cbox->get_active_text();
+    if (type == "Input")
+    {
+        m_digital_input_grid->set_visible(true);
+        m_digital_output_grid->set_visible(false);
+    }
+    else if (type == "Output")
+    {
+        m_digital_input_grid->set_visible(false);
+        m_digital_output_grid->set_visible(true);
+    }
+    else
+    {
+        m_digital_input_grid->set_visible(false);
+        m_digital_output_grid->set_visible(false);        
+    }
+}
+
+void MainWindow::on_digital_output_line_number_changed()
 {
     auto sn = m_sn_lbl->get_text();
     if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
     {
         void *device_handle = m_connected_device_handles[sn];
-        std::string selected_line_number = m_settings_digital_io_line_number_cbox->get_active_text();
+        std::string selected_line_number = m_settings_digital_output_line_number_cbox->get_active_text();
 
         if (selected_line_number != "")
         {
@@ -779,7 +1040,7 @@ void MainWindow::on_digital_io_line_number_changed()
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
                 // Update LineMode
-                m_settings_digital_io_line_mode_cbox->remove_all();
+                m_settings_digital_output_line_mode_cbox->remove_all();
 
                 MVCC_ENUMVALUE line_mode = {0};
                 nRet = MV_CC_GetEnumValue(device_handle, "LineMode", &line_mode);
@@ -793,7 +1054,7 @@ void MainWindow::on_digital_io_line_number_changed()
                         nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineMode", &line_entry);
                         if (nRet == MV_OK)
                         {
-                            m_settings_digital_io_line_mode_cbox->append(line_entry.chSymbolic);
+                            m_settings_digital_output_line_mode_cbox->append(line_entry.chSymbolic);
                             if (line_entry.nValue == line_mode.nCurValue)
                             {
                                 active_text = line_entry.chSymbolic;
@@ -818,13 +1079,13 @@ void MainWindow::on_digital_io_line_number_changed()
     }
 }
 
-void MainWindow::on_digital_io_line_mode_changed()
+void MainWindow::on_digital_output_line_mode_changed()
 {
     auto sn = m_sn_lbl->get_text();
     if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
     {
         void *device_handle = m_connected_device_handles[sn];
-        std::string selected_line_mode = m_settings_digital_io_line_mode_cbox->get_active_text();
+        std::string selected_line_mode = m_settings_digital_output_line_mode_cbox->get_active_text();
 
         if (selected_line_mode != "")
         {
@@ -835,7 +1096,7 @@ void MainWindow::on_digital_io_line_mode_changed()
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
                 // Update Line Source
-                m_settings_digital_io_line_source_cbox->remove_all();
+                m_settings_digital_output_line_source_cbox->remove_all();
 
                 MVCC_ENUMVALUE line_source = {0};
                 nRet = MV_CC_GetEnumValue(device_handle, "LineSource", &line_source);
@@ -849,7 +1110,7 @@ void MainWindow::on_digital_io_line_mode_changed()
                         nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineSource", &line_entry);
                         if (nRet == MV_OK)
                         {
-                            m_settings_digital_io_line_source_cbox->append(line_entry.chSymbolic);
+                            m_settings_digital_output_line_source_cbox->append(line_entry.chSymbolic);
                             if (line_entry.nValue == line_source.nCurValue)
                             {
                                 active_text = line_entry.chSymbolic;
@@ -874,13 +1135,13 @@ void MainWindow::on_digital_io_line_mode_changed()
     }
 }
 
-void MainWindow::on_digital_io_line_source_changed()
+void MainWindow::on_digital_output_line_source_changed()
 {
     auto sn = m_sn_lbl->get_text();
     if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
     {
         void *device_handle = m_connected_device_handles[sn];
-        std::string selected_line_source = m_settings_digital_io_line_source_cbox->get_active_text();
+        std::string selected_line_source = m_settings_digital_output_line_source_cbox->get_active_text();
 
         if (selected_line_source != "")
         {
@@ -929,8 +1190,8 @@ void MainWindow::on_strobe_duration_value_changed()
 
 void MainWindow::on_test_digital_out_clicked()
 {
-    auto sn = m_toolkit_capture_source_cbox->get_active_text();
-    auto line_number = m_toolkit_digital_io_line_number_cbox->get_active_text();
+    auto sn = m_toolkit_digital_output_source_cbox->get_active_text();
+    auto line_number = m_toolkit_digital_output_line_number_cbox->get_active_text();
     bool strobe_enable = m_toolkit_strobe_enable_switch->get_active();
     double strobe_duration = m_toolkit_strobe_duration_sb->get_value();
 
@@ -994,6 +1255,134 @@ void MainWindow::on_test_digital_out_clicked()
         std::cout << "Failed to disconnect from the camera: " << sn << std::endl;
         m_logger->log("Failed to disconnect from the camera: " + sn, Logger::ERROR);
     }
+}
+
+void MainWindow::on_start_listening_digital_input_event_clicked()
+{
+    if (m_is_listening_digital_input_event)
+    {
+        std::cout << "Already listening to events." << std::endl;
+        return;
+    }
+
+    m_toolkit_digital_input_sink_cbox->set_sensitive(false);
+    m_start_digital_input_event_listening_btn->set_sensitive(false);
+    m_digital_input_event_status_lbl->get_style_context()->remove_class("gray-indicator");
+    m_digital_input_event_status_lbl->get_style_context()->add_class("green-indicator");
+    // Clears the text
+    auto buffer = m_digital_input_event_tv->get_buffer();
+    buffer->set_text("");
+
+    auto sn = m_toolkit_digital_input_sink_cbox->get_active_text();
+    auto line_number = m_toolkit_digital_input_line_number_cbox->get_active_text();
+    auto debounce_time = m_toolkit_digital_input_debounce_time_sb->get_value_as_int();
+    auto event_trigger = m_toolkit_digital_input_event_trigger_cbox->get_active_text();
+    auto notification_status = m_toolkit_digital_input_notification_status_cbox->get_active_text();
+
+    if (!connect_camera(sn))
+    {
+        std::cout << "Failed to connect to the camera: " << sn << std::endl;
+        m_logger->log("Failed to connect to the camera: " + sn, Logger::ERROR);
+        return;
+    }
+    auto device_handle = create_or_get_device_handle_by_serial_number(sn);
+
+    int nRet = MV_CC_SetEnumValue(device_handle, "LineSelector", std::stoi(line_number));
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error to set LineSelector. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetEnumValue(LineSelector): " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+
+    nRet = MV_CC_SetIntValue(device_handle, "LineDebouncerTime", debounce_time);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error to set LineDebouncerTime. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetIntValue(LineDebouncerTime): " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+
+    nRet = MV_CC_SetEnumValueByString(device_handle, "EventSelector", event_trigger.c_str());
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error to set EventSelector. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetEnumValueByString(EventSelector): " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+
+    nRet = MV_CC_SetEnumValueByString(device_handle, "EventNotification", notification_status.c_str());
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error to set EventNotification. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_SetEnumValueByString(EventNotification): " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+
+    auto event_callback = [](MV_EVENT_OUT_INFO * pEventInfo, void* pUser)
+    {
+        if (pEventInfo)
+        {
+            int64_t nBlockId = pEventInfo->nBlockIdHigh;
+            nBlockId = (nBlockId << 32) + pEventInfo->nBlockIdLow;
+
+            int64_t nTimestamp = pEventInfo->nTimestampHigh;
+            nTimestamp = (nTimestamp << 32) + pEventInfo->nTimestampLow;
+
+            std::ostringstream oss;
+            oss << "Timestamp: " << nTimestamp 
+                << ", Event Name: " << pEventInfo->EventName 
+                << ", Event Id: " << pEventInfo->nEventID 
+                << ", Block Id: " << nBlockId;
+            std::string eventInfoStr = oss.str();
+
+            // Update the TextView on the main thread
+            MainWindow *pThis = static_cast<MainWindow*>(pUser);
+            Glib::signal_idle().connect_once([pThis, eventInfoStr]()
+            {
+                auto buffer = pThis->m_digital_input_event_tv->get_buffer();
+                buffer->insert(buffer->end(), eventInfoStr + "\n");
+            });
+
+            std::cout << eventInfoStr << std::endl;
+            pThis->m_logger->log(eventInfoStr);
+        }
+    };
+
+    nRet = MV_CC_RegisterEventCallBackEx(device_handle, event_trigger.c_str(), event_callback, this);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error to register EventCallBackEx. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_RegisterEventCallBackEx: " + std::to_string(nRet), Logger::ERROR);
+        return;
+    }
+
+    m_is_listening_digital_input_event = true;
+    std::cout << "Digital input event listening started." << std::endl;
+}
+
+void MainWindow::on_stop_listening_digital_input_event_clicked()
+{
+    if (!m_is_listening_digital_input_event)
+    {
+        std::cout << "Not currently listening to events." << std::endl;
+        return;
+    }
+
+    m_toolkit_digital_input_sink_cbox->set_sensitive(true);
+    m_start_digital_input_event_listening_btn->set_sensitive(true);
+    m_digital_input_event_status_lbl->get_style_context()->remove_class("green-indicator");
+    m_digital_input_event_status_lbl->get_style_context()->add_class("gray-indicator");
+
+    auto sn = m_toolkit_digital_input_sink_cbox->get_active_text();
+    if (!disconnect_camera(sn))
+    {
+        std::cout << "Failed to disconnect from the camera: " << sn << std::endl;
+        m_logger->log("Failed to disconnect from the camera: " + sn, Logger::ERROR);
+    }
+
+    m_is_listening_digital_input_event = false;
+    std::cout << "Digital input event listening stopped." << std::endl;
 }
 
 std::string MainWindow::run_command(const std::string& command)
@@ -1074,7 +1463,7 @@ void MainWindow::on_save_camera_settings_clicked()
     settings_content << settings_header << std::endl;
     if (m_exposure_time_entry)
     {
-        settings_content << "exposureTime=" << m_exposure_time_entry->get_text() << std::endl;
+        settings_content << "exposure_time=" << m_exposure_time_entry->get_text() << std::endl;
     }
     if (m_width_sb)
     {
@@ -1086,32 +1475,59 @@ void MainWindow::on_save_camera_settings_clicked()
     }
     if (m_offset_x_sb)
     {
-        settings_content << "offsetX=" << m_offset_x_sb->get_value() << std::endl;
+        settings_content << "offset_x=" << m_offset_x_sb->get_value() << std::endl;
     }
     if (m_offset_y_sb)
     {
-        settings_content << "offsetY=" << m_offset_y_sb->get_value() << std::endl;
+        settings_content << "offset_y=" << m_offset_y_sb->get_value() << std::endl;
     }
-    if (m_settings_digital_io_line_number_cbox)
+    if (m_digital_io_type_cbox)
     {
-        settings_content << "lineNumber=" << m_settings_digital_io_line_number_cbox->get_active_text() << std::endl;
+        std::string digital_io_type = m_digital_io_type_cbox->get_active_text();
+        if (digital_io_type == "Input")
+        {
+            if (m_settings_digital_input_line_number_cbox)
+            {
+                settings_content << "digital_input_line_number=" << m_settings_digital_input_line_number_cbox->get_active_text() << std::endl;
+            }
+            if (m_settings_digital_input_debouncer_time_sb)
+            {
+                settings_content << "digital_input_debouncer_time=" << m_settings_digital_input_debouncer_time_sb->get_value() << std::endl;
+            }
+            if (m_settings_digital_input_event_trigger_cbox)
+            {
+                settings_content << "digital_input_event_trigger=" << m_settings_digital_input_event_trigger_cbox->get_active_text() << std::endl;
+            }
+            if (m_settings_digital_input_notification_status_cbox)
+            {
+                settings_content << "digital_input_notification_status=" << m_settings_digital_input_notification_status_cbox->get_active_text() << std::endl;
+            }
+        }
+        else if (digital_io_type == "Output")
+        {
+            if (m_settings_digital_output_line_number_cbox)
+            {
+                settings_content << "digital_output_line_number=" << m_settings_digital_output_line_number_cbox->get_active_text() << std::endl;
+            }
+            if (m_settings_digital_output_line_mode_cbox)
+            {
+                settings_content << "digital_output_line_mode=" << m_settings_digital_output_line_mode_cbox->get_active_text() << std::endl;
+            }
+            if (m_settings_digital_output_line_source_cbox)
+            {
+                settings_content << "digital_output_line_source=" << m_settings_digital_output_line_source_cbox->get_active_text() << std::endl;
+            }
+            if (m_settings_strobe_enable_switch)
+            {
+                settings_content << "digital_output_strobe_enable=" << m_settings_strobe_enable_switch->get_active() << std::endl;
+            }
+            if (m_settings_strobe_duration_sb)
+            {
+                settings_content << "digital_output_strobe_duration=" << m_settings_strobe_duration_sb->get_value() << std::endl;
+            }
+        }
     }
-    if (m_settings_digital_io_line_mode_cbox)
-    {
-        settings_content << "lineMode=" << m_settings_digital_io_line_mode_cbox->get_active_text() << std::endl;
-    }
-    if (m_settings_digital_io_line_source_cbox)
-    {
-        settings_content << "lineSource=" << m_settings_digital_io_line_source_cbox->get_active_text() << std::endl;
-    }
-    if (m_settings_strobe_enable_switch)
-    {
-        settings_content << "strobeEnable=" << m_settings_strobe_enable_switch->get_active() << std::endl;
-    }
-    if (m_settings_strobe_duration_sb)
-    {
-        settings_content << "strobeDuration=" << m_settings_strobe_duration_sb->get_value() << std::endl;
-    }
+
     settings_content << std::endl; // Add a blank line after the new section
 
     // Convert to a normal string
@@ -1656,10 +2072,12 @@ void MainWindow::populate_camera_settings(void *device_handle)
 {
     // Serial number
     MVCC_STRINGVALUE sn = {0};
+    std::string serial_number = "";
     int nRet = MV_CC_GetStringValue(device_handle, "DeviceSerialNumber", &sn);
     if (nRet == MV_OK && m_sn_lbl)
     {
-        m_sn_lbl->set_text(Glib::ustring(sn.chCurValue));
+        serial_number = sn.chCurValue;
+        m_sn_lbl->set_text(serial_number);
     }
 
     // Exposure time
@@ -1744,25 +2162,98 @@ void MainWindow::populate_camera_settings(void *device_handle)
         m_logger->log("Error on MV_CC_GetIntValue(OffsetY): " + std::to_string(nRet), Logger::ERROR);
     }
 
-    // Digital IO Line Number
-    m_settings_digital_io_line_number_cbox->remove_all();
+    // Load digital IO line number from .ini file
+    std::string digital_input_line_number = "";
+    std::string digital_output_line_number = "";
+    std::ifstream settings_file(AppPaths::Settings_File_Path.string());
+    std::string line;
+    bool is_current_device = false;
 
-    MVCC_ENUMVALUE line_number = {0};
-    nRet = MV_CC_GetEnumValue(device_handle, "LineSelector", &line_number);
+    if (settings_file.is_open())
+    {
+        while (std::getline(settings_file, line))
+        {
+            if (line == "[" + serial_number + "]")
+            {
+                is_current_device = true;
+            }
+            else if (line.find('[') != std::string::npos)
+            {
+                is_current_device = false; // New section means we passed the current device's settings
+            }
+
+            if (is_current_device)
+            {
+                std::istringstream line_stream(line);
+                std::string key;
+
+                if (std::getline(line_stream, key, '='))
+                {
+                    std::string value;
+                    if (key == "digital_input_line_number" && std::getline(line_stream, value))
+                    {
+                        digital_input_line_number = value;
+                    }
+                    else if (key == "digital_output_line_number" && std::getline(line_stream, value))
+                    {
+                        digital_output_line_number = value;
+                    }
+                }
+            }
+        }
+        settings_file.close();
+    }
+
+    // Digital Input Line Number (fixed to "Line0")
+    m_settings_digital_input_line_number_cbox->remove_all();
+    m_settings_digital_input_line_number_cbox->append("Line0");
+    m_settings_digital_input_line_number_cbox->set_active_text(digital_input_line_number);
+
+    // Digital Input Debounce Time
+    if (digital_input_line_number != "")
+    {
+        nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", digital_input_line_number.c_str());
+        if (nRet == MV_OK)
+        {
+            // Wait a bit or Network error occurs - MV_E_NETER (0x80000206)
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            
+            MVCC_INTVALUE debounce_time = {0};
+            nRet = MV_CC_GetIntValue(device_handle, "LineDebouncerTime", &debounce_time);
+            if (nRet == MV_OK && m_debounce_time_adj && m_settings_digital_input_debouncer_time_sb)
+            {
+                m_debounce_time_adj->set_lower(debounce_time.nMin);
+                m_debounce_time_adj->set_upper(debounce_time.nMax);
+                m_debounce_time_adj->set_step_increment(debounce_time.nInc);
+                m_settings_digital_input_debouncer_time_sb->set_value(debounce_time.nCurValue);
+            }
+        }
+    }
+
+    // Digital Input Event Trigger
+    m_settings_digital_input_event_trigger_cbox->remove_all();
+
+    MVCC_ENUMVALUE event_trigger = {0};
+    nRet = MV_CC_GetEnumValue(device_handle, "EventSelector", &event_trigger);
     if (nRet == MV_OK)
     {
         std::string active_text = "";
-        for (unsigned int i = 0; i < line_number.nSupportedNum; ++i)
+        for (unsigned int i = 0; i < event_trigger.nSupportedNum; ++i)
         {
-            MVCC_ENUMENTRY line_entry = {0};
-            line_entry.nValue = line_number.nSupportValue[i];
-            nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineSelector", &line_entry);
+            MVCC_ENUMENTRY event_trigger_entry = {0};
+            event_trigger_entry.nValue = event_trigger.nSupportValue[i];
+            nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "EventSelector", &event_trigger_entry);
             if (nRet == MV_OK)
             {
-                m_settings_digital_io_line_number_cbox->append(line_entry.chSymbolic);
-                if (line_entry.nValue == line_number.nCurValue)
+                std::string trigger = event_trigger_entry.chSymbolic;
+                // Only add Digital Input event triggers
+                if (trigger == "Line0RisingEdge" || trigger == "Line0FallingEdge")
                 {
-                    active_text = line_entry.chSymbolic;
+                    m_settings_digital_input_event_trigger_cbox->append(trigger);
+                    if (event_trigger_entry.nValue == event_trigger.nCurValue)
+                    {
+                        active_text = event_trigger_entry.chSymbolic;
+                    }
                 }
             }
             else
@@ -1770,32 +2261,32 @@ void MainWindow::populate_camera_settings(void *device_handle)
                 std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
             }
         }
-        m_settings_digital_io_line_number_cbox->set_active_text(active_text);
+        m_settings_digital_input_event_trigger_cbox->set_active_text(active_text);
     }
     else
     {
-        std::cerr << "Failed to get line_number. Error code: " << nRet << std::endl;
+        std::cerr << "Failed to get event_trigger. Error code: " << nRet << std::endl;
     }
 
-    // Digital IO Line Mode
-    m_settings_digital_io_line_mode_cbox->remove_all();
+    // Digital Input Event Notification
+    m_settings_digital_input_notification_status_cbox->remove_all();
 
-    MVCC_ENUMVALUE line_mode = {0};
-    nRet = MV_CC_GetEnumValue(device_handle, "LineMode", &line_mode);
+    MVCC_ENUMVALUE notification_status = {0};
+    nRet = MV_CC_GetEnumValue(device_handle, "EventNotification", &notification_status);
     if (nRet == MV_OK)
     {
         std::string active_text = "";
-        for (unsigned int i = 0; i < line_mode.nSupportedNum; ++i)
+        for (unsigned int i = 0; i < notification_status.nSupportedNum; ++i)
         {
-            MVCC_ENUMENTRY line_entry = {0};
-            line_entry.nValue = line_mode.nSupportValue[i];
-            nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineMode", &line_entry);
+            MVCC_ENUMENTRY notification_status_entry = {0};
+            notification_status_entry.nValue = notification_status.nSupportValue[i];
+            nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "EventNotification", &notification_status_entry);
             if (nRet == MV_OK)
             {
-                m_settings_digital_io_line_mode_cbox->append(line_entry.chSymbolic);
-                if (line_entry.nValue == line_mode.nCurValue)
+                m_settings_digital_input_notification_status_cbox->append(notification_status_entry.chSymbolic);
+                if (notification_status_entry.nValue == notification_status.nCurValue)
                 {
-                    active_text = line_entry.chSymbolic;
+                    active_text = notification_status_entry.chSymbolic;
                 }
             }
             else
@@ -1803,72 +2294,151 @@ void MainWindow::populate_camera_settings(void *device_handle)
                 std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
             }
         }
-        m_settings_digital_io_line_mode_cbox->set_active_text(active_text);
+        m_settings_digital_input_notification_status_cbox->set_active_text(active_text);
     }
     else
     {
-        std::cerr << "Failed to get line_mode. Error code: " << nRet << std::endl;
+        std::cerr << "Failed to get notification_status. Error code: " << nRet << std::endl;
     }
 
-    // Digital IO Line Source
-    m_settings_digital_io_line_source_cbox->remove_all();
+    // Digital Output Line Number (fixed to "Line1" and "Line2")
+    m_settings_digital_output_line_number_cbox->remove_all();
+    m_settings_digital_output_line_number_cbox->append("Line1");
+    m_settings_digital_output_line_number_cbox->append("Line2");
+    m_settings_digital_output_line_number_cbox->set_active_text(digital_output_line_number);
+    
+    // MVCC_ENUMVALUE line_number = {0};
+    // nRet = MV_CC_GetEnumValue(device_handle, "LineSelector", &line_number);
+    // if (nRet == MV_OK)
+    // {
+    //     std::string active_text = "";
+    //     for (unsigned int i = 0; i < line_number.nSupportedNum; ++i)
+    //     {
+    //         MVCC_ENUMENTRY line_entry = {0};
+    //         line_entry.nValue = line_number.nSupportValue[i];
+    //         nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineSelector", &line_entry);
+    //         if (nRet == MV_OK)
+    //         {
+    //             m_settings_digital_output_line_number_cbox->append(line_entry.chSymbolic);
+    //             if (line_entry.nValue == line_number.nCurValue)
+    //             {
+    //                 active_text = line_entry.chSymbolic;
+    //             }
+    //         }
+    //         else
+    //         {
+    //             std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
+    //         }
+    //     }
+    //     m_settings_digital_output_line_number_cbox->set_active_text(active_text);
+    // }
+    // else
+    // {
+    //     std::cerr << "Failed to get line_number. Error code: " << nRet << std::endl;
+    // }
 
-    MVCC_ENUMVALUE line_source = {0};
-    nRet = MV_CC_GetEnumValue(device_handle, "LineSource", &line_source);
-    if (nRet == MV_OK)
+    if (digital_output_line_number != "")
     {
-        std::string active_text = "";
-        for (unsigned int i = 0; i < line_source.nSupportedNum; ++i)
+        nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", digital_output_line_number.c_str());
+        if (nRet == MV_OK)
         {
-            MVCC_ENUMENTRY line_entry = {0};
-            line_entry.nValue = line_source.nSupportValue[i];
-            nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineSource", &line_entry);
+            // Wait a bit or Network error occurs - MV_E_NETER (0x80000206)
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+            // Digital Output Line Mode
+            m_settings_digital_output_line_mode_cbox->remove_all();
+
+            MVCC_ENUMVALUE line_mode = {0};
+            nRet = MV_CC_GetEnumValue(device_handle, "LineMode", &line_mode);
             if (nRet == MV_OK)
             {
-                m_settings_digital_io_line_source_cbox->append(line_entry.chSymbolic);
-                if (line_entry.nValue == line_source.nCurValue)
+                std::string active_text = "";
+                for (unsigned int i = 0; i < line_mode.nSupportedNum; ++i)
                 {
-                    active_text = line_entry.chSymbolic;
+                    MVCC_ENUMENTRY line_entry = {0};
+                    line_entry.nValue = line_mode.nSupportValue[i];
+                    nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineMode", &line_entry);
+                    if (nRet == MV_OK)
+                    {
+                        m_settings_digital_output_line_mode_cbox->append(line_entry.chSymbolic);
+                        if (line_entry.nValue == line_mode.nCurValue)
+                        {
+                            active_text = line_entry.chSymbolic;
+                        }
+                    }
+                    else
+                    {
+                        std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
+                    }
                 }
+                m_settings_digital_output_line_mode_cbox->set_active_text(active_text);
             }
             else
             {
-                std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
+                std::cerr << "Failed to get line_mode. Error code: " << nRet << std::endl;
+            }
+
+            // Digital Output Line Source
+            m_settings_digital_output_line_source_cbox->remove_all();
+
+            MVCC_ENUMVALUE line_source = {0};
+            nRet = MV_CC_GetEnumValue(device_handle, "LineSource", &line_source);
+            if (nRet == MV_OK)
+            {
+                std::string active_text = "";
+                for (unsigned int i = 0; i < line_source.nSupportedNum; ++i)
+                {
+                    MVCC_ENUMENTRY line_entry = {0};
+                    line_entry.nValue = line_source.nSupportValue[i];
+                    nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineSource", &line_entry);
+                    if (nRet == MV_OK)
+                    {
+                        m_settings_digital_output_line_source_cbox->append(line_entry.chSymbolic);
+                        if (line_entry.nValue == line_source.nCurValue)
+                        {
+                            active_text = line_entry.chSymbolic;
+                        }
+                    }
+                    else
+                    {
+                        std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
+                    }
+                }
+                m_settings_digital_output_line_source_cbox->set_active_text(active_text);
+            }
+            else
+            {
+                std::cerr << "Failed to get line_source. Error code: " << nRet << std::endl;
+            }
+
+            // Strobe Enable
+            bool strobe_enable = false;
+            nRet = MV_CC_GetBoolValue(device_handle, "StrobeEnable", &strobe_enable);
+            if (nRet == MV_OK)
+            {
+                m_settings_strobe_enable_switch->set_active(strobe_enable);
+            }
+            else
+            {
+                std::cerr << "Failed to get strobe_enable. Error code: " << nRet << std::endl;
+            }
+
+            // Strobe Duration
+            MVCC_INTVALUE strobe_duration = {0};
+            nRet = MV_CC_GetIntValue(device_handle, "StrobeLineDuration", &strobe_duration);
+            if (nRet == MV_OK && m_strobe_duration_adj && m_settings_strobe_duration_sb)
+            {
+                m_strobe_duration_adj->set_lower(strobe_duration.nMin);
+                m_strobe_duration_adj->set_upper(strobe_duration.nMax);
+                m_strobe_duration_adj->set_step_increment(strobe_duration.nInc);
+                m_settings_strobe_duration_sb->set_value(strobe_duration.nCurValue);
+            }
+            else
+            {
+                std::cout << "Failed to get StrobeLineDuration. Error code: " << nRet << std::endl;
+                m_logger->log("Error on MV_CC_GetIntValue(StrobeLineDuration): " + std::to_string(nRet), Logger::ERROR);
             }
         }
-        m_settings_digital_io_line_source_cbox->set_active_text(active_text);
-    }
-    else
-    {
-        std::cerr << "Failed to get line_source. Error code: " << nRet << std::endl;
-    }
-
-    // Strobe Enable
-    bool strobe_enable = false;
-    nRet = MV_CC_GetBoolValue(device_handle, "StrobeEnable", &strobe_enable);
-    if (nRet == MV_OK)
-    {
-        m_settings_strobe_enable_switch->set_active(strobe_enable);
-    }
-    else
-    {
-        std::cerr << "Failed to get strobe_enable. Error code: " << nRet << std::endl;
-    }
-
-    // Strobe Duration
-    MVCC_INTVALUE strobe_duration = {0};
-    nRet = MV_CC_GetIntValue(device_handle, "StrobeLineDuration", &strobe_duration);
-    if (nRet == MV_OK && m_strobe_duration_adj && m_settings_strobe_duration_sb)
-    {
-        m_strobe_duration_adj->set_lower(strobe_duration.nMin);
-        m_strobe_duration_adj->set_upper(strobe_duration.nMax);
-        m_strobe_duration_adj->set_step_increment(strobe_duration.nInc);
-        m_settings_strobe_duration_sb->set_value(strobe_duration.nCurValue);
-    }
-    else
-    {
-        std::cout << "Failed to get StrobeLineDuration. Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_GetIntValue(StrobeLineDuration): " + std::to_string(nRet), Logger::ERROR);
     }
 }
 
@@ -1898,17 +2468,37 @@ void MainWindow::clear_camera_settings()
     {
         m_offset_y_sb->set_text("");
     }
-    if (m_settings_digital_io_line_number_cbox)
+    if (m_digital_io_type_cbox)
     {
-        m_settings_digital_io_line_number_cbox->remove_all();
+        m_digital_io_type_cbox->set_active_text("");
     }
-    if (m_settings_digital_io_line_mode_cbox)
+    if (m_settings_digital_input_line_number_cbox)
     {
-        m_settings_digital_io_line_mode_cbox->remove_all();
+        m_settings_digital_input_line_number_cbox->remove_all();
     }
-    if (m_settings_digital_io_line_source_cbox)
+    if (m_settings_digital_input_debouncer_time_sb)
     {
-        m_settings_digital_io_line_source_cbox->remove_all();
+        m_settings_digital_input_debouncer_time_sb->set_text("");
+    }
+    if (m_settings_digital_input_event_trigger_cbox)
+    {
+        m_settings_digital_input_event_trigger_cbox->remove_all();
+    }
+    if (m_settings_digital_input_notification_status_cbox)
+    {
+        m_settings_digital_input_notification_status_cbox->remove_all();
+    }
+    if (m_settings_digital_output_line_number_cbox)
+    {
+        m_settings_digital_output_line_number_cbox->remove_all();
+    }
+    if (m_settings_digital_output_line_mode_cbox)
+    {
+        m_settings_digital_output_line_mode_cbox->remove_all();
+    }
+    if (m_settings_digital_output_line_source_cbox)
+    {
+        m_settings_digital_output_line_source_cbox->remove_all();
     }
     if (m_settings_strobe_enable_switch)
     {
@@ -1956,12 +2546,15 @@ void MainWindow::on_window_shown()
             {
                 // Add the camera name to the combo box
                 auto serialNumber = pDeviceInfo->SpecialInfo.stGigEInfo.chSerialNumber;
-                m_detection_source_cbox->append(std::string((char *)serialNumber));
+                m_select_detection_camera_cbox->append(std::string((char *)serialNumber));
+                m_select_detection_digital_input_cbox->append(std::string((char *)serialNumber));
+                m_select_detection_digital_output_cbox->append(std::string((char *)serialNumber));
                 m_snap_source_cbox->append(std::string((char *)serialNumber));
-                m_toolkit_capture_source_cbox->append(std::string((char *)serialNumber));
+                m_toolkit_digital_output_source_cbox->append(std::string((char *)serialNumber));
+                m_toolkit_digital_input_sink_cbox->append(std::string((char *)serialNumber));
             }
         }
-        m_detection_source_cbox->append("All Cameras");
+        m_select_detection_camera_cbox->append("All Cameras");
     }
     else
     {
@@ -1970,9 +2563,9 @@ void MainWindow::on_window_shown()
     }
 
     load_detection_results();
-
     load_detection_settings();
-
+    clear_camera_settings();
+    
     // Set up websocket callbacks
     m_ws_client.on_connect([this]() {
         std::cout << "Successfully connected to the WebSocket server!" << std::endl;
@@ -2107,7 +2700,7 @@ bool MainWindow::configure_camera(const std::string sn)
                 if (std::getline(line_stream, key, '='))
                 {
                     std::string value;
-                    if (key == "exposureTime" && std::getline(line_stream, value))
+                    if (key == "exposure_time" && std::getline(line_stream, value))
                     {
                         nRet = MV_CC_SetFloatValue(device_handle, "ExposureTime", std::stof(value));
                         if (nRet != MV_OK)
@@ -2137,7 +2730,7 @@ bool MainWindow::configure_camera(const std::string sn)
                             break;
                         }
                     }
-                    else if (key == "offsetX" && std::getline(line_stream, value))
+                    else if (key == "offset_x" && std::getline(line_stream, value))
                     {
                         nRet = MV_CC_SetIntValue(device_handle, "OffsetX", std::stoi(value));
                         if (nRet != MV_OK)
@@ -2147,7 +2740,7 @@ bool MainWindow::configure_camera(const std::string sn)
                             break;
                         }
                     }
-                    else if (key == "offsetY" && std::getline(line_stream, value))
+                    else if (key == "offset_y" && std::getline(line_stream, value))
                     {
                         nRet = MV_CC_SetIntValue(device_handle, "OffsetY", std::stoi(value));
                         if (nRet != MV_OK)
@@ -2157,7 +2750,11 @@ bool MainWindow::configure_camera(const std::string sn)
                             break;
                         }
                     }
-                    else if (key == "lineNumber" && std::getline(line_stream, value))
+                    // LineSelector needs to be set before accessing any digital IO settings,
+                    // otherwise MV_E_GC_ACCESS (0x80000106) occurs.
+                    // So "digital_input_line_number=*" line must be placed before any "digital_input_<setting>=*" line,
+                    // Same thing for digital output.
+                    else if (key == "digital_input_line_number" && std::getline(line_stream, value))
                     {
                         nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", value.c_str());
                         if (nRet != MV_OK)
@@ -2166,8 +2763,68 @@ bool MainWindow::configure_camera(const std::string sn)
                             m_logger->log("Error on MV_CC_SetEnumValueByString(LineSelector): " + std::to_string(nRet), Logger::ERROR);
                             break;
                         }
+                        else
+                        {
+                            std::cout << "MV_CC_SetEnumValueByString(LineSelector) Succeeded" << std::endl;   
+                        }
                     }
-                    else if (key == "lineMode" && std::getline(line_stream, value))
+                    else if (key == "digital_input_debouncer_time" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetIntValue(device_handle, "LineDebouncerTime", std::stoi(value));
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set LineDebouncerTime. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetIntValue(LineDebouncerTime): " + std::to_string(nRet), Logger::ERROR);
+                            break;
+                        }
+                        else
+                        {
+                            std::cout << "MV_CC_SetIntValue(LineDebouncerTime) Succeeded" << std::endl;   
+                        }
+                    }
+                    else if (key == "digital_input_event_trigger" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetEnumValueByString(device_handle, "EventSelector", value.c_str());
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set EventSelector. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetEnumValueByString(EventSelector): " + std::to_string(nRet), Logger::ERROR);
+                            break;
+                        }
+                        else
+                        {
+                            std::cout << "MV_CC_SetEnumValueByString(EventSelector) Succeeded" << std::endl;   
+                        }                        
+                    }
+                    else if (key == "digital_input_notification_status" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetEnumValueByString(device_handle, "EventNotification", value.c_str());
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set EventNotification. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetEnumValueByString(EventNotification): " + std::to_string(nRet), Logger::ERROR);
+                            break;
+                        }
+                        else
+                        {
+                            std::cout << "MV_CC_SetEnumValueByString(EventNotification) Succeeded" << std::endl;   
+                        }                         
+                    }
+                    else if (key == "digital_output_line_number" && std::getline(line_stream, value))
+                    {
+                        nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", value.c_str());
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to set LineSelector. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetEnumValueByString(LineSelector): " + std::to_string(nRet), Logger::ERROR);
+                            break;
+                        }
+                        else
+                        {
+                            std::cout << "MV_CC_SetEnumValueByString(LineSelector) Succeeded" << std::endl;   
+                        }                       
+                    }
+                    else if (key == "digital_output_line_mode" && std::getline(line_stream, value))
                     {
                         nRet = MV_CC_SetEnumValueByString(device_handle, "LineMode", value.c_str());
                         if (nRet != MV_OK)
@@ -2176,8 +2833,12 @@ bool MainWindow::configure_camera(const std::string sn)
                             m_logger->log("Error on MV_CC_SetEnumValueByString(LineMode): " + std::to_string(nRet), Logger::ERROR);
                             break;
                         }
+                        else
+                        {
+                            std::cout << "MV_CC_SetEnumValueByString(LineMode) Succeeded" << std::endl;   
+                        } 
                     }
-                    else if (key == "lineSource" && std::getline(line_stream, value))
+                    else if (key == "digital_output_line_source" && std::getline(line_stream, value))
                     {
                         nRet = MV_CC_SetEnumValueByString(device_handle, "LineSource", value.c_str());
                         if (nRet != MV_OK)
@@ -2186,8 +2847,12 @@ bool MainWindow::configure_camera(const std::string sn)
                             m_logger->log("Error on MV_CC_SetEnumValueByString(LineSource): " + std::to_string(nRet), Logger::ERROR);
                             break;
                         }
+                        else
+                        {
+                            std::cout << "MV_CC_SetEnumValueByString(LineSource) Succeeded" << std::endl;   
+                        }                        
                     }
-                    else if (key == "strobeEnable" && std::getline(line_stream, value))
+                    else if (key == "digital_output_strobe_enable" && std::getline(line_stream, value))
                     {
                         nRet = MV_CC_SetBoolValue(device_handle, "StrobeEnable", value == "1");
                         if (nRet != MV_OK)
@@ -2195,14 +2860,22 @@ bool MainWindow::configure_camera(const std::string sn)
                             std::cerr << "Error to set StrobeEnable to " << value << " Error code: " << nRet << std::endl;
                             m_logger->log("Error on MV_CC_SetBoolValue(StrobeEnable). Error code: " + std::to_string(nRet), Logger::ERROR);
                         }
+                        else
+                        {
+                            std::cout << "MV_CC_SetBoolValue(StrobeEnable) Succeeded" << std::endl;   
+                        }                        
                     }
-                    else if (key == "strobeDuration" && std::getline(line_stream, value))
+                    else if (key == "digital_output_strobe_duration" && std::getline(line_stream, value))
                     {
                         nRet = MV_CC_SetIntValue(device_handle, "StrobeLineDuration", std::stoi(value));
                         if (nRet != MV_OK)
                         {
                             std::cerr << "Error to set StrobeLineDuration to " << std::stoi(value) << " Error code: " << nRet << std::endl;
                             m_logger->log("Error on MV_CC_SetIntValue(StrobeLineDuration). Error code: " + std::to_string(nRet), Logger::ERROR);
+                        }
+                        else
+                        {
+                            std::cout << "MV_CC_SetIntValue(StrobeLineDuration) Succeeded" << std::endl;   
                         }
                     }
                 }
@@ -2323,20 +2996,20 @@ void MainWindow::on_start_clicked()
     m_start_btn->set_label("Starting...");
 
     double capture_interval_ms = 0.0;
-    if (m_capture_rate_sb)
+    if (m_detection_rate_lbl)
     {
-        int capture_rate = m_capture_rate_sb->get_value();
-        capture_interval_ms = 1000.0 / static_cast<double>(capture_rate); // Calculate the capture interval (in milliseconds) based on capture rate (FPS)
+        double capture_rate = std::stod(m_detection_rate_lbl->get_text().raw());
+        capture_interval_ms = 1000.0 / capture_rate; // Calculate the capture interval (in milliseconds) based on capture rate (FPS)
     }
 
     std::vector<std::string> serial_numbers;
     
-    if (m_detection_source_cbox)
+    if (m_select_detection_camera_cbox)
     {
-        auto selected_detection_source = m_detection_source_cbox->get_active_text();
+        auto selected_detection_source = m_select_detection_camera_cbox->get_active_text();
         if (selected_detection_source == "All Cameras")
         {
-            auto model = m_detection_source_cbox->get_model();
+            auto model = m_select_detection_camera_cbox->get_model();
             if (model)
             {
                 for (auto& row : model->children())
@@ -2658,6 +3331,8 @@ void MainWindow::on_snap_clicked()
     size_t offset = 0;
     int num_frames = frame_height / patch_size;
     auto frame_size = frame_width * patch_size;
+    // int num_frames = frame_height / (patch_size * 2);
+    // auto frame_size = frame_width * (patch_size * 2);
 
     for (int i = 0; i < num_frames; ++i)
     {
@@ -2702,7 +3377,7 @@ void MainWindow::on_snap_clicked()
         json_data["confidence_threshold"] = confidence_threshold;
         json_data["pixel_threshold"] = pixel_threshold;
         json_data["frame_width"] = frame_width;
-        json_data["frame_height"] = patch_size; // adjust frame height for each frame
+        json_data["frame_height"] = patch_size * 2; // adjust frame height for each frame
         for (const auto& info : frame_offsets)
         {
             json_data["frames"].push_back({
@@ -2722,17 +3397,32 @@ void MainWindow::on_snap_clicked()
         std::string res_trans_id = response_json["transaction_id"];
         std::string status = response_json["status"];
         int total_anomalies = response_json["total_anomalies"];
-        auto serial_numbers = response_json["serial_numbers"];
         
         if (res_trans_id == trans_id && status == "complete" && total_anomalies > 0)
         {
             update_snap_masks(res_trans_id);
 
-            for (std::string sn : serial_numbers)
+            std::string digital_ouput;
+            std::string line_number;
+
+            if (m_detection_digital_output_lbl)
             {
-                if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
+                digital_ouput = m_detection_digital_output_lbl->get_text();
+            }
+            if (m_detection_digital_output_line_number_lbl)
+            {
+                line_number = m_detection_digital_output_line_number_lbl->get_text();
+            }
+
+            if (digital_ouput != "" && 
+                line_number != "" && 
+                m_connected_device_handles.find(digital_ouput) != m_connected_device_handles.end())
+            {
+                void *device_handle = m_connected_device_handles[digital_ouput];
+                // Select digital output
+                int nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", line_number.c_str());
+                if (nRet == MV_OK)
                 {
-                    void *device_handle = m_connected_device_handles[sn];
                     // Trigger digital output
                     int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
                     if (nRet != MV_OK)
@@ -2746,11 +3436,11 @@ void MainWindow::on_snap_clicked()
                         m_logger->log("Trigger digital output via software succeeded");
                     }
                 }
-                else
-                {
-                    std::cerr << "Digital output source not found: " << sn << std::endl;
-                    m_logger->log("Digital output source not found: " + sn, Logger::ERROR);
-                }
+            }
+            else
+            {
+                std::cerr << "Digital output source not found: " << digital_ouput << std::endl;
+                m_logger->log("Digital output source not found: " + digital_ouput, Logger::ERROR);
             }
         }
     }
@@ -3194,11 +3884,27 @@ void MainWindow::start_detection()
 
             if (res_trans_id == trans_id && status == "complete" && total_anomalies > 0)
             {
-                for (std::string sn : serial_numbers)
+                std::string digital_ouput;
+                std::string line_number;
+
+                if (m_detection_digital_output_lbl)
                 {
-                    if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
+                    digital_ouput = m_detection_digital_output_lbl->get_text();
+                }
+                if (m_detection_digital_output_line_number_lbl)
+                {
+                    line_number = m_detection_digital_output_line_number_lbl->get_text();
+                }
+
+                if (digital_ouput != "" && 
+                    line_number != "" && 
+                    m_connected_device_handles.find(digital_ouput) != m_connected_device_handles.end())
+                {
+                    void *device_handle = m_connected_device_handles[digital_ouput];
+                    // Select digital output
+                    int nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", line_number.c_str());
+                    if (nRet == MV_OK)
                     {
-                        void *device_handle = m_connected_device_handles[sn];
                         // Trigger digital output
                         int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
                         if (nRet != MV_OK)
@@ -3212,11 +3918,11 @@ void MainWindow::start_detection()
                             m_logger->log("Trigger digital output via software succeeded");
                         }
                     }
-                    else
-                    {
-                        std::cerr << "Digital output source not found: " << sn << std::endl;
-                        m_logger->log("Digital output source not found: " + sn, Logger::ERROR);
-                    }
+                }
+                else
+                {
+                    std::cerr << "Digital output source not found: " << digital_ouput << std::endl;
+                    m_logger->log("Digital output source not found: " + digital_ouput, Logger::ERROR);
                 }
             }
 
@@ -3239,6 +3945,9 @@ void MainWindow::stop_detection()
     {
         m_processing_thread.join();  // Wait for previous thread to finish
     }
+
+    RetentionManager retention_manager;
+    retention_manager.enforce_daily_limit();
 }
 
 void MainWindow::send_ws_message(std::string message)
