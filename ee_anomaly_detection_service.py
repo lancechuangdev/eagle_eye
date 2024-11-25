@@ -14,7 +14,7 @@ from websocket_server import WebsocketServer
 shared_memory_name = '/ee_shared_memory' # DONOT CHANGE
 model_path = '/usr/local/share/eagle_eye/ds.keras'
 patch_size = 256
-detection_frame_height = 256
+num_patches_y = 2 # num of patches in height to process
 home_dir = os.path.expanduser("~")
 output_dir = os.path.join(home_dir, "eagle_eye", "detection_results")
 os.makedirs(output_dir, exist_ok=True)
@@ -84,8 +84,8 @@ def read_frames_from_shared_memory(shm_name, frame_width, frame_height, frames_a
         # Read the frame from shared memory
         frame = read_frame_from_shared_memory(shm_name, frame_size, frame_width, frame_height, offset)
 
-        # Reshape the frame to patch_size height
-        reshaped_frame = frame[:detection_frame_height, :]
+        # Reshape the frame to num_patches_y * patch_size height
+        reshaped_frame = frame[:num_patches_y * patch_size, :]
         print(f"reshaped_frame shape: {reshaped_frame.shape}")
 
         frames.append((reshaped_frame, serial_number))
@@ -99,24 +99,24 @@ def build_batch_from_frames(frames, frame_width, frame_height):
         frame = frame.astype(np.float32) / 255.0
 
         # Extract and reshape each patch_size*patch_size patch
-        num_patches = frame_width // patch_size
-        # print(f"num_patches: {num_patches}")
-        for i in range(num_patches):
-            patch = frame[:, i * patch_size:(i + 1) * patch_size]
-            patch = patch.reshape((patch_size, patch_size, 1))  # Reshape to (patch_size, patch_size, 1)
-            batch.append(patch)
+        num_patches_x = frame_width // patch_size
+        # print(f"num_patches: {num_patches_x}")
+        for j in range(num_patches_y):
+            for i in range(num_patches_x):
+                patch = frame[j * patch_size:(j + 1) * patch_size, i * patch_size:(i + 1) * patch_size]
+                patch = patch.reshape((patch_size, patch_size, 1))  # Reshape to (patch_size, patch_size, 1)
+                batch.append(patch)
 
-        # Handle the remaining part as a smaller patch, if any
-        remainder = frame_width % patch_size
-        # print(f"remainder: {remainder}")
+            # Handle the remaining part as a smaller patch, if any
+            remainder = frame_width % patch_size
+            # print(f"remainder: {remainder}")
 
-        if remainder > 0:
-            # Adjust the start position for the last patch so it aligns properly
-            start_x = frame_width - patch_size
-            last_patch = frame[:, start_x:start_x + patch_size]
-            last_patch = last_patch.reshape((patch_size, patch_size, 1))
-            batch.append(last_patch)
-    
+            if remainder > 0:
+                # Adjust the start position for the last patch so it aligns properly
+                start_x = frame_width - patch_size
+                last_patch = frame[j * patch_size:(j + 1) * patch_size, start_x:start_x + patch_size]
+                last_patch = last_patch.reshape((patch_size, patch_size, 1))
+                batch.append(last_patch)
     return batch
 
 def get_welcome_message():
@@ -160,7 +160,7 @@ def message_received(client, server, message):
         "confidence_threshold": confidence_threshold,
         "pixel_threshold": pixel_threshold,
         "frame_width": frame_width,
-        "frame_height": detection_frame_height # adjust the frame height for the detection results
+        "frame_height": num_patches_y * patch_size # adjust the frame height for the detection results
     }
 
     if frames_array and transaction_id:

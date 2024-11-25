@@ -3329,10 +3329,10 @@ void MainWindow::on_snap_clicked()
 
     std::vector<FrameOffsetInfo> frame_offsets;
     size_t offset = 0;
-    int num_frames = frame_height / patch_size;
-    auto frame_size = frame_width * patch_size;
-    // int num_frames = frame_height / (patch_size * 2);
-    // auto frame_size = frame_width * (patch_size * 2);
+    // int num_frames = frame_height / patch_size;
+    // auto frame_size = frame_width * patch_size;
+    int num_frames = frame_height / (patch_size * 2);
+    auto frame_size = frame_width * (patch_size * 2);
 
     for (int i = 0; i < num_frames; ++i)
     {
