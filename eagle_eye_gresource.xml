@@ -8,5 +8,6 @@
     <file>disconnect.svg</file>
     <file>view.svg</file>
     <file>refresh.svg</file>
+    <file>warning.svg</file>
   </gresource>
 </gresources>

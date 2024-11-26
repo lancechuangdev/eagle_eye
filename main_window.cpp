@@ -1450,6 +1450,23 @@ void MainWindow::on_check_service_status_clicked()
 
 void MainWindow::on_save_camera_settings_clicked()
 {
+    // Check if height is a multiple of patch size (256)
+    size_t height = m_height_sb->get_value_as_int();
+    if (height <= 0 || height % 256 != 0)
+    {
+        // Create the message dialog with the specified parent window, message text, and button options
+        Gtk::MessageDialog dialog(*this, 
+                                "Height must be a multiple of 256", 
+                                false,
+                                Gtk::MESSAGE_ERROR,
+                                Gtk::BUTTONS_OK,
+                                true);
+
+        // Run the dialog and wait for the user to press the OK button
+        dialog.run();
+        return;
+    }
+
     // Create settings header
     std::string serialNumber;
     if (m_sn_lbl)
@@ -3269,9 +3286,6 @@ void MainWindow::on_snap_clicked()
         return;
     }
 
-    auto frame_width = stImageInfo.nWidth;
-    auto frame_height = stImageInfo.nHeight;
-
     // Save the frame to file
     save_tmp_image(pData, stImageInfo, device_handle);
 
@@ -3327,27 +3341,19 @@ void MainWindow::on_snap_clicked()
         return;
     }
 
+    auto frame_width = stImageInfo.nWidth;
+    auto frame_height = stImageInfo.nHeight;
+    auto frame_size = frame_width * frame_height;
     std::vector<FrameOffsetInfo> frame_offsets;
-    size_t offset = 0;
-    // int num_frames = frame_height / patch_size;
-    // auto frame_size = frame_width * patch_size;
-    int num_frames = frame_height / (patch_size * 2);
-    auto frame_size = frame_width * (patch_size * 2);
 
-    for (int i = 0; i < num_frames; ++i)
-    {
-        // Save the frame metadata
-        frame_offsets.push_back({ offset, frame_size, sn });
+    // Save the frame metadata
+    frame_offsets.push_back({ 0, frame_size, sn });
 
-        // Calculate the memory address to copy this frame
-        void* frame_ptr = static_cast<uint8_t*>(shm_ptr) + offset;
+    // Calculate the memory address to copy this frame
+    void* frame_ptr = static_cast<uint8_t*>(shm_ptr);
 
-        // Copy the frame data into the calculated memory location
-        std::memcpy(frame_ptr, pData + offset, frame_size);
-
-        // Update offset for the next frame
-        offset += frame_size;
-    }
+    // Copy the frame data into the calculated memory location
+    std::memcpy(frame_ptr, pData, frame_size);
 
     if (!frame_offsets.empty())
     {
@@ -3377,7 +3383,7 @@ void MainWindow::on_snap_clicked()
         json_data["confidence_threshold"] = confidence_threshold;
         json_data["pixel_threshold"] = pixel_threshold;
         json_data["frame_width"] = frame_width;
-        json_data["frame_height"] = patch_size * 2; // adjust frame height for each frame
+        json_data["frame_height"] = frame_height;
         for (const auto& info : frame_offsets)
         {
             json_data["frames"].push_back({
