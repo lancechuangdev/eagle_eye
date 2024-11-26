@@ -14,7 +14,6 @@ from websocket_server import WebsocketServer
 shared_memory_name = '/ee_shared_memory' # DONOT CHANGE
 model_path = '/usr/local/share/eagle_eye/ds.keras'
 patch_size = 256
-num_patches_y = 2 # num of patches in height to process
 home_dir = os.path.expanduser("~")
 output_dir = os.path.join(home_dir, "eagle_eye", "detection_results")
 os.makedirs(output_dir, exist_ok=True)
@@ -73,22 +72,20 @@ def read_frames_from_shared_memory(shm_name, frame_width, frame_height, frames_a
         offset = frame_data['offset']
         serial_number = frame_data['serial_number']
 
-        if frame_width * frame_height != frame_size:
-            print("Error: frame width x height is not equal to the frame size.")
+        if frame_height % patch_size != 0:
+            print(f"Error: frame height {frame_height} is not a multiple of patch size {patch_size}.")
             continue
-            
         if frame_width < patch_size or frame_height < patch_size:
             print("Error: frame width or height is smaller than the specified patch size.")
+            continue
+        if frame_width * frame_height != frame_size:
+            print("Error: frame width x height is not equal to the frame size.")
             continue
 
         # Read the frame from shared memory
         frame = read_frame_from_shared_memory(shm_name, frame_size, frame_width, frame_height, offset)
 
-        # Reshape the frame to num_patches_y * patch_size height
-        reshaped_frame = frame[:num_patches_y * patch_size, :]
-        print(f"reshaped_frame shape: {reshaped_frame.shape}")
-
-        frames.append((reshaped_frame, serial_number))
+        frames.append((frame, serial_number))
     
     return frames
 
@@ -100,7 +97,10 @@ def build_batch_from_frames(frames, frame_width, frame_height):
 
         # Extract and reshape each patch_size*patch_size patch
         num_patches_x = frame_width // patch_size
-        # print(f"num_patches: {num_patches_x}")
+        print(f"num_patches_x: {num_patches_x}")
+        num_patches_y = frame_height // patch_size
+        print(f"num_patches_y: {num_patches_y}")
+
         for j in range(num_patches_y):
             for i in range(num_patches_x):
                 patch = frame[j * patch_size:(j + 1) * patch_size, i * patch_size:(i + 1) * patch_size]
@@ -160,7 +160,7 @@ def message_received(client, server, message):
         "confidence_threshold": confidence_threshold,
         "pixel_threshold": pixel_threshold,
         "frame_width": frame_width,
-        "frame_height": num_patches_y * patch_size # adjust the frame height for the detection results
+        "frame_height": frame_height
     }
 
     if frames_array and transaction_id:
