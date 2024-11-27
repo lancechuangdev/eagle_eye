@@ -10,6 +10,7 @@ from PIL import Image
 from datetime import datetime
 import json
 from websocket_server import WebsocketServer
+import concurrent.futures
 
 shared_memory_name = '/ee_shared_memory' # DONOT CHANGE
 model_path = '/usr/local/share/eagle_eye/ds.keras'
@@ -17,6 +18,7 @@ patch_size = 256
 home_dir = os.path.expanduser("~")
 output_dir = os.path.join(home_dir, "eagle_eye", "detection_results")
 os.makedirs(output_dir, exist_ok=True)
+executor = concurrent.futures.ThreadPoolExecutor() # ThreadPoolExecutor for saving files
 
 def print_with_ts(message):
     print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} - {message}")
@@ -136,6 +138,32 @@ def new_client(client, server):
 def client_left(client, server):
     print_with_ts("Client(%d) disconnected" % client['id'])
 
+def save_images_and_transaction(output_path, frame_images, frames_metadata, prediction_images, predictions_metadata, transaction_json):
+    """Save frames, predictions, and transaction JSON in a separate thread."""
+    try:
+        # Ensure the directory exists
+        os.makedirs(output_path, exist_ok=True)
+
+        # Save frames
+        for i, metadata in enumerate(frames_metadata):
+            file_name = metadata['file_name']
+            image = frame_images[i]
+            image.save(file_name)
+
+        # Save predictions
+        for i, metadata in enumerate(predictions_metadata):
+            file_name = metadata['file_name']
+            image = prediction_images[i]
+            image.save(file_name)
+
+        # Write transaction JSON
+        with open(os.path.join(output_path, "transaction_data.json"), "w") as trans_json_file:
+            json.dump(transaction_json, trans_json_file, indent=4)
+
+        print_with_ts(f"Transaction {transaction_json['transaction_id']} files saved successfully.\n")
+    except Exception as e:
+        print_with_ts(f"Error saving transaction {transaction_json['transaction_id']} files: {e}\n")
+
 # Called when a client sends a message
 def message_received(client, server, message):
     print_with_ts("Receiving a message from Client(%d): %s" % (client['id'], message))
@@ -191,7 +219,10 @@ def message_received(client, server, message):
             predictions = (predictions > confidence_threshold).astype(np.float32)
             # print(f"predictions shape: {predictions.shape}")
             
-            prediction_files = []
+            frames_metadata = []
+            frame_images = []
+            predictions_metadata = []
+            prediction_images = []
             prediction_frame_ids = []
             
             # Check each prediction for anomaly
@@ -205,12 +236,15 @@ def message_received(client, server, message):
                 if anomaly_count >= pixel_threshold:
                     # Convert arrays to image format
                     prediction_image = Image.fromarray((prediction.squeeze() * 255).astype(np.uint8), mode='L')
+                    prediction_images.append(prediction_image)
 
-                    # Build the prediction file name
-                    prediction_filename = os.path.join(output_path, f"prediction_{i}.png")
-                    prediction_files.append((prediction_image, i, prediction_filename))
+                    # Build the prediction metadata
+                    predictions_metadata.append({
+                        "prediction_id": i, 
+                        "file_name": os.path.join(output_path, f"prediction_{i}.png")
+                    })
 
-                    # Store the corresponding frame id for the patch with anomaly pixels
+                    # Store the corresponding frame id for the anomaly patch
                     prediction_frame_id = i // patches_per_frame
                     if prediction_frame_id not in prediction_frame_ids:
                         prediction_frame_ids.append(prediction_frame_id)
@@ -218,47 +252,24 @@ def message_received(client, server, message):
                     total_anomalies += 1
 
             if total_anomalies > 0:
-                frames_data = []
-                predictions_data = []
-
-                # Ensure the directory exists
-                os.makedirs(output_path, exist_ok=True)
-
                 for i, (frame, serial_number) in enumerate(frames):
-                    # Convert the reshaped frame to an image
-                    frame = Image.fromarray(frame.astype(np.uint8))
-                    # Save the frame to a file
-                    frame_filename = os.path.join(output_path, f"frame_{i}.png")
-                    frame.save(frame_filename)
-                    # print(f"Saved frame {i}: {frame_filename}.\n")
+                    frame_images.append(Image.fromarray(frame.astype(np.uint8)))
+
+                    frames_metadata.append({
+                        "frame_id": i,
+                        "serial_number": serial_number,
+                        "file_name": os.path.join(output_path, f"frame_{i}.png"),
+                    })
 
                     if i in prediction_frame_ids and serial_number not in serial_numbers:
                         serial_numbers.append(serial_number)
 
-                    # Add frame info to list
-                    frames_data.append({
-                        "frame_id": i,
-                        "serial_number": serial_number,
-                        "file_name": frame_filename
-                    })
-
-                for prediction_image, i, prediction_filename in prediction_files:
-                    prediction_image.save(prediction_filename)
-                    # print(f"Saved prediction for patch {i}: {prediction_filename}.\n")
-                    # Add prediction info to list
-                    predictions_data.append({
-                        "prediction_id": i,
-                        "file_name": prediction_filename
-                    })
-
-                # Update the transaction JSON structure
-                transaction_json["frames"] = frames_data
-                transaction_json["predictions"] = predictions_data
+                transaction_json["frames"] = frames_metadata
+                transaction_json["predictions"] = predictions_metadata
                 transaction_json["total_anomalies"] = total_anomalies
 
-                # Write dictionary to a JSON file with indentation
-                with open(os.path.join(output_path, "transaction_data.json"), "w") as trans_json_file:
-                    json.dump(transaction_json, trans_json_file, indent=4)
+                # Dispatch saving task to another thread
+                executor.submit(save_images_and_transaction, output_path, frame_images, frames_metadata, prediction_images, predictions_metadata, transaction_json)
 
             # Print a final summary of the prediction results
             print_with_ts(f"Transaction {transaction_id} completed: {total_anomalies} patches with anomalies are more than the detection threshold.\n")
