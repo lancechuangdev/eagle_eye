@@ -355,7 +355,7 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("last_detection_results_refresh_time", m_last_detection_results_refresh_time_lbl);
 
-    setup_directory_monitor(AppPaths::Detection_Results_Path.string());
+    // setup_directory_monitor(AppPaths::Detection_Results_Path.string());
 
     // Set the default time to one second before the app starts
     m_last_load_time = std::chrono::steady_clock::now() - std::chrono::seconds(1);
