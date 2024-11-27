@@ -3406,6 +3406,7 @@ void MainWindow::on_snap_clicked()
         
         if (res_trans_id == trans_id && status == "complete" && total_anomalies > 0)
         {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
             update_snap_masks(res_trans_id);
 
             std::string digital_ouput;
@@ -3518,11 +3519,10 @@ void MainWindow::update_snap_masks(std::string trans_id)
 
     int patch_size = json_data["patch_size"].get<int>();
     int frame_width = json_data["frame_width"].get<int>();
-    int num_frames = json_data["num_frames"].get<int>();
-    int total_height = json_data["frame_height"].get<int>() * num_frames;
+    int frame_height = json_data["frame_height"].get<int>();
 
     // Create a transparent mask pixbuf of the same size as the image
-    m_mask_pixbuf_toolkit = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
+    m_mask_pixbuf_toolkit = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, frame_height);
     // m_mask_pixbuf_toolkit->fill(0xffffffbe); // For testing
     m_mask_pixbuf_toolkit->fill(0x00000000); // Initialize the mask to be fully transparent black
 
