@@ -13,7 +13,6 @@ from websocket_server import WebsocketServer
 import concurrent.futures
 
 shared_memory_name = '/ee_shared_memory' # DONOT CHANGE
-model_path = '/usr/local/share/eagle_eye/ds.keras'
 patch_size = 256
 home_dir = os.path.expanduser("~")
 output_dir = os.path.join(home_dir, "eagle_eye", "detection_results")
@@ -91,11 +90,15 @@ def read_frames_from_shared_memory(shm_name, frame_width, frame_height, frames_a
     
     return frames
 
-def build_batch_from_frames(frames, frame_width, frame_height):
+def build_batch_from_frames(frames, frame_width, frame_height, channels):
     batch = []
     for frame, _ in frames:
         # Normalize frame to [0, 1] range
         frame = frame.astype(np.float32) / 255.0
+
+        # Convert grayscale to RGB if needed
+        if frame.ndim == 2 and channels == 3:
+            frame = np.stack([frame, frame, frame], axis=-1)  # Convert to (H, W, 3)
 
         # Extract and reshape each patch_size*patch_size patch
         num_patches_x = frame_width // patch_size
@@ -106,7 +109,7 @@ def build_batch_from_frames(frames, frame_width, frame_height):
         for j in range(num_patches_y):
             for i in range(num_patches_x):
                 patch = frame[j * patch_size:(j + 1) * patch_size, i * patch_size:(i + 1) * patch_size]
-                patch = patch.reshape((patch_size, patch_size, 1))  # Reshape to (patch_size, patch_size, 1)
+                patch = patch.reshape((patch_size, patch_size, channels))  # Reshape to (patch_size, patch_size, channels)
                 batch.append(patch)
 
             # Handle the remaining part as a smaller patch, if any
@@ -117,14 +120,13 @@ def build_batch_from_frames(frames, frame_width, frame_height):
                 # Adjust the start position for the last patch so it aligns properly
                 start_x = frame_width - patch_size
                 last_patch = frame[j * patch_size:(j + 1) * patch_size, start_x:start_x + patch_size]
-                last_patch = last_patch.reshape((patch_size, patch_size, 1))
+                last_patch = last_patch.reshape((patch_size, patch_size, channels))
                 batch.append(last_patch)
     return batch
 
 def get_welcome_message():
     return (f"Welcome to Eagle Eye Anomaly Detection Service!\n"
             f"Configuration:\n"
-            f"Model Path: {model_path}\n"
             f"Patch Size: {patch_size}\n"
             f"Output Directory: {output_dir}\n")
 
@@ -201,78 +203,96 @@ def message_received(client, server, message):
         transaction_json["num_frames"] = num_frames
 
         # Build batch from frames
-        batch = build_batch_from_frames(frames, frame_width, frame_height)
+        batch = build_batch_from_frames(frames, frame_width, frame_height, 3)
 
         if batch:
             num_patches = len(batch)
             transaction_json["num_patches"] = num_patches
             patches_per_frame = num_patches / num_frames
 
-            # Convert list to numpy array with batch shape (num_patches, patch_size, patch_size, 1)
+            # Convert list to numpy array with batch shape (num_patches, patch_size, patch_size, channels)
             frame_batch = np.array(batch)
-            # print(f"frame_batch shape: {frame_batch.shape}")
+            print(f"frame_batch shape: {frame_batch.shape}")
             
-            # Perform prediction on the entire batch
-            print_with_ts("Prediction Started.\n")
-            predictions = model.predict(frame_batch)
-            print_with_ts("Prediction Stopped.\n")
-            predictions = (predictions > confidence_threshold).astype(np.float32)
-            # print(f"predictions shape: {predictions.shape}")
-            
-            frames_metadata = []
-            frame_images = []
-            predictions_metadata = []
-            prediction_images = []
-            prediction_frame_ids = []
-            
-            # Check each prediction for anomaly
-            for i, prediction in enumerate(predictions):
-                # Threshold check for anomalies
-                anomaly_count = np.sum(prediction == 1)
+            # Create an array of original indices
+            original_indices = np.arange(num_patches)
+
+            # Perform binary classification on the entire batch
+            print_with_ts("Binary Classification Started.\n")
+            mobilenet_predictions = mobilenet_v2.predict(frame_batch)
+            print_with_ts("Binary Classification Stopped.\n")
+            print(f"Mobilenet_v2 predictions shape: {mobilenet_predictions.shape}")
+
+            # Get boolean mask for patches exceeding the confidence threshold
+            confident_mask = np.squeeze(mobilenet_predictions > confidence_threshold)
+            print(f"Confident mask: {confident_mask}")
+
+            # Perform prediction on the anomaly patches
+            frame_batch = frame_batch[confident_mask]
+            original_indices = original_indices[confident_mask]  # Track original indices
+            frame_batch = frame_batch[..., 0:1]  # Extract the red channel
+            if frame_batch.size > 0:
+                print_with_ts("Unet Prediction Started.\n")
+                predictions = unet.predict(frame_batch)
+                print_with_ts("Unet Prediction Stopped.\n")
+                predictions = (predictions > 0.5).astype(np.float32)
+                print(f"Unet predictions shape: {predictions.shape}")
                 
-                # Print per-patch anomaly count
-                print_with_ts(f"Patch {i}: {anomaly_count} anomaly pixels detected w/ confidence threshold {confidence_threshold}.\n")
+                frames_metadata = []
+                frame_images = []
+                predictions_metadata = []
+                prediction_images = []
+                prediction_frame_ids = []
                 
-                if anomaly_count >= pixel_threshold:
-                    # Convert arrays to image format
-                    prediction_image = Image.fromarray((prediction.squeeze() * 255).astype(np.uint8), mode='L')
-                    prediction_images.append(prediction_image)
+                # Check each prediction for anomaly
+                for i, prediction in enumerate(predictions):
+                    original_idx = int(original_indices[i])  # Convert NumPy int64 to Python int
+                    # Threshold check for anomalies
+                    anomaly_count = np.sum(prediction == 1)
+                    
+                    # Print per-patch anomaly count
+                    print_with_ts(f"Patch {original_idx}: {anomaly_count} anomaly pixels detected w/ confidence threshold 0.5.\n")
+                    
+                    if anomaly_count >= pixel_threshold:
+                        # Convert arrays to image format
+                        prediction_image = Image.fromarray((prediction.squeeze() * 255).astype(np.uint8), mode='L')
+                        prediction_images.append(prediction_image)
 
-                    # Build the prediction metadata
-                    predictions_metadata.append({
-                        "prediction_id": i, 
-                        "file_name": os.path.join(output_path, f"prediction_{i}.png")
-                    })
+                        # Build the prediction metadata
+                        predictions_metadata.append({
+                            "prediction_id": original_idx, 
+                            "file_name": os.path.join(output_path, f"prediction_{original_idx}.png")
+                        })
 
-                    # Store the corresponding frame id for the anomaly patch
-                    prediction_frame_id = i // patches_per_frame
-                    if prediction_frame_id not in prediction_frame_ids:
-                        prediction_frame_ids.append(prediction_frame_id)
+                        # Store the corresponding frame id for the anomaly patch
+                        prediction_frame_id = original_idx // patches_per_frame
+                        if prediction_frame_id not in prediction_frame_ids:
+                            prediction_frame_ids.append(prediction_frame_id)
 
-                    total_anomalies += 1
+                        total_anomalies += 1
 
-            if total_anomalies > 0:
-                for i, (frame, serial_number) in enumerate(frames):
-                    frame_images.append(Image.fromarray(frame.astype(np.uint8)))
+                if total_anomalies > 0:
+                    for i, (frame, serial_number) in enumerate(frames):
+                        frame_images.append(Image.fromarray(frame.astype(np.uint8)))
 
-                    frames_metadata.append({
-                        "frame_id": i,
-                        "serial_number": serial_number,
-                        "file_name": os.path.join(output_path, f"frame_{i}.png"),
-                    })
+                        frames_metadata.append({
+                            "frame_id": i,
+                            "serial_number": serial_number,
+                            "file_name": os.path.join(output_path, f"frame_{i}.png"),
+                        })
 
-                    if i in prediction_frame_ids and serial_number not in serial_numbers:
-                        serial_numbers.append(serial_number)
+                        if i in prediction_frame_ids and serial_number not in serial_numbers:
+                            serial_numbers.append(serial_number)
 
-                transaction_json["frames"] = frames_metadata
-                transaction_json["predictions"] = predictions_metadata
-                transaction_json["total_anomalies"] = total_anomalies
+                    transaction_json["frames"] = frames_metadata
+                    transaction_json["predictions"] = predictions_metadata
+                    transaction_json["total_anomalies"] = total_anomalies
 
-                # Dispatch saving task to another thread
-                executor.submit(save_images_and_transaction, output_path, frame_images, frames_metadata, prediction_images, predictions_metadata, transaction_json)
+                    # Dispatch saving task to another thread
+                    executor.submit(save_images_and_transaction, output_path, frame_images, frames_metadata, prediction_images, predictions_metadata, transaction_json)
 
-            # Print a final summary of the prediction results
-            print_with_ts(f"Transaction {transaction_id} completed: {total_anomalies} patches with anomalies are more than the detection threshold.\n")
+                # Print a final summary of the prediction results
+                print_with_ts(f"Transaction {transaction_id} completed: {total_anomalies} patches with anomalies are more than the detection threshold.\n")
 
     result_json = {
         "transaction_id": transaction_id,
@@ -282,6 +302,10 @@ def message_received(client, server, message):
     }
     result = json.dumps(result_json)
     server.send_message(client, result)
+
+# Load models
+model_path = '/usr/local/share/eagle_eye/ee.h5'
+mobilenet_v2 = tf.keras.models.load_model(model_path)
 
 # BCE w/ Intersection over Union (IoU)
 def iou(y_true, y_pred):
@@ -293,7 +317,8 @@ def iou(y_true, y_pred):
     return iou
 
 custom_objects = { 'iou': iou }
-model = tf.keras.models.load_model(model_path, custom_objects=custom_objects)
+model_path = '/usr/local/share/eagle_eye/ds.keras'
+unet = tf.keras.models.load_model(model_path, custom_objects=custom_objects)
 
 PORT=9001 # DONOT CHANGE
 server = WebsocketServer(port = PORT)
