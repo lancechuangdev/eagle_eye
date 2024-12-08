@@ -630,13 +630,26 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
 
     // Parse the JSON content
     nlohmann::json json_data;
-    json_file >> json_data;
+    int patch_size;
+    int frame_width;
+    int frame_height;
+    int num_frames;
+    int total_height;
 
-    int patch_size = json_data["patch_size"].get<int>();
-    int frame_width = json_data["frame_width"].get<int>();
-    int frame_height = json_data["frame_height"].get<int>();
-    int num_frames = json_data["num_frames"].get<int>();
-    int total_height = frame_height * num_frames;
+    try
+    {
+        json_file >> json_data;
+        patch_size = json_data["patch_size"].get<int>();
+        frame_width = json_data["frame_width"].get<int>();
+        frame_height = json_data["frame_height"].get<int>();
+        num_frames = json_data["num_frames"].get<int>();
+        total_height = frame_height * num_frames;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << e.what() << '\n';
+        return;
+    }
 
     // Create the combined pixbuf for detection images.
     // Gdk::Pixbuf does not directly support a single-channel format, 
