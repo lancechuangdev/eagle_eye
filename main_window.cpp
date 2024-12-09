@@ -176,7 +176,11 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     m_builder->get_widget("settings_strobe_enable_switch", m_settings_strobe_enable_switch);
     if (m_settings_strobe_enable_switch)
     {
-        m_settings_strobe_enable_switch->signal_state_set().connect(sigc::mem_fun(*this, &MainWindow::on_strobe_enable_state_set));
+        // Get the PropertyProxy for the active property of the switch
+        Glib::PropertyProxy<bool> active_property = m_settings_strobe_enable_switch->property_active();
+
+        // Connect to the signal_changed() of the PropertyProxy
+        active_property.signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_strobe_enable_state_set));
     }
 
     m_builder->get_widget("settings_strobe_duration_sb", m_settings_strobe_duration_sb);
@@ -354,6 +358,16 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     }
 
     m_builder->get_widget("last_detection_results_refresh_time", m_last_detection_results_refresh_time_lbl);
+
+    m_builder->get_widget("detection_results_masking_switch", m_detection_results_masking_switch);
+    if (m_detection_results_masking_switch)
+    {
+        // Get the PropertyProxy for the active property of the switch
+        Glib::PropertyProxy<bool> active_property = m_detection_results_masking_switch->property_active();
+
+        // Connect to the signal_changed() of the PropertyProxy
+        active_property.signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_enable_masking_changed));
+    }
 
     // setup_directory_monitor(AppPaths::Detection_Results_Path.string());
 
@@ -759,6 +773,16 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
     }
 }
 
+void MainWindow::on_enable_masking_changed()
+{
+    m_show_mask_detection_result = m_detection_results_masking_switch->get_active();
+    Gtk::ListBoxRow* selected_row = m_detection_results_listbox->get_selected_row();
+    if (selected_row)
+    {
+        on_detection_result_selected(selected_row);
+    }
+}
+
 bool MainWindow::on_detection_results_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
 {
     // Apply zoom and pan transformations
@@ -773,7 +797,7 @@ bool MainWindow::on_detection_results_display_area_draw(const Cairo::RefPtr<Cair
     }
 
     // Draw the masks
-    if (m_mask_pixbuf_detection_result)
+    if (m_show_mask_detection_result && m_mask_pixbuf_detection_result)
     {
         Gdk::Cairo::set_source_pixbuf(cr, m_mask_pixbuf_detection_result, 0, 0);
         cr->paint();
@@ -1168,12 +1192,13 @@ void MainWindow::on_digital_output_line_source_changed()
     }
 }
 
-bool MainWindow::on_strobe_enable_state_set(bool state)
+void MainWindow::on_strobe_enable_state_set()
 {
     auto sn = m_sn_lbl->get_text();
     if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
     {
         void *device_handle = m_connected_device_handles[sn];
+        bool state = m_settings_strobe_enable_switch->get_active();
         int nRet = MV_CC_SetBoolValue(device_handle, "StrobeEnable", state);
         if (nRet != MV_OK)
         {
@@ -1181,8 +1206,6 @@ bool MainWindow::on_strobe_enable_state_set(bool state)
             m_logger->log("Error on MV_CC_SetBoolValue(StrobeEnable). Error code: " + std::to_string(nRet), Logger::ERROR);
         }
     }
-
-    return false; // Returning false allows the default handler to run
 }
 
 void MainWindow::on_strobe_duration_value_changed()

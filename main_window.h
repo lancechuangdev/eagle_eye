@@ -106,6 +106,7 @@ protected:
     Gtk::ComboBoxText *m_recent_detection_results_selector_cbox;
     Gtk::Button *m_detection_results_refresh_btn;
     Gtk::Label *m_last_detection_results_refresh_time_lbl;
+    Gtk::Switch *m_detection_results_masking_switch;
     Gtk::Label *m_detection_results_path_lbl;
     Gtk::SpinButton *m_max_per_day_sb;
     Gtk::SpinButton *m_days_to_retain_sb;
@@ -132,7 +133,7 @@ protected:
     void on_digital_output_line_number_changed();
     void on_digital_output_line_mode_changed();
     void on_digital_output_line_source_changed();
-    bool on_strobe_enable_state_set(bool state);
+    void on_strobe_enable_state_set();
     void on_strobe_duration_value_changed();
     void on_test_digital_out_clicked();
     void on_start_listening_digital_input_event_clicked();
@@ -147,6 +148,7 @@ protected:
     bool on_detection_results_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     void on_detection_results_refresh_clicked();
     void on_recent_detection_results_selector_changed();
+    void on_enable_masking_changed();
     void on_delete_detection_results_clicked();
     void on_detection_digital_input_selection_changed();
     void on_detection_digital_output_selection_changed();
@@ -223,6 +225,7 @@ private:
 
     Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_detection_result;
     Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_detection_result;
+    bool m_show_mask_detection_result;
     bool m_is_dragging_detection = false; // Track whether the user is dragging on detection results page
     double m_drag_start_x_detection = 0.0; // Mouse drag start X on detection results page
     double m_drag_start_y_detection = 0.0; // Mouse drag start Y on detection results page
