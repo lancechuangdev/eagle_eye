@@ -11,13 +11,16 @@ from datetime import datetime
 import json
 from websocket_server import WebsocketServer
 import concurrent.futures
+import struct
 
-shared_memory_name = '/ee_shared_memory' # DONOT CHANGE
+shared_memory_name = '/ee_shared_memory_input' # DONOT CHANGE
+shared_memory_prediction_name = '/ee_predictions_shm' # DONOT CHANGE
 patch_size = 256
 home_dir = os.path.expanduser("~")
 output_dir = os.path.join(home_dir, "eagle_eye", "detection_results")
 os.makedirs(output_dir, exist_ok=True)
 executor = concurrent.futures.ThreadPoolExecutor() # ThreadPoolExecutor for saving files
+preallocated_pred_shm_size = patch_size * patch_size * 100 + mmap.PAGESIZE  # Include extra for alignment metadata
 
 def print_with_ts(message):
     print(f"{datetime.now():%Y-%m-%d %H:%M:%S.%f} - {message}")
@@ -182,6 +185,9 @@ def message_received(client, server, message):
     total_anomalies = 0
     output_path = os.path.join(output_dir, transaction_id)
     serial_numbers = []
+    predictions_metadata = []
+    num_frames = 0
+    num_patches = 0
 
     # Build the initial transaction json object
     transaction_json = {
@@ -240,10 +246,35 @@ def message_received(client, server, message):
                 
                 frames_metadata = []
                 frame_images = []
-                predictions_metadata = []
                 prediction_images = []
                 prediction_frame_ids = []
                 
+                aligned_offsets = []
+                total_sh_mem_size = 0
+                
+                # Prepare data for shared memory
+                for i, prediction in enumerate(predictions):
+                    # Threshold check for anomalies
+                    anomaly_count = np.sum(prediction == 1)
+                    if anomaly_count >= pixel_threshold:
+                        # Calculate aligned offset
+                        aligned_offset = total_sh_mem_size + (mmap.PAGESIZE - (total_sh_mem_size % mmap.PAGESIZE)) % mmap.PAGESIZE
+                        aligned_offsets.append(aligned_offset)
+
+                        # Write prediction data into shared memory
+                        image_data = (prediction.squeeze() * 255).astype(np.uint8)
+                        memory_pred.seek(aligned_offset)
+                        memory_pred.write(image_data.tobytes())
+
+                        # Update total memory usage
+                        total_sh_mem_size = aligned_offset + patch_size * patch_size
+
+                # Pack aligned offsets into metadata and store at the end of the shared memory
+                metadata_offset = preallocated_pred_shm_size - len(aligned_offsets) * 4  # Assuming uint32_t offsets
+                metadata = struct.pack(f'{len(aligned_offsets)}I', *aligned_offsets)
+                memory_pred.seek(metadata_offset)
+                memory_pred.write(metadata)
+
                 # Check each prediction for anomaly
                 for i, prediction in enumerate(predictions):
                     original_idx = int(original_indices[i])  # Convert NumPy int64 to Python int
@@ -298,7 +329,12 @@ def message_received(client, server, message):
         "transaction_id": transaction_id,
         "status": "complete",
         "total_anomalies": total_anomalies,
-        "serial_numbers": serial_numbers
+        "serial_numbers": serial_numbers,
+        "predictions": predictions_metadata,
+        "num_frames": num_frames,
+        "num_patches": num_patches,
+        # "shared_mem_size": total_sh_mem_size,
+        "patch_size": patch_size
     }
     result = json.dumps(result_json)
     server.send_message(client, result)
@@ -319,6 +355,11 @@ def iou(y_true, y_pred):
 custom_objects = { 'iou': iou }
 model_path = '/usr/local/share/eagle_eye/ds.keras'
 unet = tf.keras.models.load_model(model_path, custom_objects=custom_objects)
+
+# Create shared memory for prediction
+shm_pred = posix_ipc.SharedMemory(shared_memory_prediction_name, posix_ipc.O_CREAT, size=preallocated_pred_shm_size)
+memory_pred = mmap.mmap(shm_pred.fd, shm_pred.size)
+shm_pred.close_fd()
 
 PORT=9001 # DONOT CHANGE
 server = WebsocketServer(port = PORT)

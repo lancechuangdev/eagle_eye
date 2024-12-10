@@ -30,6 +30,10 @@ protected:
     Gtk::RadioButton *m_run_btn;
     Gtk::RadioButton *m_explore_btn;
     Gtk::RadioButton *m_settings_btn;
+    Gtk::RadioButton *m_main_control_panel_rbtn;
+    Gtk::RadioButton *m_main_rt_monitoring_rbtn;
+    Gtk::Stack *m_main_stack;
+    Gtk::DrawingArea *m_main_drawing_area;
     Gtk::Label *m_detection_camera_lbl;
     Gtk::Label *m_detection_rate_lbl;
     Gtk::Label *m_detection_digital_input_lbl;
@@ -112,16 +116,18 @@ protected:
     Gtk::SpinButton *m_days_to_retain_sb;
     Gtk::Label *m_detection_results_memory_usage_lbl;
     Gtk::Button *m_delete_detection_results_btn;
-    
+
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
     void on_menu_toggled();
+    void on_main_toggled();
     void on_start_clicked();
     void on_stop_clicked();
     void on_snap_clicked();
     void on_connect_clicked(const std::string& sn);
     void on_disconnect_clicked(const std::string& sn);
     void on_view_clicked(const std::string& sn);
+    bool on_main_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_toolkit_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_settings_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_exposure_time_entry_focus_out(GdkEventFocus* event);
@@ -204,6 +210,8 @@ private:
     std::condition_variable m_ws_response_cv;
     bool m_ws_response_ready = false; // Condition to wait on
 
+    Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_main;
+    Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_main;
     Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_toolkit;
     Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_toolkit;
     double m_mask_alpha = 0.5;
@@ -236,7 +244,9 @@ private:
     Glib::RefPtr<Gio::FileMonitor> m_detection_results_monitor;
     std::chrono::steady_clock::time_point m_last_load_time;
     std::shared_ptr<Logger> m_logger;
-
+    Glib::Dispatcher m_main_images_dispatcher;
+    Glib::Dispatcher m_main_masks_dispatcher;
+    
     void discover_cameras();
     bool connect_camera(const std::string& sn);
     bool disconnect_camera(const std::string& sn);
