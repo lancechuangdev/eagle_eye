@@ -257,7 +257,9 @@ private:
     std::shared_ptr<Logger> m_logger;
     Glib::Dispatcher m_main_images_dispatcher;
     Glib::Dispatcher m_main_masks_dispatcher;
-    
+    std::atomic<bool> m_images_dispatcher_running = false;
+    std::atomic<bool> m_masks_dispatcher_running = false;
+
     void discover_cameras();
     bool connect_camera(const std::string& sn);
     bool disconnect_camera(const std::string& sn);

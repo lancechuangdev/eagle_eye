@@ -2687,7 +2687,7 @@ void MainWindow::on_window_shown()
     load_detection_results();
     load_detection_settings();
     clear_camera_settings();
-    
+
     // Set up websocket callbacks
     m_ws_client.on_connect([this]() {
         std::cout << "Successfully connected to the WebSocket server!" << std::endl;
@@ -3866,11 +3866,18 @@ void MainWindow::start_detection()
     }
     m_frame_queue.clear();
     
+    if (!m_image_pixbuf_main)
+    {
+        m_image_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, 1008, 1024 * 2);
+    }
+    if (!m_mask_pixbuf_main)
+    {
+        m_mask_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, 1008, 1024 * 2);
+    }
+
     // Start the frame processing thread
     m_processing_thread = std::thread([this]()
     {
-        FrameData frame_data(nullptr, nullptr, ""); // Initialize FrameData with null pointers
-
         std::string shm_name_input = "/ee_shared_memory_input";
         size_t buffer = 2448 * 2048 * 3;
 
@@ -3910,13 +3917,14 @@ void MainWindow::start_detection()
         }
 
         // Map the entire shared memory region
-        size_t shm_size_pred = 256*256*100 + sysconf(_SC_PAGESIZE); // Adjust for metadata
+        size_t shm_size_pred = 256 * 256 * 100 + sysconf(_SC_PAGESIZE); // Adjust for metadata
         void* shm_ptr_pred = mmap(nullptr, shm_size_pred, PROT_READ, MAP_SHARED, shm_fd_pred, 0);
         if (shm_ptr_pred == MAP_FAILED) {
             std::cerr << "Failed to map shared memory." << std::endl;
             return;
         }
 
+        FrameData frame_data(nullptr, nullptr, ""); // Initialize FrameData with null pointers
         std::vector<FrameOffsetInfo> frame_offsets;
         std::vector<std::vector<uint8_t>> frame_rgb_data;
         std::vector<PatchData> patches;
@@ -3925,7 +3933,6 @@ void MainWindow::start_detection()
         {
             // std::cout << "Entering processing loop" << std::endl;
             // std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Prevent CPU overuse
-            
             frame_offsets.clear();
             frame_rgb_data.clear();
             patches.clear();
@@ -3956,6 +3963,17 @@ void MainWindow::start_detection()
                     // Update offset for the next frame
                     offset += frame_size;
 
+                    // Convert Mono8 to RGB for Gdk::Pixbuf
+                    std::vector<unsigned char> rgb_data(frame_width * frame_height * 3);
+                    for (int i = 0; i < frame_width * frame_height; ++i)
+                    {
+                        unsigned char gray = frame_data.pData[i];
+                        rgb_data[i * 3 + 0] = gray; // Red channel
+                        rgb_data[i * 3 + 1] = gray; // Green channel
+                        rgb_data[i * 3 + 2] = gray; // Blue channel
+                    }
+                    frame_rgb_data.push_back(rgb_data);
+
                     // Increment the counter
                     num_frames_dequeued++;
                 }
@@ -3965,60 +3983,11 @@ void MainWindow::start_detection()
             {
                 continue;
             }
-            
-            for (const auto& info : frame_offsets)
-            {
-                auto offset = info.offset;
-                auto frame_size = frame_width * frame_height;
-
-                // Align the offset to the system page size
-                size_t page_size = sysconf(_SC_PAGESIZE);
-                size_t aligned_offset = offset - (offset % page_size);
-                size_t intra_frame_offset = offset % page_size;
-
-                // Calculate the size to map
-                size_t map_size = frame_size + intra_frame_offset;
-
-                // Memory-map the shared memory object
-                void* mmap_ptr = mmap(nullptr, map_size, PROT_READ, MAP_SHARED, shm_fd, aligned_offset);
-                if (mmap_ptr == MAP_FAILED)
-                {
-                    // perror("Failed to map shared memory");
-                    std::cerr << "Failed to map shared memory" << std::endl;
-                    // close(shm_fd);
-                    continue;
-                }
-
-                // Access the frame data
-                uint8_t* mmap_data = static_cast<uint8_t*>(mmap_ptr) + intra_frame_offset;
-                std::vector<uint8_t> frame_data(frame_size);
-
-                // Copy the frame data to the vector
-                std::memcpy(frame_data.data(), mmap_data, frame_size);
-
-                // Unmap the memory and close the shared memory descriptor
-                // munmap(mmap_ptr, map_size);
-                // close(shm_fd);
-
-                // Convert Mono8 to RGB for Gdk::Pixbuf
-                std::vector<unsigned char> rgb_data(frame_width * frame_height * 3);
-                for (int i = 0; i < frame_width * frame_height; ++i)
-                {
-                    unsigned char gray = frame_data[i];
-                    rgb_data[i * 3 + 0] = gray; // Red channel
-                    rgb_data[i * 3 + 1] = gray; // Green channel
-                    rgb_data[i * 3 + 2] = gray; // Blue channel
-                }
-                frame_rgb_data.push_back(rgb_data);
-            }
 
             // Ensure thread safety
             m_main_images_dispatcher.connect([this, frame_rgb_data, frame_width, frame_height, num_frames_dequeued]() mutable
             {
-                if (!this->m_is_running)
-                {
-                    return;
-                }
+                m_images_dispatcher_running = true;
 
                 std::cout << "dispatcher for images started" << std::endl;
 
@@ -4026,8 +3995,12 @@ void MainWindow::start_detection()
                 // Create the combined pixbuf for detection images.
                 // Gdk::Pixbuf does not directly support a single-channel format, 
                 // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
-                this->m_image_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, frame_width, total_height);
-                this->m_image_pixbuf_main->fill(0x000000); // Fill with black
+                // if (this->m_image_pixbuf_main)
+                // {
+                //     this->m_image_pixbuf_main.reset();
+                // }
+                // this->m_image_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, frame_width, total_height);
+                // this->m_image_pixbuf_main->fill(0x000000); // Fill with black
 
                 int current_y = 0;
                 int row_stride = frame_width * 3;  // Gdk::Pixbuf expects RGB data
@@ -4047,17 +4020,27 @@ void MainWindow::start_detection()
 
                     if (image_pixbuf)
                     {
-                        image_pixbuf->copy_area(0, 0, frame_width, frame_height, 
-                            this->m_image_pixbuf_main, 0, current_y);
+                        image_pixbuf->copy_area(
+                            0, 
+                            0, 
+                            frame_width,
+                            frame_height, 
+                            this->m_image_pixbuf_main, 
+                            0, 
+                            current_y
+                        );
                         current_y += frame_height;
                     }
                 }
 
+                // Prevent memory leaks
                 frame_rgb_data.clear();
 
                 // Redraw the drawing area
                 this->m_main_drawing_area->set_size_request(frame_width, total_height);
                 this->m_main_drawing_area->queue_draw();
+
+                m_images_dispatcher_running = false;
 
                 std::cout << "dispatcher for images ended" << std::endl;
             });
@@ -4065,13 +4048,6 @@ void MainWindow::start_detection()
             std::cout << "dispatcher for images emit started" << std::endl;
             m_main_images_dispatcher.emit();
             std::cout << "dispatcher for images emit ended" << std::endl;
-
-            if (m_mask_pixbuf_main)
-            {
-                m_mask_pixbuf_main->fill(0x00000000); // Fill with black and transparent
-                // Redraw the drawing area
-                this->m_main_drawing_area->queue_draw();
-            }
 
             // Generate a transaction ID
             auto trans_id = generate_transaction_id();
@@ -4111,6 +4087,11 @@ void MainWindow::start_detection()
             std::string frame_info_string = json_data.dump(); // Convert JSON to string
             send_ws_message(frame_info_string);
             
+            if (!m_is_running)
+            {
+                break;
+            }
+
             // Parse the JSON response
             nlohmann::json response_json = nlohmann::json::parse(m_ws_response);
 
@@ -4241,10 +4222,15 @@ void MainWindow::start_detection()
                 // Ensure thread safety
                 m_main_masks_dispatcher.connect([this, patches, frame_width, frame_height, num_frames, patch_size]() mutable
                 {
-                    if (!this->m_is_running)
-                    {
-                        return;
-                    }
+                    m_masks_dispatcher_running = true;
+
+                    // if (!this->m_is_running)
+                    // {
+                    //     // Prevent memory leaks
+                    //     patches.clear();
+
+                    //     return;
+                    // }
 
                     std::cout << "dispatcher for masks started" << std::endl;
 
@@ -4252,7 +4238,8 @@ void MainWindow::start_detection()
                     // Gdk::Pixbuf does not directly support a single-channel format, 
                     // so still create an RGBA pixbuf and replicate the grayscale values across the three color channels.
                     int total_height = frame_height * num_frames;
-                    this->m_mask_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
+
+                    // this->m_mask_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
 
                     for (auto patch : patches)
                     {
@@ -4282,6 +4269,10 @@ void MainWindow::start_detection()
                             std::cout << "prediction_pixbuf created" << std::endl;
                         }
 
+                        // Update mask pixel buf
+                        update_mask_color(prediction_pixbuf);
+                        update_mask_alpha(prediction_pixbuf, this->m_mask_alpha * 255);
+
                         // Copy the prediction image into m_mask_pixbuf_toolkit at the specified position
                         prediction_pixbuf->Gdk::Pixbuf::copy_area(
                             0,
@@ -4292,18 +4283,35 @@ void MainWindow::start_detection()
                             position_x,
                             position_y
                         );
+                        prediction_pixbuf.reset();
                     }
-
-                    // Update mask pixel buf
-                    update_mask_color(this->m_mask_pixbuf_main);
-                    update_mask_alpha(this->m_mask_pixbuf_main, this->m_mask_alpha * 255);
 
                     // Redraw the drawing area
                     this->m_main_drawing_area->queue_draw();
-
+                    
+                    // Prevent memory leaks
                     patches.clear();
 
+                    m_masks_dispatcher_running = false;
+
                     std::cout << "dispatcher for masks ended" << std::endl;
+                });
+
+                std::cout << "dispatcher for masks emit started" << std::endl;
+                m_main_masks_dispatcher.emit();
+                std::cout << "dispatcher for masks emit ended" << std::endl;
+            }
+            else
+            {
+                m_main_masks_dispatcher.connect([this]()
+                {
+                    m_masks_dispatcher_running = true;
+                    
+                    m_mask_pixbuf_main->fill(0x00000000);
+                    // Redraw the drawing area
+                    m_main_drawing_area->queue_draw();
+                    
+                    m_masks_dispatcher_running = false;
                 });
 
                 std::cout << "dispatcher for masks emit started" << std::endl;
@@ -4315,6 +4323,11 @@ void MainWindow::start_detection()
         }
 
         // Clean up
+        while (m_images_dispatcher_running || m_masks_dispatcher_running) 
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
         frame_offsets.clear();
         frame_rgb_data.clear();
         patches.clear();
@@ -4332,6 +4345,11 @@ void MainWindow::start_detection()
             std::cerr << "Failed to unmap shared memory." << std::endl;
         }
         ::close(shm_fd_pred);
+
+        m_image_pixbuf_main->fill(0x000000); // Fill with black
+        m_mask_pixbuf_main->fill(0x00000000); // Fill with black
+        // Redraw the drawing area
+        this->m_main_drawing_area->queue_draw();
     });
 }
 
