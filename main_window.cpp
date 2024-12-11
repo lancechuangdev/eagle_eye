@@ -3918,14 +3918,18 @@ void MainWindow::start_detection()
         }
 
         std::vector<FrameOffsetInfo> frame_offsets;
+        std::vector<std::vector<uint8_t>> frame_rgb_data;
+        std::vector<PatchData> patches;
 
         while (m_is_running)
         {
             // std::cout << "Entering processing loop" << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Prevent CPU overuse
+            // std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Prevent CPU overuse
             
-            size_t offset = 0;
             frame_offsets.clear();
+            frame_rgb_data.clear();
+            patches.clear();
+            size_t offset = 0;
             int num_frames_dequeued = 0;
             int frame_width = 0;
             int frame_height = 0;
@@ -3961,9 +3965,55 @@ void MainWindow::start_detection()
             {
                 continue;
             }
+            
+            for (const auto& info : frame_offsets)
+            {
+                auto offset = info.offset;
+                auto frame_size = frame_width * frame_height;
+
+                // Align the offset to the system page size
+                size_t page_size = sysconf(_SC_PAGESIZE);
+                size_t aligned_offset = offset - (offset % page_size);
+                size_t intra_frame_offset = offset % page_size;
+
+                // Calculate the size to map
+                size_t map_size = frame_size + intra_frame_offset;
+
+                // Memory-map the shared memory object
+                void* mmap_ptr = mmap(nullptr, map_size, PROT_READ, MAP_SHARED, shm_fd, aligned_offset);
+                if (mmap_ptr == MAP_FAILED)
+                {
+                    // perror("Failed to map shared memory");
+                    std::cerr << "Failed to map shared memory" << std::endl;
+                    // close(shm_fd);
+                    continue;
+                }
+
+                // Access the frame data
+                uint8_t* mmap_data = static_cast<uint8_t*>(mmap_ptr) + intra_frame_offset;
+                std::vector<uint8_t> frame_data(frame_size);
+
+                // Copy the frame data to the vector
+                std::memcpy(frame_data.data(), mmap_data, frame_size);
+
+                // Unmap the memory and close the shared memory descriptor
+                // munmap(mmap_ptr, map_size);
+                // close(shm_fd);
+
+                // Convert Mono8 to RGB for Gdk::Pixbuf
+                std::vector<unsigned char> rgb_data(frame_width * frame_height * 3);
+                for (int i = 0; i < frame_width * frame_height; ++i)
+                {
+                    unsigned char gray = frame_data[i];
+                    rgb_data[i * 3 + 0] = gray; // Red channel
+                    rgb_data[i * 3 + 1] = gray; // Green channel
+                    rgb_data[i * 3 + 2] = gray; // Blue channel
+                }
+                frame_rgb_data.push_back(rgb_data);
+            }
 
             // Ensure thread safety
-            m_main_images_dispatcher.connect([this, shm_fd, frame_offsets, frame_width, frame_height, num_frames_dequeued]() 
+            m_main_images_dispatcher.connect([this, frame_rgb_data, frame_width, frame_height, num_frames_dequeued]() mutable
             {
                 if (!this->m_is_running)
                 {
@@ -3980,81 +4030,30 @@ void MainWindow::start_detection()
                 this->m_image_pixbuf_main->fill(0x000000); // Fill with black
 
                 int current_y = 0;
+                int row_stride = frame_width * 3;  // Gdk::Pixbuf expects RGB data
 
-                for (const auto& info : frame_offsets)
+                for (const auto& image_rgb_data : frame_rgb_data)
                 {
-                    auto offset = info.offset;
-                    auto frame_size = frame_width * frame_height;
-
-                    // Align the offset to the system page size
-                    size_t page_size = sysconf(_SC_PAGESIZE);
-                    size_t aligned_offset = offset - (offset % page_size);
-                    size_t intra_frame_offset = offset % page_size;
-
-                    // Calculate the size to map
-                    size_t map_size = frame_size + intra_frame_offset;
-
-                    // Memory-map the shared memory object
-                    void* mmap_ptr = mmap(nullptr, map_size, PROT_READ, MAP_SHARED, shm_fd, aligned_offset);
-                    if (mmap_ptr == MAP_FAILED)
-                    {
-                        // perror("Failed to map shared memory");
-                        std::cerr << "Failed to map shared memory" << std::endl;
-                        // close(shm_fd);
-                        continue;
-                    }
-
-                    // Access the frame data
-                    uint8_t* mmap_data = static_cast<uint8_t*>(mmap_ptr) + intra_frame_offset;
-                    std::vector<uint8_t> frame_data(frame_size);
-
-                    // Copy the frame data to the vector
-                    std::memcpy(frame_data.data(), mmap_data, frame_size);
-
-                    // Unmap the memory and close the shared memory descriptor
-                    // munmap(mmap_ptr, map_size);
-                    // close(shm_fd);
-
-                    // Convert Mono8 to RGB for Gdk::Pixbuf
-                    std::vector<unsigned char> rgb_data(frame_width * frame_height * 3);
-                    for (int i = 0; i < frame_width * frame_height; ++i)
-                    {
-                        unsigned char gray = frame_data[i];
-                        rgb_data[i * 3 + 0] = gray; // Red channel
-                        rgb_data[i * 3 + 1] = gray; // Green channel
-                        rgb_data[i * 3 + 2] = gray; // Blue channel
-                    }
-
-                    int row_stride = frame_width * 3;  // Gdk::Pixbuf expects RGB data
-
-                    // Convert raw data to a Pixbuf
+                    // Each image_rgb_data is a vector<uint8_t> that holds the RGB data for an image
                     auto image_pixbuf = Gdk::Pixbuf::create_from_data(
-                        rgb_data.data(),
-                        Gdk::COLORSPACE_RGB,
-                        false,         // No alpha channel
-                        8,             // Bits per channel
-                        frame_width,
-                        frame_height,
+                        image_rgb_data.data(),        // Pointer to the data of the current image
+                        Gdk::COLORSPACE_RGB, 
+                        false,            // No alpha channel
+                        8,                // 8 bits per channel
+                        frame_width, 
+                        frame_height, 
                         row_stride
                     );
 
                     if (image_pixbuf)
                     {
-                        // Copy the current image into the combined pixbuf
-                        image_pixbuf->copy_area(
-                            0, 
-                            0, 
-                            frame_width, 
-                            frame_height,
-                            this->m_image_pixbuf_main, 
-                            0, 
-                            current_y
-                        );
-
-                        // Update the y-offset for the next image
+                        image_pixbuf->copy_area(0, 0, frame_width, frame_height, 
+                            this->m_image_pixbuf_main, 0, current_y);
                         current_y += frame_height;
                     }
                 }
+
+                frame_rgb_data.clear();
 
                 // Redraw the drawing area
                 this->m_main_drawing_area->set_size_request(frame_width, total_height);
@@ -4069,7 +4068,7 @@ void MainWindow::start_detection()
 
             if (m_mask_pixbuf_main)
             {
-                m_mask_pixbuf_main.reset();
+                m_mask_pixbuf_main->fill(0x00000000); // Fill with black and transparent
                 // Redraw the drawing area
                 this->m_main_drawing_area->queue_draw();
             }
@@ -4168,8 +4167,79 @@ void MainWindow::start_detection()
                     m_logger->log("Digital output source not found: " + digital_ouput, Logger::ERROR);
                 }
 
+                // Read metadata (aligned offsets)
+                char* metadata_start = static_cast<char*>(shm_ptr_pred) + (shm_size_pred - (total_anomalies * sizeof(uint32_t)));
+                
+                // Check alignment
+                if (reinterpret_cast<uintptr_t>(metadata_start) % alignof(uint32_t) != 0) {
+                    std::cerr << "Metadata is not properly aligned for uint32_t!" << std::endl;
+                    return;
+                }
+
+                std::cout << "metadata_start address: " << static_cast<void*>(metadata_start) << std::endl;
+
+                // Cast to uint32_t* safely
+                uint32_t* metadata_ptr = reinterpret_cast<uint32_t*>(metadata_start);
+                std::vector<uint32_t> offsets;
+
+                // Read metadata into offsets
+                for (int i = 0; i < total_anomalies; i++) {
+                    offsets.push_back(metadata_ptr[i]);
+                }
+
+                // Print the offsets
+                std::cout << "Offsets: ";
+                for (const auto& offset : offsets) {
+                    std::cout << offset << " ";
+                }
+                std::cout << std::endl;
+
+                // Load and position each prediction
+                int predictions_per_row = frame_width / patch_size;
+                if (frame_width % patch_size != 0)
+                {
+                    predictions_per_row++; // Allow for an additional prediction if there's remaining space
+                }
+                int i = 0;
+                for (uint32_t offset : offsets)
+                {
+                    unsigned char* mono8_data = static_cast<unsigned char*>(shm_ptr_pred) + offset;
+
+                    // Convert Mono8 to RGBA for Gdk::Pixbuf
+                    std::vector<unsigned char> rgba_data(patch_size * patch_size * 4); // Allocate space for RGBA (4 bytes per pixel)
+                    for (int i = 0; i < patch_size * patch_size; ++i)
+                    {   
+                        // For every pixel
+                        unsigned char gray = mono8_data[i];
+                        rgba_data[i * 4 + 0] = gray; // Red channel
+                        rgba_data[i * 4 + 1] = gray; // Green channel
+                        rgba_data[i * 4 + 2] = gray; // Blue channel
+                        rgba_data[i * 4 + 3] = 255;  // Alpha channel (fully opaque)
+                    }
+
+                    // Calculate row and column based on the index
+                    auto prediction = predictions[i++];
+                    int prediction_id = prediction["prediction_id"].get<int>();
+                    int row = prediction_id / predictions_per_row;
+                    int col = prediction_id % predictions_per_row;
+
+                    // Calculate position_x
+                    int position_x = col * patch_size; // Standard position in the row
+
+                    // Adjust position_x if this is the last column and it exceeds frame width
+                    if (col == predictions_per_row - 1 && position_x + patch_size > frame_width)
+                    {
+                        position_x = frame_width - patch_size;
+                    }
+
+                    // Calculate position_y
+                    int position_y = row * patch_size; // Each row is separated by the height of the patch
+
+                    patches.emplace_back(rgba_data, position_x, position_y);
+                }
+
                 // Ensure thread safety
-                m_main_masks_dispatcher.connect([this, frame_width, frame_height, num_frames_dequeued, shm_ptr_pred, shm_size_pred, predictions, total_anomalies, patch_size]()
+                m_main_masks_dispatcher.connect([this, patches, frame_width, frame_height, num_frames, patch_size]() mutable
                 {
                     if (!this->m_is_running)
                     {
@@ -4178,62 +4248,17 @@ void MainWindow::start_detection()
 
                     std::cout << "dispatcher for masks started" << std::endl;
 
-                    int total_height = frame_height * num_frames_dequeued;
                     // Create the combined pixbuf for detection images.
                     // Gdk::Pixbuf does not directly support a single-channel format, 
                     // so still create an RGBA pixbuf and replicate the grayscale values across the three color channels.
+                    int total_height = frame_height * num_frames;
                     this->m_mask_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
 
-                    // Read metadata (aligned offsets)
-                    char* metadata_start = static_cast<char*>(shm_ptr_pred) + (shm_size_pred - (total_anomalies * sizeof(uint32_t)));
-                    
-                    // Check alignment
-                    if (reinterpret_cast<uintptr_t>(metadata_start) % alignof(uint32_t) != 0) {
-                        std::cerr << "Metadata is not properly aligned for uint32_t!" << std::endl;
-                        return;
-                    }
-
-                    std::cout << "metadata_start address: " << static_cast<void*>(metadata_start) << std::endl;
-
-                    // Cast to uint32_t* safely
-                    uint32_t* metadata_ptr = reinterpret_cast<uint32_t*>(metadata_start);
-                    std::vector<uint32_t> offsets;
-
-                    // Read metadata into offsets
-                    for (int i = 0; i < total_anomalies; i++) {
-                        offsets.push_back(metadata_ptr[i]);
-                    }
-
-                    // Print the offsets
-                    std::cout << "Offsets: ";
-                    for (const auto& offset : offsets) {
-                        std::cout << offset << " ";
-                    }
-                    std::cout << std::endl;
-
-                    // Load and position each prediction
-                    int predictions_per_row = frame_width / patch_size;
-                    if (frame_width % patch_size != 0)
+                    for (auto patch : patches)
                     {
-                        predictions_per_row++; // Allow for an additional prediction if there's remaining space
-                    }
-                    int i = 0;
-                    for (uint32_t offset : offsets)
-                    {
-                        unsigned char* mono8_data = static_cast<unsigned char*>(shm_ptr_pred) + offset;
-
-                        // Convert Mono8 to RGBA for Gdk::Pixbuf
-                        std::vector<unsigned char> rgba_data(patch_size * patch_size * 4); // Allocate space for RGBA (4 bytes per pixel)
-                        for (int i = 0; i < patch_size * patch_size; ++i)
-                        {   
-                            // For every pixel
-                            unsigned char gray = mono8_data[i];
-                            rgba_data[i * 4 + 0] = gray; // Red channel
-                            rgba_data[i * 4 + 1] = gray; // Green channel
-                            rgba_data[i * 4 + 2] = gray; // Blue channel
-                            rgba_data[i * 4 + 3] = 255;  // Alpha channel (fully opaque)
-                        }
-
+                        auto rgba_data = patch.data;
+                        auto position_x = patch.position_x;
+                        auto position_y = patch.position_y;
                         int row_stride = patch_size * 4;  // Gdk::Pixbuf expects RGB data                     
 
                         // Create a Pixbuf from the aligned offset
@@ -4257,24 +4282,6 @@ void MainWindow::start_detection()
                             std::cout << "prediction_pixbuf created" << std::endl;
                         }
 
-                        // Calculate row and column based on the index
-                        auto prediction = predictions[i++];
-                        int prediction_id = prediction["prediction_id"].get<int>();
-                        int row = prediction_id / predictions_per_row;
-                        int col = prediction_id % predictions_per_row;
-
-                        // Calculate position_x
-                        int position_x = col * patch_size; // Standard position in the row
-
-                        // Adjust position_x if this is the last column and it exceeds frame width
-                        if (col == predictions_per_row - 1 && position_x + patch_size > frame_width)
-                        {
-                            position_x = frame_width - patch_size;
-                        }
-
-                        // Calculate position_y
-                        int position_y = row * patch_size; // Each row is separated by the height of the patch
-
                         // Copy the prediction image into m_mask_pixbuf_toolkit at the specified position
                         prediction_pixbuf->Gdk::Pixbuf::copy_area(
                             0,
@@ -4294,6 +4301,8 @@ void MainWindow::start_detection()
                     // Redraw the drawing area
                     this->m_main_drawing_area->queue_draw();
 
+                    patches.clear();
+
                     std::cout << "dispatcher for masks ended" << std::endl;
                 });
 
@@ -4306,6 +4315,10 @@ void MainWindow::start_detection()
         }
 
         // Clean up
+        frame_offsets.clear();
+        frame_rgb_data.clear();
+        patches.clear();
+
         std::cout << "Clean up shared memory object" << std::endl;
         if (munmap(shm_ptr, buffer) == -1) // Unmap the shared memory
         {

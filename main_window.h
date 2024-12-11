@@ -185,6 +185,17 @@ private:
         std::string serial_number;
     };
 
+    struct PatchData
+    {
+        std::vector<unsigned char> data; // Holds RGBA data for the patch
+        int position_x;
+        int position_y;
+
+        // Constructor for easy initialization
+        PatchData(const std::vector<unsigned char>& d, int x, int y)
+            : data(d), position_x(x), position_y(y) {}
+    };
+
     struct CaptureCallbackData
     {
         MainWindow *main_window_ptr;
