@@ -13,8 +13,8 @@ from websocket_server import WebsocketServer
 import concurrent.futures
 import struct
 
-shared_memory_name = "/ee_shared_memory_frames" # DONOT CHANGE
-shared_memory_prediction_name = "/ee_shared_memory_predictions" # DONOT CHANGE
+shared_memory_name_frames = "/ee_shared_memory_frames" # DONOT CHANGE
+shared_memory_name_predictions = "/ee_shared_memory_predictions" # DONOT CHANGE
 patch_size = 256
 home_dir = os.path.expanduser("~")
 output_dir = os.path.join(home_dir, "eagle_eye", "detection_results")
@@ -204,7 +204,7 @@ def message_received(client, server, message):
         print_with_ts(f"Transaction {transaction_id} started: Starting prediction on {len(frames_array)} image(s)\n")
 
         # Read frames from shared memory
-        frames = read_frames_from_shared_memory(shared_memory_name, frame_width, frame_height, frames_array)
+        frames = read_frames_from_shared_memory(shared_memory_name_frames, frame_width, frame_height, frames_array)
         num_frames = len(frames)
         transaction_json["num_frames"] = num_frames
 
@@ -357,7 +357,7 @@ model_path = '/usr/local/share/eagle_eye/ds.keras'
 unet = tf.keras.models.load_model(model_path, custom_objects=custom_objects)
 
 # Create shared memory for prediction
-shm_pred = posix_ipc.SharedMemory(shared_memory_prediction_name, posix_ipc.O_CREAT, size=preallocated_pred_shm_size)
+shm_pred = posix_ipc.SharedMemory(shared_memory_name_predictions, posix_ipc.O_CREAT, size=preallocated_pred_shm_size)
 memory_pred = mmap.mmap(shm_pred.fd, shm_pred.size)
 shm_pred.close_fd()
 
