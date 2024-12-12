@@ -164,6 +164,10 @@ protected:
     bool on_key_release_event(GdkEventKey *key_event) override;
 
     // Mouse events
+    bool on_main_display_area_btn_press_event(GdkEventButton *button_event);
+    bool on_main_display_area_btn_release_event(GdkEventButton *button_event);
+    bool on_main_display_area_motion_notify_event(GdkEventMotion *motion_event);
+    bool on_main_display_area_scroll_event(GdkEventScroll *scroll_event);
     bool on_detection_display_area_btn_press_event(GdkEventButton *button_event);
     bool on_detection_display_area_btn_release_event(GdkEventButton *button_event);
     bool on_detection_display_area_motion_notify_event(GdkEventMotion *motion_event);
@@ -226,12 +230,20 @@ private:
     Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_toolkit;
     double m_mask_alpha = 0.5;
     bool m_ctrl_pressed = false; // Flag to check if Ctrl key is pressed
-    bool m_is_dragging_toolkit = false; // Track whether the user is dragging on test page
-    double m_drag_start_x_toolkit = 0.0; // Mouse drag start X on test page
-    double m_drag_start_y_toolkit = 0.0; // Mouse drag start Y on test page
-    double m_offset_x_toolkit = 0.0;    // Horizontal pan offset on test page
-    double m_offset_y_toolkit = 0.0;    // Vertical pan offset on test page
-    double m_zoom_factor_toolkit = 1.0; // Zoom factor (1.0 = no zoom) on test page
+
+    bool m_is_dragging_main = false; // Track whether the user is dragging on main page
+    double m_drag_start_x_main = 0.0; // Mouse drag start X on main page
+    double m_drag_start_y_main = 0.0; // Mouse drag start Y on main page
+    double m_offset_x_main = 0.0;    // Horizontal pan offset on main page
+    double m_offset_y_main = 0.0;    // Vertical pan offset on main page
+    double m_zoom_factor_main = 1.0; // Zoom factor (1.0 = no zoom) on main page
+
+    bool m_is_dragging_toolkit = false; // Track whether the user is dragging on toolkit page
+    double m_drag_start_x_toolkit = 0.0; // Mouse drag start X on toolkit page
+    double m_drag_start_y_toolkit = 0.0; // Mouse drag start Y on toolkit page
+    double m_offset_x_toolkit = 0.0;    // Horizontal pan offset on toolkit page
+    double m_offset_y_toolkit = 0.0;    // Vertical pan offset on toolkit page
+    double m_zoom_factor_toolkit = 1.0; // Zoom factor (1.0 = no zoom) on toolkit page
 
     Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_settings;
     bool m_is_dragging_settings = false; // Track whether the user is dragging on settings page

@@ -94,14 +94,14 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_main_drawing_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_draw));
 
         // // Connect mouse scroll event
-        // m_main_drawing_area->add_events(Gdk::SCROLL_MASK);
-        // m_main_drawing_area->signal_scroll_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_scroll_event));
+        m_main_drawing_area->add_events(Gdk::SCROLL_MASK);
+        m_main_drawing_area->signal_scroll_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_scroll_event));
 
         // // Connect mouse press and motion events
-        // m_main_drawing_area->add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
-        // m_main_drawing_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_btn_press_event));
-        // m_main_drawing_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_btn_release_event));
-        // m_main_drawing_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_motion_notify_event));
+        m_main_drawing_area->add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
+        m_main_drawing_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_btn_press_event));
+        m_main_drawing_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_btn_release_event));
+        m_main_drawing_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_motion_notify_event));
     }
 
     m_builder->get_widget("snap_source_cbox", m_snap_source_cbox);
@@ -484,8 +484,8 @@ void MainWindow::on_main_toggled()
 bool MainWindow::on_main_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
 {
     // Apply zoom and pan transformations
-    // cr->translate(m_offset_x_toolkit, m_offset_y_toolkit);   // Apply panning offset
-    // cr->scale(m_zoom_factor_toolkit, m_zoom_factor_toolkit); // Apply zoom
+    cr->translate(m_offset_x_main, m_offset_y_main);   // Apply panning offset
+    cr->scale(m_zoom_factor_main, m_zoom_factor_main); // Apply zoom
 
     // Draw the image
     if (m_image_pixbuf_main)
@@ -501,6 +501,93 @@ bool MainWindow::on_main_display_area_draw(const Cairo::RefPtr<Cairo::Context> &
         cr->paint();
     }
 
+    return true;
+}
+
+bool MainWindow::on_main_display_area_scroll_event(GdkEventScroll *scroll_event)
+{
+    if (m_ctrl_pressed)
+    {
+        // Adjust alpha when Ctrl is pressed
+        if (scroll_event->direction == GDK_SCROLL_UP)
+        {
+            m_mask_alpha = std::min(m_mask_alpha + 0.1, 1.0); // Max alpha is 1.0
+        }
+        else if (scroll_event->direction == GDK_SCROLL_DOWN)
+        {
+            m_mask_alpha = std::max(m_mask_alpha - 0.1, 0.1); // Min alpha is 0.1
+        }
+
+        update_mask_alpha(m_mask_pixbuf_main, m_mask_alpha * 255);
+    }
+    else
+    {
+        const double zoom_step = 0.1;
+
+        if (scroll_event->direction == GDK_SCROLL_UP)
+        {
+            m_zoom_factor_main += zoom_step;
+        }
+        else if (scroll_event->direction == GDK_SCROLL_DOWN)
+        {
+            m_zoom_factor_main = std::max(zoom_step, m_zoom_factor_main - zoom_step);
+        }
+    }
+
+    // Trigger a redraw of the drawing area
+    m_main_drawing_area->queue_draw();
+
+    // Return true to indicate that the event has been handled
+    return true;
+}
+
+bool MainWindow::on_main_display_area_btn_press_event(GdkEventButton *button_event)
+{
+    if (button_event->button == 1)
+    {
+        // Start dragging
+        m_is_dragging_main = true;
+        m_drag_start_x_main = button_event->x;
+        m_drag_start_y_main = button_event->y;
+    }
+
+    // Return true to indicate that the event has been handled
+    return true;
+}
+
+bool MainWindow::on_main_display_area_btn_release_event(GdkEventButton *button_event)
+{
+    if (button_event->button == 1)
+    {
+        // Stop dragging
+        m_is_dragging_main = false;
+    }
+    
+    // Return true to indicate that the event has been handled
+    return true;
+}
+
+bool MainWindow::on_main_display_area_motion_notify_event(GdkEventMotion *motion_event)
+{
+    if (m_is_dragging_main)
+    {
+        // Calculate the distance moved
+        double deltaX = motion_event->x - m_drag_start_x_main;
+        double deltaY = motion_event->y - m_drag_start_y_main;
+
+        // Update the panning offset
+        m_offset_x_main += deltaX;
+        m_offset_y_main += deltaY;
+
+        // Update the start position for the next motion event
+        m_drag_start_x_main = motion_event->x;
+        m_drag_start_y_main = motion_event->y;
+    }
+
+    // Trigger a redraw of the drawing area
+    m_main_drawing_area->queue_draw();
+
+    // Return true to indicate that the event has been handled
     return true;
 }
 
