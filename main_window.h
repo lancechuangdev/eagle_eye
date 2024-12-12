@@ -34,6 +34,8 @@ protected:
     Gtk::RadioButton *m_main_rt_monitoring_rbtn;
     Gtk::Stack *m_main_stack;
     Gtk::DrawingArea *m_main_drawing_area;
+    Gtk::Label *m_main_detection_start_time_lbl;
+    Gtk::Label *m_main_num_anomalies_lbl;
     Gtk::Label *m_detection_camera_lbl;
     Gtk::Label *m_detection_rate_lbl;
     Gtk::Label *m_detection_digital_input_lbl;

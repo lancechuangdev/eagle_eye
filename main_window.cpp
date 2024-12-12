@@ -88,6 +88,10 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_stop_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_stop_clicked));
     }    
 
+    m_builder->get_widget("main_detection_start_time_lbl", m_main_detection_start_time_lbl);
+
+    m_builder->get_widget("main_num_anomalies_lbl", m_main_num_anomalies_lbl);
+
     m_builder->get_widget("main_drawing_area", m_main_drawing_area);
     if (m_main_drawing_area)
     {
@@ -3947,6 +3951,24 @@ void MainWindow::stop_capture(void *device_handle)
 
 void MainWindow::start_detection()
 {
+    if (m_main_detection_start_time_lbl)
+    {
+        // Get the current time
+        auto now = std::chrono::system_clock::now();
+        auto now_time_t = std::chrono::system_clock::to_time_t(now);
+
+        // Format the time as a string
+        std::stringstream time_stream;
+        time_stream << std::put_time(std::localtime(&now_time_t), "%Y-%m-%d %H:%M:%S");
+
+        m_main_detection_start_time_lbl->set_text(time_stream.str());
+    }
+
+    if (m_main_num_anomalies_lbl)
+    {
+        m_main_num_anomalies_lbl->set_text("0");
+    }
+
     // Ensure there's no existing processing thread running
     if (m_processing_thread.joinable()) 
     {
@@ -4116,6 +4138,7 @@ void MainWindow::start_detection()
         FrameData frame_data(nullptr, nullptr, ""); // Initialize FrameData with null pointers
         std::vector<FrameOffsetInfo> frame_offsets;
         std::vector<PatchPosition> patch_positions;
+        size_t session_anomaly_count;
 
         while (m_is_running)
         {
@@ -4330,6 +4353,13 @@ void MainWindow::start_detection()
                     m_logger->log("Digital output source not found: " + digital_ouput, Logger::ERROR);
                 }
 
+                // Update # of detected anomalies lable
+                if (m_main_num_anomalies_lbl)
+                {
+                    session_anomaly_count += total_anomalies;
+                    m_main_num_anomalies_lbl->set_text(std::to_string(session_anomaly_count));
+                }
+                
                 // Read metadata (aligned offsets)
                 char* metadata_start = static_cast<char*>(shm_ptr_pred) + (shm_size_pred - (total_anomalies * sizeof(uint32_t)));
                 
@@ -4523,6 +4553,16 @@ void MainWindow::stop_detection()
     if (m_processing_thread.joinable()) 
     {
         m_processing_thread.join();  // Wait for previous thread to finish
+    }
+
+    if (m_main_detection_start_time_lbl)
+    {
+        m_main_detection_start_time_lbl->set_text("");
+    }
+
+    if (m_main_num_anomalies_lbl)
+    {
+        m_main_num_anomalies_lbl->set_text("");
     }
 
     RetentionManager retention_manager;
