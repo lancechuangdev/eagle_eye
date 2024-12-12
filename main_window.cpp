@@ -4284,8 +4284,6 @@ void MainWindow::start_detection()
             std::string status = response_json["status"];
             int total_anomalies = response_json["total_anomalies"];
             auto serial_numbers = response_json["serial_numbers"];
-            int num_frames = response_json["num_frames"];
-            int num_patches = response_json["num_patches"];
             int patch_size = response_json["patch_size"];
             auto predictions = response_json["predictions"];
 

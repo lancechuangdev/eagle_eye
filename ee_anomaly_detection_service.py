@@ -15,6 +15,7 @@ import struct
 
 shared_memory_name_frames = "/ee_shared_memory_frames" # DONOT CHANGE
 shared_memory_name_predictions = "/ee_shared_memory_predictions" # DONOT CHANGE
+model_path = '/usr/local/share/eagle_eye/ds.keras'
 patch_size = 256
 home_dir = os.path.expanduser("~")
 output_dir = os.path.join(home_dir, "eagle_eye", "detection_results")
@@ -93,15 +94,11 @@ def read_frames_from_shared_memory(shm_name, frame_width, frame_height, frames_a
     
     return frames
 
-def build_batch_from_frames(frames, frame_width, frame_height, channels):
+def build_batch_from_frames(frames, frame_width, frame_height):
     batch = []
     for frame, _ in frames:
         # Normalize frame to [0, 1] range
         frame = frame.astype(np.float32) / 255.0
-
-        # Convert grayscale to RGB if needed
-        if frame.ndim == 2 and channels == 3:
-            frame = np.stack([frame, frame, frame], axis=-1)  # Convert to (H, W, 3)
 
         # Extract and reshape each patch_size*patch_size patch
         num_patches_x = frame_width // patch_size
@@ -112,7 +109,7 @@ def build_batch_from_frames(frames, frame_width, frame_height, channels):
         for j in range(num_patches_y):
             for i in range(num_patches_x):
                 patch = frame[j * patch_size:(j + 1) * patch_size, i * patch_size:(i + 1) * patch_size]
-                patch = patch.reshape((patch_size, patch_size, channels))  # Reshape to (patch_size, patch_size, channels)
+                patch = patch.reshape((patch_size, patch_size, 1))  # Reshape to (patch_size, patch_size, 1)
                 batch.append(patch)
 
             # Handle the remaining part as a smaller patch, if any
@@ -123,13 +120,14 @@ def build_batch_from_frames(frames, frame_width, frame_height, channels):
                 # Adjust the start position for the last patch so it aligns properly
                 start_x = frame_width - patch_size
                 last_patch = frame[j * patch_size:(j + 1) * patch_size, start_x:start_x + patch_size]
-                last_patch = last_patch.reshape((patch_size, patch_size, channels))
+                last_patch = last_patch.reshape((patch_size, patch_size, 1))
                 batch.append(last_patch)
     return batch
 
 def get_welcome_message():
     return (f"Welcome to Eagle Eye Anomaly Detection Service!\n"
             f"Configuration:\n"
+            f"Model Path: {model_path}\n"
             f"Patch Size: {patch_size}\n"
             f"Output Directory: {output_dir}\n")
 
@@ -209,121 +207,101 @@ def message_received(client, server, message):
         transaction_json["num_frames"] = num_frames
 
         # Build batch from frames
-        batch = build_batch_from_frames(frames, frame_width, frame_height, 3)
+        batch = build_batch_from_frames(frames, frame_width, frame_height)
 
         if batch:
             num_patches = len(batch)
             transaction_json["num_patches"] = num_patches
             patches_per_frame = num_patches / num_frames
 
-            # Convert list to numpy array with batch shape (num_patches, patch_size, patch_size, channels)
+            # Convert list to numpy array with batch shape (num_patches, patch_size, patch_size, 1)
             frame_batch = np.array(batch)
-            print(f"frame_batch shape: {frame_batch.shape}")
+            # print(f"frame_batch shape: {frame_batch.shape}")
             
-            # Create an array of original indices
-            original_indices = np.arange(num_patches)
+            # Perform prediction on the entire batch
+            print_with_ts("Prediction Started.\n")
+            predictions = model.predict(frame_batch)
+            print_with_ts("Prediction Stopped.\n")
+            predictions = (predictions > confidence_threshold).astype(np.float32)
+            # print(f"predictions shape: {predictions.shape}")
+            
+            frames_metadata = []
+            frame_images = []
+            prediction_images = []
+            prediction_frame_ids = []
+            
+            aligned_offsets = []
+            total_sh_mem_size = 0
 
-            # Perform binary classification on the entire batch
-            print_with_ts("Binary Classification Started.\n")
-            mobilenet_predictions = mobilenet_v2.predict(frame_batch)
-            print_with_ts("Binary Classification Stopped.\n")
-            print(f"Mobilenet_v2 predictions shape: {mobilenet_predictions.shape}")
+            # Prepare data for shared memory
+            for i, prediction in enumerate(predictions):
+                # Threshold check for anomalies
+                anomaly_count = np.sum(prediction == 1)
+                if anomaly_count >= pixel_threshold:
+                    # Calculate aligned offset
+                    aligned_offset = total_sh_mem_size + (mmap.PAGESIZE - (total_sh_mem_size % mmap.PAGESIZE)) % mmap.PAGESIZE
+                    aligned_offsets.append(aligned_offset)
+                    # Write prediction data into shared memory
+                    image_data = (prediction.squeeze() * 255).astype(np.uint8)
+                    memory_pred.seek(aligned_offset)
+                    memory_pred.write(image_data.tobytes())
+                    # Update total memory usage
+                    total_sh_mem_size = aligned_offset + patch_size * patch_size
 
-            # Get boolean mask for patches exceeding the confidence threshold
-            confident_mask = np.squeeze(mobilenet_predictions > confidence_threshold)
-            print(f"Confident mask: {confident_mask}")
+            # Pack aligned offsets into metadata and store at the end of the shared memory
+            metadata_offset = preallocated_pred_shm_size - len(aligned_offsets) * 4  # Assuming uint32_t offsets
+            metadata = struct.pack(f'{len(aligned_offsets)}I', *aligned_offsets)
+            memory_pred.seek(metadata_offset)
+            memory_pred.write(metadata)
 
-            # Perform prediction on the anomaly patches
-            frame_batch = frame_batch[confident_mask]
-            original_indices = original_indices[confident_mask]  # Track original indices
-            frame_batch = frame_batch[..., 0:1]  # Extract the red channel
-            if frame_batch.size > 0:
-                print_with_ts("Unet Prediction Started.\n")
-                predictions = unet.predict(frame_batch)
-                print_with_ts("Unet Prediction Stopped.\n")
-                predictions = (predictions > 0.5).astype(np.float32)
-                print(f"Unet predictions shape: {predictions.shape}")
+            # Check each prediction for anomaly
+            for i, prediction in enumerate(predictions):
+                # Threshold check for anomalies
+                anomaly_count = np.sum(prediction == 1)
                 
-                frames_metadata = []
-                frame_images = []
-                prediction_images = []
-                prediction_frame_ids = []
+                # Print per-patch anomaly count
+                print_with_ts(f"Patch {i}: {anomaly_count} anomaly pixels detected w/ confidence threshold {confidence_threshold}.\n")
                 
-                aligned_offsets = []
-                total_sh_mem_size = 0
-                
-                # Prepare data for shared memory
-                for i, prediction in enumerate(predictions):
-                    # Threshold check for anomalies
-                    anomaly_count = np.sum(prediction == 1)
-                    if anomaly_count >= pixel_threshold:
-                        # Calculate aligned offset
-                        aligned_offset = total_sh_mem_size + (mmap.PAGESIZE - (total_sh_mem_size % mmap.PAGESIZE)) % mmap.PAGESIZE
-                        aligned_offsets.append(aligned_offset)
+                if anomaly_count >= pixel_threshold:
+                    # Convert arrays to image format
+                    prediction_image = Image.fromarray((prediction.squeeze() * 255).astype(np.uint8), mode='L')
+                    prediction_images.append(prediction_image)
 
-                        # Write prediction data into shared memory
-                        image_data = (prediction.squeeze() * 255).astype(np.uint8)
-                        memory_pred.seek(aligned_offset)
-                        memory_pred.write(image_data.tobytes())
+                    # Build the prediction metadata
+                    predictions_metadata.append({
+                        "prediction_id": i, 
+                        "file_name": os.path.join(output_path, f"prediction_{i}.png")
+                    })
 
-                        # Update total memory usage
-                        total_sh_mem_size = aligned_offset + patch_size * patch_size
+                    # Store the corresponding frame id for the anomaly patch
+                    prediction_frame_id = i // patches_per_frame
+                    if prediction_frame_id not in prediction_frame_ids:
+                        prediction_frame_ids.append(prediction_frame_id)
 
-                # Pack aligned offsets into metadata and store at the end of the shared memory
-                metadata_offset = preallocated_pred_shm_size - len(aligned_offsets) * 4  # Assuming uint32_t offsets
-                metadata = struct.pack(f'{len(aligned_offsets)}I', *aligned_offsets)
-                memory_pred.seek(metadata_offset)
-                memory_pred.write(metadata)
+                    total_anomalies += 1
 
-                # Check each prediction for anomaly
-                for i, prediction in enumerate(predictions):
-                    original_idx = int(original_indices[i])  # Convert NumPy int64 to Python int
-                    # Threshold check for anomalies
-                    anomaly_count = np.sum(prediction == 1)
-                    
-                    # Print per-patch anomaly count
-                    print_with_ts(f"Patch {original_idx}: {anomaly_count} anomaly pixels detected w/ confidence threshold 0.5.\n")
-                    
-                    if anomaly_count >= pixel_threshold:
-                        # Convert arrays to image format
-                        prediction_image = Image.fromarray((prediction.squeeze() * 255).astype(np.uint8), mode='L')
-                        prediction_images.append(prediction_image)
+            if total_anomalies > 0:
+                for i, (frame, serial_number) in enumerate(frames):
+                    frame_images.append(Image.fromarray(frame.astype(np.uint8)))
 
-                        # Build the prediction metadata
-                        predictions_metadata.append({
-                            "prediction_id": original_idx, 
-                            "file_name": os.path.join(output_path, f"prediction_{original_idx}.png")
-                        })
+                    frames_metadata.append({
+                        "frame_id": i,
+                        "serial_number": serial_number,
+                        "file_name": os.path.join(output_path, f"frame_{i}.png"),
+                    })
 
-                        # Store the corresponding frame id for the anomaly patch
-                        prediction_frame_id = original_idx // patches_per_frame
-                        if prediction_frame_id not in prediction_frame_ids:
-                            prediction_frame_ids.append(prediction_frame_id)
+                    if i in prediction_frame_ids and serial_number not in serial_numbers:
+                        serial_numbers.append(serial_number)
 
-                        total_anomalies += 1
+                transaction_json["frames"] = frames_metadata
+                transaction_json["predictions"] = predictions_metadata
+                transaction_json["total_anomalies"] = total_anomalies
 
-                if total_anomalies > 0:
-                    for i, (frame, serial_number) in enumerate(frames):
-                        frame_images.append(Image.fromarray(frame.astype(np.uint8)))
+                # Dispatch saving task to another thread
+                executor.submit(save_images_and_transaction, output_path, frame_images, frames_metadata, prediction_images, predictions_metadata, transaction_json)
 
-                        frames_metadata.append({
-                            "frame_id": i,
-                            "serial_number": serial_number,
-                            "file_name": os.path.join(output_path, f"frame_{i}.png"),
-                        })
-
-                        if i in prediction_frame_ids and serial_number not in serial_numbers:
-                            serial_numbers.append(serial_number)
-
-                    transaction_json["frames"] = frames_metadata
-                    transaction_json["predictions"] = predictions_metadata
-                    transaction_json["total_anomalies"] = total_anomalies
-
-                    # Dispatch saving task to another thread
-                    executor.submit(save_images_and_transaction, output_path, frame_images, frames_metadata, prediction_images, predictions_metadata, transaction_json)
-
-                # Print a final summary of the prediction results
-                print_with_ts(f"Transaction {transaction_id} completed: {total_anomalies} patches with anomalies are more than the detection threshold.\n")
+            # Print a final summary of the prediction results
+            print_with_ts(f"Transaction {transaction_id} completed: {total_anomalies} patches with anomalies are more than the detection threshold.\n")
 
     result_json = {
         "transaction_id": transaction_id,
@@ -331,14 +309,10 @@ def message_received(client, server, message):
         "total_anomalies": total_anomalies,
         "serial_numbers": serial_numbers,
         "predictions": predictions_metadata,
-        "patch_size": patch_size
+        "patch_size": patch_size    
     }
     result = json.dumps(result_json)
     server.send_message(client, result)
-
-# Load models
-model_path = '/usr/local/share/eagle_eye/ee.h5'
-mobilenet_v2 = tf.keras.models.load_model(model_path)
 
 # BCE w/ Intersection over Union (IoU)
 def iou(y_true, y_pred):
@@ -350,8 +324,7 @@ def iou(y_true, y_pred):
     return iou
 
 custom_objects = { 'iou': iou }
-model_path = '/usr/local/share/eagle_eye/ds.keras'
-unet = tf.keras.models.load_model(model_path, custom_objects=custom_objects)
+model = tf.keras.models.load_model(model_path, custom_objects=custom_objects)
 
 # Create shared memory for prediction
 shm_pred = posix_ipc.SharedMemory(shared_memory_name_predictions, posix_ipc.O_CREAT, size=preallocated_pred_shm_size)
@@ -364,7 +337,3 @@ server.set_fn_new_client(new_client)
 server.set_fn_client_left(client_left)
 server.set_fn_message_received(message_received)
 server.run_forever()
-
-
-
-
