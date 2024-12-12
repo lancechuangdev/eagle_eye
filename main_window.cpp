@@ -2,6 +2,7 @@
 #include "app_paths.h"
 #include "settings_service.h"
 #include "retention_manager.h"
+#include "constants.h"
 
 MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &refBuilder, std::shared_ptr<Logger> logger)
     : Gtk::Window(obj),
@@ -3866,6 +3867,8 @@ void MainWindow::start_detection()
     }
     m_frame_queue.clear();
     
+    // Gdk::Pixbuf does not directly support a single-channel format, 
+    // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
     if (!m_image_pixbuf_main)
     {
         m_image_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, 1008, 1024 * 2);
@@ -3875,15 +3878,113 @@ void MainWindow::start_detection()
         m_mask_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, 1008, 1024 * 2);
     }
 
-    // Start the frame processing thread
-    m_processing_thread = std::thread([this]()
+    // Retrieve camera settings (frame width and height) from settings.ini file
+    std::vector<std::string> serial_numbers;
+    if (m_select_detection_camera_cbox)
     {
-        std::string shm_name_input = "/ee_shared_memory_input";
-        size_t buffer = 2448 * 2048 * 3;
+        auto selected_detection_source = m_select_detection_camera_cbox->get_active_text();
+        if (selected_detection_source == "All Cameras")
+        {
+            auto model = m_select_detection_camera_cbox->get_model();
+            if (model)
+            {
+                for (auto& row : model->children())
+                {
+                    Glib::ustring sn;
+                    row.get_value(0, sn); // 0 is the column index for ComboBoxText items
+                    
+                    if (sn == "All Cameras")
+                    {
+                        continue;
+                    }
 
+                    serial_numbers.push_back(sn);
+                }
+            }
+        }
+        else
+        {
+            serial_numbers.push_back(selected_detection_source);
+        }
+    }
+
+    if (serial_numbers.empty())
+    {
+        // Create the message dialog with the specified parent window, message text, and button options
+        Gtk::MessageDialog dialog(*this, 
+                                "Camera(s) has not been configured.", 
+                                false,
+                                Gtk::MESSAGE_ERROR,
+                                Gtk::BUTTONS_OK,
+                                true);
+        dialog.set_secondary_text("Please go to the Settings page to configure camera(s) before running detection.");
+        
+        // Run the dialog and wait for the user to press the OK button
+        dialog.run();
+        return;
+    }
+
+    auto settings = SettingsService::get_settings("[" + serial_numbers[0] + "]");
+    int frame_width = 0, frame_height = 0;
+
+    for (const auto &[key, value] : settings)
+    {
+        if (key == "width")
+        {
+            frame_width = std::stoi(value);
+        }
+        else if (key == "height")
+        {
+            frame_height = std::stoi(value);
+        }
+    }
+
+    if (frame_width < PATCH_SIZE || frame_height < PATCH_SIZE)
+    {
+        // Create the message dialog with the specified parent window, message text, and button options
+        Gtk::MessageDialog dialog(*this, 
+                                "Frame width or height is smaller than the specified patch size.", 
+                                false,
+                                Gtk::MESSAGE_ERROR,
+                                Gtk::BUTTONS_OK,
+                                true);
+        dialog.set_secondary_text("Please go to the Settings page to update camera(s) settings before running detection.");
+        
+        // Run the dialog and wait for the user to press the OK button
+        dialog.run();
+        return;
+    }
+
+    size_t total_frame_rgb_size = 0;
+    for (int i = 0; i < MAX_FRAME_BATCH_SIZE; ++i)
+    {
+        total_frame_rgb_size += frame_width * frame_height * RGB_CHANNELS;
+    }
+
+    if (m_frame_rgb_data_buffer.size() < total_frame_rgb_size)
+    {
+        m_frame_rgb_data_buffer.resize(total_frame_rgb_size);
+    }
+
+    size_t total_patch_rgba_size = 0;
+    for (int i = 0; i < MAX_PATCHES_PER_BATCH; ++i)
+    {
+        total_patch_rgba_size += PATCH_SIZE * PATCH_SIZE * RGBA_CHANNELS;
+    }
+
+    if (m_patch_rgba_data_buffer.size() < total_patch_rgba_size)
+    {
+        m_patch_rgba_data_buffer.resize(total_patch_rgba_size);
+    }
+
+    size_t shm_frames_buffer = frame_width * frame_height * (MAX_FRAME_BATCH_SIZE + 1); // add extra one frame for safety
+
+    // Start the frame processing thread
+    m_processing_thread = std::thread([this, shm_frames_buffer]()
+    {
         // Open shared memory object
         std::cout << "Open shared memory object" << std::endl;
-        int shm_fd = shm_open(shm_name_input.c_str(), O_CREAT | O_RDWR, 0666);
+        int shm_fd = shm_open(SHM_NAME_FRAMES.c_str(), O_CREAT | O_RDWR, 0666);
         if (shm_fd == -1)
         {
             std::cerr << "Failed to open shared memory object." << std::endl;
@@ -3892,7 +3993,7 @@ void MainWindow::start_detection()
 
         // Resize shared memory object to the initial data size
         std::cout << "Resize shared memory object" << std::endl;
-        if (ftruncate(shm_fd, buffer) == -1)
+        if (ftruncate(shm_fd, shm_frames_buffer) == -1)
         {
             std::cerr << "Failed to resize shared memory object." << std::endl;
             ::close(shm_fd);
@@ -3901,7 +4002,7 @@ void MainWindow::start_detection()
 
         // Map shared memory into address space
         std::cout << "Map shared memory" << std::endl;
-        void *shm_ptr = mmap(0, buffer, PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        void *shm_ptr = mmap(0, shm_frames_buffer, PROT_WRITE, MAP_SHARED, shm_fd, 0);
         if (shm_ptr == MAP_FAILED)
         {
             std::cerr << "Failed to map shared memory." << std::endl;
@@ -3910,14 +4011,15 @@ void MainWindow::start_detection()
         }
 
         // Open predictions shared memory
-        int shm_fd_pred = shm_open("/ee_predictions_shm", O_RDONLY, 0666);
-        if (shm_fd_pred == -1) {
+        int shm_fd_pred = shm_open(SHM_NAME_PREDICTIONS.c_str(), O_RDONLY, 0666);
+        if (shm_fd_pred == -1)
+        {
             std::cerr << "Failed to open shared memory." << std::endl;
             return;
         }
 
         // Map the entire shared memory region
-        size_t shm_size_pred = 256 * 256 * 100 + sysconf(_SC_PAGESIZE); // Adjust for metadata
+        size_t shm_size_pred = PATCH_SIZE * PATCH_SIZE * MAX_PATCHES_PER_BATCH + sysconf(_SC_PAGESIZE); // Adjust for metadata
         void* shm_ptr_pred = mmap(nullptr, shm_size_pred, PROT_READ, MAP_SHARED, shm_fd_pred, 0);
         if (shm_ptr_pred == MAP_FAILED) {
             std::cerr << "Failed to map shared memory." << std::endl;
@@ -3926,23 +4028,22 @@ void MainWindow::start_detection()
 
         FrameData frame_data(nullptr, nullptr, ""); // Initialize FrameData with null pointers
         std::vector<FrameOffsetInfo> frame_offsets;
-        std::vector<std::vector<uint8_t>> frame_rgb_data;
-        std::vector<PatchData> patches;
+        std::vector<PatchPosition> patch_positions;
 
         while (m_is_running)
         {
             // std::cout << "Entering processing loop" << std::endl;
             // std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Prevent CPU overuse
-            frame_offsets.clear();
-            frame_rgb_data.clear();
-            patches.clear();
+            frame_offsets.clear();            
+            patch_positions.clear();
             size_t offset = 0;
             int num_frames_dequeued = 0;
             int frame_width = 0;
             int frame_height = 0;
+            uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
 
             // Copy each frame into its respective memory offset
-            while (!m_frame_queue.isEmpty() && num_frames_dequeued < 2)
+            while (!m_frame_queue.isEmpty() && num_frames_dequeued < MAX_FRAME_BATCH_SIZE)
             {
                 if (m_frame_queue.dequeue(frame_data))
                 {
@@ -3963,16 +4064,18 @@ void MainWindow::start_detection()
                     // Update offset for the next frame
                     offset += frame_size;
 
-                    // Convert Mono8 to RGB for Gdk::Pixbuf
-                    std::vector<unsigned char> rgb_data(frame_width * frame_height * 3);
-                    for (int i = 0; i < frame_width * frame_height; ++i)
+                    // Convert Mono8 to RGB directly into the allocated RGB buffer
+                    uint8_t* current_rgb_frame = frame_rgb_data_ptr;
+                    for (size_t i = 0; i < frame_width * frame_height; ++i)
                     {
-                        unsigned char gray = frame_data.pData[i];
-                        rgb_data[i * 3 + 0] = gray; // Red channel
-                        rgb_data[i * 3 + 1] = gray; // Green channel
-                        rgb_data[i * 3 + 2] = gray; // Blue channel
+                        uint8_t gray = frame_data.pData[i];
+                        current_rgb_frame[i * 3 + 0] = gray; // Red channel
+                        current_rgb_frame[i * 3 + 1] = gray; // Green channel
+                        current_rgb_frame[i * 3 + 2] = gray; // Blue channel
                     }
-                    frame_rgb_data.push_back(rgb_data);
+                    
+                    // Update the pointer to the next RGB frame
+                    frame_rgb_data_ptr += frame_width * frame_height * 3;
 
                     // Increment the counter
                     num_frames_dequeued++;
@@ -3985,69 +4088,62 @@ void MainWindow::start_detection()
             }
 
             // Ensure thread safety
-            m_main_images_dispatcher.connect([this, frame_rgb_data, frame_width, frame_height, num_frames_dequeued]() mutable
+            m_main_images_dispatcher.connect([this, frame_width, frame_height, num_frames_dequeued]()
             {
                 m_images_dispatcher_running = true;
 
-                std::cout << "dispatcher for images started" << std::endl;
-
                 int total_height = frame_height * num_frames_dequeued;
-                // Create the combined pixbuf for detection images.
-                // Gdk::Pixbuf does not directly support a single-channel format, 
-                // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
-                // if (this->m_image_pixbuf_main)
-                // {
-                //     this->m_image_pixbuf_main.reset();
-                // }
-                // this->m_image_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, frame_width, total_height);
-                // this->m_image_pixbuf_main->fill(0x000000); // Fill with black
-
                 int current_y = 0;
                 int row_stride = frame_width * 3;  // Gdk::Pixbuf expects RGB data
+                uint8_t* data_ptr = m_frame_rgb_data_buffer.data();
 
-                for (const auto& image_rgb_data : frame_rgb_data)
+                for (int i = 0; i < num_frames_dequeued; ++i)
                 {
-                    // Each image_rgb_data is a vector<uint8_t> that holds the RGB data for an image
+                    // Get a pointer to the RGB data for the current frame in the buffer.
+                    uint8_t* frame_data_ptr = data_ptr + (i * row_stride * frame_height);
+
                     auto image_pixbuf = Gdk::Pixbuf::create_from_data(
-                        image_rgb_data.data(),        // Pointer to the data of the current image
-                        Gdk::COLORSPACE_RGB, 
-                        false,            // No alpha channel
-                        8,                // 8 bits per channel
-                        frame_width, 
-                        frame_height, 
-                        row_stride
+                        frame_data_ptr,     // Pointer to the current frame's RGB data
+                        Gdk::COLORSPACE_RGB,
+                        false,              // No alpha channel
+                        8,                  // 8 bits per channel
+                        frame_width,
+                        frame_height,
+                        row_stride          // Row stride
                     );
 
                     if (image_pixbuf)
                     {
                         image_pixbuf->copy_area(
-                            0, 
-                            0, 
+                            0,
+                            0,
                             frame_width,
-                            frame_height, 
-                            this->m_image_pixbuf_main, 
-                            0, 
+                            frame_height,
+                            this->m_image_pixbuf_main,
+                            0,
                             current_y
                         );
                         current_y += frame_height;
                     }
                 }
 
-                // Prevent memory leaks
-                frame_rgb_data.clear();
+                // Get the current size of the drawing area
+                int current_width = 0, current_height = 0;
+                this->m_main_drawing_area->get_size_request(current_width, current_height);
 
+                // Check if resizing is necessary
+                if (current_width != frame_width || current_height != total_height)
+                {
+                    this->m_main_drawing_area->set_size_request(frame_width, total_height);
+                }
+                
                 // Redraw the drawing area
-                this->m_main_drawing_area->set_size_request(frame_width, total_height);
                 this->m_main_drawing_area->queue_draw();
 
                 m_images_dispatcher_running = false;
-
-                std::cout << "dispatcher for images ended" << std::endl;
             });
 
-            std::cout << "dispatcher for images emit started" << std::endl;
             m_main_images_dispatcher.emit();
-            std::cout << "dispatcher for images emit ended" << std::endl;
 
             // Generate a transaction ID
             auto trans_id = generate_transaction_id();
@@ -4089,6 +4185,7 @@ void MainWindow::start_detection()
             
             if (!m_is_running)
             {
+                std::cout << "Break out the loop while waiting for a WS response" << std::endl;
                 break;
             }
 
@@ -4156,8 +4253,7 @@ void MainWindow::start_detection()
                     std::cerr << "Metadata is not properly aligned for uint32_t!" << std::endl;
                     return;
                 }
-
-                std::cout << "metadata_start address: " << static_cast<void*>(metadata_start) << std::endl;
+                // std::cout << "metadata_start address: " << static_cast<void*>(metadata_start) << std::endl;
 
                 // Cast to uint32_t* safely
                 uint32_t* metadata_ptr = reinterpret_cast<uint32_t*>(metadata_start);
@@ -4167,13 +4263,12 @@ void MainWindow::start_detection()
                 for (int i = 0; i < total_anomalies; i++) {
                     offsets.push_back(metadata_ptr[i]);
                 }
-
                 // Print the offsets
-                std::cout << "Offsets: ";
-                for (const auto& offset : offsets) {
-                    std::cout << offset << " ";
-                }
-                std::cout << std::endl;
+                // std::cout << "Offsets: ";
+                // for (const auto& offset : offsets) {
+                //     std::cout << offset << " ";
+                // }
+                // std::cout << std::endl;
 
                 // Load and position each prediction
                 int predictions_per_row = frame_width / patch_size;
@@ -4181,22 +4276,28 @@ void MainWindow::start_detection()
                 {
                     predictions_per_row++; // Allow for an additional prediction if there's remaining space
                 }
+
                 int i = 0;
+                uint8_t* patch_rgba_data_ptr = m_patch_rgba_data_buffer.data(); // Reset to the beginning of the buffer
+
                 for (uint32_t offset : offsets)
                 {
-                    unsigned char* mono8_data = static_cast<unsigned char*>(shm_ptr_pred) + offset;
+                    uint8_t* mono8_data = static_cast<uint8_t*>(shm_ptr_pred) + offset;
 
                     // Convert Mono8 to RGBA for Gdk::Pixbuf
-                    std::vector<unsigned char> rgba_data(patch_size * patch_size * 4); // Allocate space for RGBA (4 bytes per pixel)
+                    uint8_t* current_rgba_patch = patch_rgba_data_ptr;
                     for (int i = 0; i < patch_size * patch_size; ++i)
                     {   
                         // For every pixel
                         unsigned char gray = mono8_data[i];
-                        rgba_data[i * 4 + 0] = gray; // Red channel
-                        rgba_data[i * 4 + 1] = gray; // Green channel
-                        rgba_data[i * 4 + 2] = gray; // Blue channel
-                        rgba_data[i * 4 + 3] = 255;  // Alpha channel (fully opaque)
+                        current_rgba_patch[i * 4 + 0] = gray; // Red channel
+                        current_rgba_patch[i * 4 + 1] = gray; // Green channel
+                        current_rgba_patch[i * 4 + 2] = gray; // Blue channel
+                        current_rgba_patch[i * 4 + 3] = 255;  // Alpha channel (fully opaque)
                     }
+
+                    // Update the pointer to the next patch
+                    patch_rgba_data_ptr += patch_size * patch_size * 4;
 
                     // Calculate row and column based on the index
                     auto prediction = predictions[i++];
@@ -4216,41 +4317,30 @@ void MainWindow::start_detection()
                     // Calculate position_y
                     int position_y = row * patch_size; // Each row is separated by the height of the patch
 
-                    patches.emplace_back(rgba_data, position_x, position_y);
+                    patch_positions.emplace_back(position_x, position_y);
                 }
 
                 // Ensure thread safety
-                m_main_masks_dispatcher.connect([this, patches, frame_width, frame_height, num_frames, patch_size]() mutable
+                m_main_masks_dispatcher.connect([this, patch_positions, patch_size]()
                 {
                     m_masks_dispatcher_running = true;
+                   
+                    m_mask_pixbuf_main->fill(0x00000000);
 
-                    // if (!this->m_is_running)
-                    // {
-                    //     // Prevent memory leaks
-                    //     patches.clear();
+                    uint8_t* data_ptr = m_patch_rgba_data_buffer.data();
+                    int row_stride = patch_size * 4; // RGBA                     
+                    int i = 0;
 
-                    //     return;
-                    // }
-
-                    std::cout << "dispatcher for masks started" << std::endl;
-
-                    // Create the combined pixbuf for detection images.
-                    // Gdk::Pixbuf does not directly support a single-channel format, 
-                    // so still create an RGBA pixbuf and replicate the grayscale values across the three color channels.
-                    int total_height = frame_height * num_frames;
-
-                    // this->m_mask_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
-
-                    for (auto patch : patches)
+                    for (auto patch_pos : patch_positions)
                     {
-                        auto rgba_data = patch.data;
-                        auto position_x = patch.position_x;
-                        auto position_y = patch.position_y;
-                        int row_stride = patch_size * 4;  // Gdk::Pixbuf expects RGB data                     
+                        uint8_t* patch_data_ptr = data_ptr + (i * row_stride * patch_size);
+                        auto position_x = patch_pos.position_x;
+                        auto position_y = patch_pos.position_y;
+                        // std::cout << "position_x: " << position_x << " position_y: " << position_y << std::endl;
 
                         // Create a Pixbuf from the aligned offset
                         auto prediction_pixbuf = Gdk::Pixbuf::create_from_data(
-                            rgba_data.data(),
+                            patch_data_ptr,
                             Gdk::COLORSPACE_RGB,
                             true, // Has alpha
                             8, // 8 bits per channel
@@ -4264,10 +4354,10 @@ void MainWindow::start_detection()
                             std::cerr << "Failed to load prediction image" << std::endl;
                             continue;
                         }
-                        else
-                        {
-                            std::cout << "prediction_pixbuf created" << std::endl;
-                        }
+                        // else
+                        // {
+                        //     std::cout << "prediction_pixbuf created" << std::endl;
+                        // }
 
                         // Update mask pixel buf
                         update_mask_color(prediction_pixbuf);
@@ -4284,22 +4374,15 @@ void MainWindow::start_detection()
                             position_y
                         );
                         prediction_pixbuf.reset();
+
+                        i++;
                     }
 
                     // Redraw the drawing area
                     this->m_main_drawing_area->queue_draw();
-                    
-                    // Prevent memory leaks
-                    patches.clear();
 
                     m_masks_dispatcher_running = false;
-
-                    std::cout << "dispatcher for masks ended" << std::endl;
                 });
-
-                std::cout << "dispatcher for masks emit started" << std::endl;
-                m_main_masks_dispatcher.emit();
-                std::cout << "dispatcher for masks emit ended" << std::endl;
             }
             else
             {
@@ -4307,17 +4390,15 @@ void MainWindow::start_detection()
                 {
                     m_masks_dispatcher_running = true;
                     
-                    m_mask_pixbuf_main->fill(0x00000000);
                     // Redraw the drawing area
+                    m_mask_pixbuf_main->fill(0x00000000);
                     m_main_drawing_area->queue_draw();
                     
                     m_masks_dispatcher_running = false;
                 });
-
-                std::cout << "dispatcher for masks emit started" << std::endl;
-                m_main_masks_dispatcher.emit();
-                std::cout << "dispatcher for masks emit ended" << std::endl;
             }
+
+            m_main_masks_dispatcher.emit();
 
             // std::cout << "Exiting processing loop" << std::endl;
         }
@@ -4329,11 +4410,10 @@ void MainWindow::start_detection()
         }
 
         frame_offsets.clear();
-        frame_rgb_data.clear();
-        patches.clear();
+        patch_positions.clear();
 
         std::cout << "Clean up shared memory object" << std::endl;
-        if (munmap(shm_ptr, buffer) == -1) // Unmap the shared memory
+        if (munmap(shm_ptr, shm_frames_buffer) == -1) // Unmap the shared memory
         {
             std::cerr << "Failed to unmap shared memory." << std::endl;
         }

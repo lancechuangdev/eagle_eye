@@ -13,8 +13,8 @@ from websocket_server import WebsocketServer
 import concurrent.futures
 import struct
 
-shared_memory_name = '/ee_shared_memory_input' # DONOT CHANGE
-shared_memory_prediction_name = '/ee_predictions_shm' # DONOT CHANGE
+shared_memory_name = "/ee_shared_memory_frames" # DONOT CHANGE
+shared_memory_prediction_name = "/ee_shared_memory_predictions" # DONOT CHANGE
 patch_size = 256
 home_dir = os.path.expanduser("~")
 output_dir = os.path.join(home_dir, "eagle_eye", "detection_results")

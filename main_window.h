@@ -185,15 +185,14 @@ private:
         std::string serial_number;
     };
 
-    struct PatchData
+    struct PatchPosition
     {
-        std::vector<unsigned char> data; // Holds RGBA data for the patch
         int position_x;
         int position_y;
 
         // Constructor for easy initialization
-        PatchData(const std::vector<unsigned char>& d, int x, int y)
-            : data(d), position_x(x), position_y(y) {}
+        PatchPosition(int x, int y)
+            : position_x(x), position_y(y) {}
     };
 
     struct CaptureCallbackData
@@ -259,6 +258,9 @@ private:
     Glib::Dispatcher m_main_masks_dispatcher;
     std::atomic<bool> m_images_dispatcher_running = false;
     std::atomic<bool> m_masks_dispatcher_running = false;
+
+    std::vector<uint8_t> m_frame_rgb_data_buffer;
+    std::vector<uint8_t> m_patch_rgba_data_buffer;
 
     void discover_cameras();
     bool connect_camera(const std::string& sn);
