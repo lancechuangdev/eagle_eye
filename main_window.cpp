@@ -4415,8 +4415,7 @@ void MainWindow::start_detection()
                     patch_rgba_data_ptr += patch_size * patch_size * 4;
 
                     // Calculate row and column based on the index
-                    auto prediction = predictions[i++];
-                    int prediction_id = prediction["prediction_id"].get<int>();
+                    int prediction_id = predictions[i++].get<int>();
                     int row = prediction_id / predictions_per_row;
                     int col = prediction_id % predictions_per_row;
 

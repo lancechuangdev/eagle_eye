@@ -184,6 +184,7 @@ def message_received(client, server, message):
     output_path = os.path.join(output_dir, transaction_id)
     serial_numbers = []
     predictions_metadata = []
+    prediction_ids = []
     num_frames = 0
     num_patches = 0
 
@@ -273,6 +274,8 @@ def message_received(client, server, message):
                         "file_name": os.path.join(output_path, f"prediction_{i}.png")
                     })
 
+                    prediction_ids.append(i)
+
                     # Store the corresponding frame id for the anomaly patch
                     prediction_frame_id = i // patches_per_frame
                     if prediction_frame_id not in prediction_frame_ids:
@@ -308,11 +311,13 @@ def message_received(client, server, message):
         "status": "complete",
         "total_anomalies": total_anomalies,
         "serial_numbers": serial_numbers,
-        "predictions": predictions_metadata,
+        "predictions": prediction_ids,
         "patch_size": patch_size    
     }
     result = json.dumps(result_json)
+    print_with_ts("WS server send_message started")
     server.send_message(client, result)
+    print_with_ts("WS server send_message ended")
 
 # BCE w/ Intersection over Union (IoU)
 def iou(y_true, y_pred):
