@@ -141,7 +141,7 @@ def new_client(client, server):
 def client_left(client, server):
     print_with_ts("Client(%d) disconnected" % client['id'])
 
-def save_images_and_transaction(output_path, frame_images, frames_metadata, prediction_images, predictions_metadata, transaction_json):
+def save_images_and_transaction(output_path, frames_data, frames_metadata, anomaly_data, anomaly_metadata, transaction_json):
     """Save frames, predictions, and transaction JSON in a separate thread."""
     try:
         # Ensure the directory exists
@@ -150,14 +150,16 @@ def save_images_and_transaction(output_path, frame_images, frames_metadata, pred
         # Save frames
         for i, metadata in enumerate(frames_metadata):
             file_name = metadata['file_name']
-            image = frame_images[i]
+            frame_data = frames_data[i][0] # frame is the first element of frame_data, which is a tuple of (frame, serial_number)
+            image = Image.fromarray(frame_data.astype(np.uint8))
             image.save(file_name)
 
         # Save predictions
-        for i, metadata in enumerate(predictions_metadata):
+        for i, metadata in enumerate(anomaly_metadata):
             file_name = metadata['file_name']
-            image = prediction_images[i]
-            image.save(file_name)
+            anomaly = anomaly_data[i]
+            mask = Image.fromarray((anomaly.squeeze() * 255).astype(np.uint8), mode='L')
+            mask.save(file_name)
 
         # Write transaction JSON
         with open(os.path.join(output_path, "transaction_data.json"), "w") as trans_json_file:
@@ -180,8 +182,6 @@ def message_received(client, server, message):
     frame_height = data.get('frame_height', 0)
     total_anomalies = 0
     output_path = os.path.join(output_dir, transaction_id)
-    predictions_metadata = []
-    prediction_ids = []
     num_frames = 0
     num_patches = 0
 
@@ -200,12 +200,12 @@ def message_received(client, server, message):
         print_with_ts(f"Transaction {transaction_id} started: Starting prediction on {len(frames_array)} image(s)\n")
 
         # Read frames from shared memory
-        frames = read_frames_from_shared_memory(shared_memory_name_frames, frame_width, frame_height, frames_array)
-        num_frames = len(frames)
+        frames_data = read_frames_from_shared_memory(shared_memory_name_frames, frame_width, frame_height, frames_array)
+        num_frames = len(frames_data)
         transaction_json["num_frames"] = num_frames
 
         # Build batch from frames
-        batch = build_batch_from_frames(frames, frame_width, frame_height)
+        batch = build_batch_from_frames(frames_data, frame_width, frame_height)
 
         if batch:
             num_patches = len(batch)
@@ -222,17 +222,17 @@ def message_received(client, server, message):
             predictions = (predictions > confidence_threshold).astype(np.float32)
             # print(f"predictions shape: {predictions.shape}")
             
-            frames_metadata = []
-            frame_images = []
-            prediction_images = []
-            
             aligned_offsets = []
             total_sh_mem_size = 0
+            anomaly_metadata = []
+            anomaly_data = []
 
-            # Prepare data for shared memory
+            # Write prediction data into the shared memory
             for i, prediction in enumerate(predictions):
                 # Threshold check for anomalies
                 anomaly_count = np.sum(prediction == 1)
+                # Print per-patch anomaly count
+                print_with_ts(f"Patch {i}: {anomaly_count} anomaly pixels detected w/ confidence threshold {confidence_threshold}.\n")
                 if anomaly_count >= pixel_threshold:
                     # Calculate aligned offset
                     aligned_offset = total_sh_mem_size + (mmap.PAGESIZE - (total_sh_mem_size % mmap.PAGESIZE)) % mmap.PAGESIZE
@@ -244,50 +244,39 @@ def message_received(client, server, message):
                     # Update total memory usage
                     total_sh_mem_size = aligned_offset + patch_size * patch_size
 
+                    # Build the predictions metadata
+                    anomaly_metadata.append({
+                        "prediction_id": i, 
+                        "file_name": os.path.join(output_path, f"prediction_{i}.png")
+                    })
+                    anomaly_data.append(prediction)
+                    total_anomalies += 1
+
             # Pack aligned offsets into metadata and store at the end of the shared memory
             metadata_offset = preallocated_pred_shm_size - len(aligned_offsets) * 4  # Assuming uint32_t offsets
             metadata = struct.pack(f'{len(aligned_offsets)}I', *aligned_offsets)
             memory_pred.seek(metadata_offset)
             memory_pred.write(metadata)
 
-            # Check each prediction for anomaly
-            for i, prediction in enumerate(predictions):
-                # Threshold check for anomalies
-                anomaly_count = np.sum(prediction == 1)
-                
-                # Print per-patch anomaly count
-                print_with_ts(f"Patch {i}: {anomaly_count} anomaly pixels detected w/ confidence threshold {confidence_threshold}.\n")
-                
-                if anomaly_count >= pixel_threshold:
-                    # Convert arrays to image format
-                    prediction_image = Image.fromarray((prediction.squeeze() * 255).astype(np.uint8), mode='L')
-                    prediction_images.append(prediction_image)
+            # Add prediction-related json props
+            transaction_json["predictions"] = anomaly_metadata
+            transaction_json["total_anomalies"] = total_anomalies
 
-                    # Build the prediction metadata
-                    predictions_metadata.append({
-                        "prediction_id": i, 
-                        "file_name": os.path.join(output_path, f"prediction_{i}.png")
-                    })
+            # Build the frames metadata
+            frames_metadata = []
+            for i, (frame, serial_number) in enumerate(frames_data):
+                frames_metadata.append({
+                    "frame_id": i,
+                    "serial_number": serial_number,
+                    "file_name": os.path.join(output_path, f"frame_{i}.png"),
+                })
 
-                    prediction_ids.append(i)
-                    total_anomalies += 1
+            # Add frames metadata json prop
+            transaction_json["frames"] = frames_metadata
 
             if total_anomalies > 0:
-                for i, (frame, serial_number) in enumerate(frames):
-                    frame_images.append(Image.fromarray(frame.astype(np.uint8)))
-
-                    frames_metadata.append({
-                        "frame_id": i,
-                        "serial_number": serial_number,
-                        "file_name": os.path.join(output_path, f"frame_{i}.png"),
-                    })
-
-                transaction_json["frames"] = frames_metadata
-                transaction_json["predictions"] = predictions_metadata
-                transaction_json["total_anomalies"] = total_anomalies
-
                 # Dispatch saving task to another thread
-                executor.submit(save_images_and_transaction, output_path, frame_images, frames_metadata, prediction_images, predictions_metadata, transaction_json)
+                executor.submit(save_images_and_transaction, output_path, frames_data, frames_metadata, anomaly_data, anomaly_metadata, transaction_json)
 
             # Print a final summary of the prediction results
             print_with_ts(f"Transaction {transaction_id} completed: {total_anomalies} patches with anomalies are more than the detection threshold.\n")
@@ -296,7 +285,7 @@ def message_received(client, server, message):
         "transaction_id": transaction_id,
         "status": "complete",
         "total_anomalies": total_anomalies,
-        "predictions": prediction_ids,
+        "predictions": [meta["prediction_id"] for meta in anomaly_metadata],
         "patch_size": patch_size    
     }
     result = json.dumps(result_json)
