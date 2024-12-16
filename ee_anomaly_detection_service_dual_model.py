@@ -176,15 +176,12 @@ def message_received(client, server, message):
     frames_array = data.get('frames', [])
     transaction_id = data.get('transaction_id', 0)
     confidence_threshold = data.get('confidence_threshold', 0.8)
-    # print(f'confidence_threshold: {confidence_threshold}')
     pixel_threshold = data.get('pixel_threshold', 0.03)
     pixel_threshold = pixel_threshold * patch_size * patch_size
-    # print(f'pixel_threshold: {pixel_threshold}')
     frame_width = data.get('frame_width', 0)
     frame_height = data.get('frame_height', 0)
     total_anomalies = 0
     output_path = os.path.join(output_dir, transaction_id)
-    serial_numbers = []
     predictions_metadata = []
     num_frames = 0
     num_patches = 0
@@ -214,7 +211,6 @@ def message_received(client, server, message):
         if batch:
             num_patches = len(batch)
             transaction_json["num_patches"] = num_patches
-            patches_per_frame = num_patches / num_frames
 
             # Convert list to numpy array with batch shape (num_patches, patch_size, patch_size, channels)
             frame_batch = np.array(batch)
@@ -247,7 +243,6 @@ def message_received(client, server, message):
                 frames_metadata = []
                 frame_images = []
                 prediction_images = []
-                prediction_frame_ids = []
                 
                 aligned_offsets = []
                 total_sh_mem_size = 0
@@ -295,11 +290,6 @@ def message_received(client, server, message):
                             "file_name": os.path.join(output_path, f"prediction_{original_idx}.png")
                         })
 
-                        # Store the corresponding frame id for the anomaly patch
-                        prediction_frame_id = original_idx // patches_per_frame
-                        if prediction_frame_id not in prediction_frame_ids:
-                            prediction_frame_ids.append(prediction_frame_id)
-
                         total_anomalies += 1
 
                 if total_anomalies > 0:
@@ -311,9 +301,6 @@ def message_received(client, server, message):
                             "serial_number": serial_number,
                             "file_name": os.path.join(output_path, f"frame_{i}.png"),
                         })
-
-                        if i in prediction_frame_ids and serial_number not in serial_numbers:
-                            serial_numbers.append(serial_number)
 
                     transaction_json["frames"] = frames_metadata
                     transaction_json["predictions"] = predictions_metadata
@@ -329,7 +316,6 @@ def message_received(client, server, message):
         "transaction_id": transaction_id,
         "status": "complete",
         "total_anomalies": total_anomalies,
-        "serial_numbers": serial_numbers,
         "predictions": predictions_metadata,
         "patch_size": patch_size
     }
