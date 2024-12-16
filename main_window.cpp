@@ -3983,17 +3983,6 @@ void MainWindow::start_detection()
         m_processing_thread.join();  // Wait for previous thread to finish
     }
     m_frame_queue.clear();
-    
-    // Gdk::Pixbuf does not directly support a single-channel format, 
-    // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
-    if (!m_image_pixbuf_main)
-    {
-        m_image_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, 1008, 1024 * 2);
-    }
-    if (!m_mask_pixbuf_main)
-    {
-        m_mask_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, 1008, 1024 * 2);
-    }
 
     // Retrieve camera settings (frame width and height) from settings.ini file
     std::vector<std::string> serial_numbers;
@@ -4072,6 +4061,17 @@ void MainWindow::start_detection()
         return;
     }
 
+    // Gdk::Pixbuf does not directly support a single-channel format, 
+    // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
+    if (!m_image_pixbuf_main)
+    {
+        m_image_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, frame_width, frame_height * 2);
+    }
+    if (!m_mask_pixbuf_main)
+    {
+        m_mask_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, frame_height * 2);
+    }
+
     size_t total_frame_rgb_size = 0;
     for (int i = 0; i < MAX_FRAME_BATCH_SIZE; ++i)
     {
@@ -4147,57 +4147,64 @@ void MainWindow::start_detection()
         std::vector<FrameOffsetInfo> frame_offsets;
         std::vector<PatchPosition> patch_positions;
         m_session_anomaly_count = 0;
-
+        
         while (m_is_running)
         {
-            // std::cout << "Entering processing loop" << std::endl;
             std::this_thread::sleep_for(std::chrono::milliseconds(5)); // Prevent CPU overuse
             frame_offsets.clear();
-            patch_positions.clear();
             size_t offset = 0;
             int num_frames_dequeued = 0;
             int frame_width = 0;
             int frame_height = 0;
             uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
 
-            // Copy each frame into its respective memory offset
+            // sort by serial number of each frame
+            std::vector<FrameData> sorted_frames;
             while (!m_frame_queue.isEmpty() && num_frames_dequeued < MAX_FRAME_BATCH_SIZE)
             {
                 if (m_frame_queue.dequeue(frame_data))
                 {
-                    auto frame_size = frame_data.pMetadata->nFrameLen;
-                    frame_width = frame_data.pMetadata->nWidth;
-                    frame_height = frame_data.pMetadata->nHeight;
-                    auto serial_number = frame_data.serial_number;
-
-                    // Save the frame metadata
-                    frame_offsets.push_back({ offset, frame_size, serial_number });
-
-                    // Calculate the memory address to copy this frame
-                    void* frame_ptr = static_cast<uint8_t*>(shm_ptr) + offset;
-
-                    // Copy the frame data into the calculated memory location
-                    std::memcpy(frame_ptr, frame_data.pData, frame_size);
-
-                    // Update offset for the next frame
-                    offset += frame_size;
-
-                    // Convert Mono8 to RGB directly into the allocated RGB buffer
-                    uint8_t* current_rgb_frame = frame_rgb_data_ptr;
-                    for (size_t i = 0; i < frame_width * frame_height; ++i)
-                    {
-                        uint8_t gray = frame_data.pData[i];
-                        current_rgb_frame[i * 3 + 0] = gray; // Red channel
-                        current_rgb_frame[i * 3 + 1] = gray; // Green channel
-                        current_rgb_frame[i * 3 + 2] = gray; // Blue channel
-                    }
-                    
-                    // Update the pointer to the next RGB frame
-                    frame_rgb_data_ptr += frame_width * frame_height * 3;
-
-                    // Increment the counter
+                    sorted_frames.push_back(frame_data);
                     num_frames_dequeued++;
                 }
+            }
+            std::sort(sorted_frames.begin(), sorted_frames.end(), [](const FrameData& a, const FrameData& b)
+            {
+                return a.serial_number < b.serial_number;
+            });
+
+            // Copy the frame data into the shared memory
+            for (auto frame_data : sorted_frames)
+            {
+                auto frame_size = frame_data.pMetadata->nFrameLen;
+                frame_width = frame_data.pMetadata->nWidth;
+                frame_height = frame_data.pMetadata->nHeight;
+                auto serial_number = frame_data.serial_number;
+
+                // Save the frame metadata
+                frame_offsets.push_back({ offset, frame_size, serial_number });
+
+                // Calculate the memory address to copy this frame
+                void* frame_ptr = static_cast<uint8_t*>(shm_ptr) + offset;
+
+                // Copy the frame data into the calculated memory location
+                std::memcpy(frame_ptr, frame_data.pData, frame_size);
+
+                // Update offset for the next frame
+                offset += frame_size;
+
+                // Convert Mono8 to RGB directly into the allocated RGB buffer
+                uint8_t* current_rgb_frame = frame_rgb_data_ptr;
+                for (size_t i = 0; i < frame_width * frame_height; ++i)
+                {
+                    uint8_t gray = frame_data.pData[i];
+                    current_rgb_frame[i * RGB_CHANNELS + 0] = gray; // Red channel
+                    current_rgb_frame[i * RGB_CHANNELS + 1] = gray; // Green channel
+                    current_rgb_frame[i * RGB_CHANNELS + 2] = gray; // Blue channel
+                }
+                
+                // Update the pointer to the next RGB frame
+                frame_rgb_data_ptr += frame_width * frame_height * RGB_CHANNELS;
             }
 
             if (frame_offsets.empty())
@@ -4214,9 +4221,9 @@ void MainWindow::start_detection()
 
                     int total_height = frame_height * num_frames_dequeued;
                     int current_y = 0;
-                    int row_stride = frame_width * 3;  // Gdk::Pixbuf expects RGB data
+                    int row_stride = frame_width * RGB_CHANNELS;
                     uint8_t* data_ptr = m_frame_rgb_data_buffer.data();
-
+                    
                     for (int i = 0; i < num_frames_dequeued; ++i)
                     {
                         // Get a pointer to the RGB data for the current frame in the buffer.
@@ -4224,7 +4231,7 @@ void MainWindow::start_detection()
 
                         auto image_pixbuf = Gdk::Pixbuf::create_from_data(
                             frame_data_ptr,     // Pointer to the current frame's RGB data
-                            Gdk::COLORSPACE_RGB,
+                            Gdk::COLORSPACE_RGB,// Gdk::Pixbuf expects RGB data
                             false,              // No alpha channel
                             8,                  // 8 bits per channel
                             frame_width,
@@ -4323,126 +4330,129 @@ void MainWindow::start_detection()
 
             std::string status = response_json["status"];
             int total_anomalies = response_json["total_anomalies"];
-            // auto serial_numbers = response_json["serial_numbers"];
+            int patch_size = response_json["patch_size"];
 
-            if (status == "complete" && total_anomalies > 0)
+            if (status == "complete")
             {
-                std::string digital_ouput;
-                std::string line_number;
+                if (total_anomalies > 0)
+                {
+                    std::string digital_ouput;
+                    std::string line_number;
 
-                if (m_detection_digital_output_lbl)
-                {
-                    digital_ouput = m_detection_digital_output_lbl->get_text();
-                }
-                if (m_detection_digital_output_line_number_lbl)
-                {
-                    line_number = m_detection_digital_output_line_number_lbl->get_text();
-                }
-
-                if (digital_ouput != "" && 
-                    line_number != "" && 
-                    m_connected_device_handles.find(digital_ouput) != m_connected_device_handles.end())
-                {
-                    void *device_handle = m_connected_device_handles[digital_ouput];
-                    // Select digital output
-                    int nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", line_number.c_str());
-                    if (nRet == MV_OK)
+                    if (m_detection_digital_output_lbl)
                     {
-                        // Trigger digital output
-                        int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
-                        if (nRet != MV_OK)
-                        {
-                            std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
-                            m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
-                        }
-                        else
-                        {
-                            std::cout << "Trigger digital output via software succeeded" << std::endl;
-                            m_logger->log("Trigger digital output via software succeeded");
-                        }
+                        digital_ouput = m_detection_digital_output_lbl->get_text();
                     }
-                }
-                else
-                {
-                    std::cerr << "Digital output source not found: " << digital_ouput << std::endl;
-                    m_logger->log("Digital output source not found: " + digital_ouput, Logger::ERROR);
-                }
-                
-                // Read metadata (aligned offsets)
-                char* metadata_start = static_cast<char*>(shm_ptr_pred) + (shm_size_pred - (total_anomalies * sizeof(uint32_t)));
-                
-                // Check alignment
-                if (reinterpret_cast<uintptr_t>(metadata_start) % alignof(uint32_t) != 0) {
-                    std::cerr << "Metadata is not properly aligned for uint32_t!" << std::endl;
-                    return;
-                }
-                // std::cout << "metadata_start address: " << static_cast<void*>(metadata_start) << std::endl;
-
-                // Cast to uint32_t* safely
-                uint32_t* metadata_ptr = reinterpret_cast<uint32_t*>(metadata_start);
-                std::vector<uint32_t> offsets;
-
-                // Read metadata into offsets
-                for (int i = 0; i < total_anomalies; i++) {
-                    offsets.push_back(metadata_ptr[i]);
-                }
-                // Print the offsets
-                // std::cout << "Offsets: ";
-                // for (const auto& offset : offsets) {
-                //     std::cout << offset << " ";
-                // }
-                // std::cout << std::endl;
-
-                // Load and position each prediction
-                int patch_size = response_json["patch_size"];
-                auto predictions = response_json["predictions"];
-
-                int predictions_per_row = frame_width / patch_size;
-                if (frame_width % patch_size != 0)
-                {
-                    predictions_per_row++; // Allow for an additional prediction if there's remaining space
-                }
-
-                int i = 0;
-                uint8_t* patch_rgba_data_ptr = m_patch_rgba_data_buffer.data(); // Reset to the beginning of the buffer
-
-                for (uint32_t offset : offsets)
-                {
-                    uint8_t* mono8_data = static_cast<uint8_t*>(shm_ptr_pred) + offset;
-
-                    // Convert Mono8 to RGBA for Gdk::Pixbuf
-                    uint8_t* current_rgba_patch = patch_rgba_data_ptr;
-                    for (int i = 0; i < patch_size * patch_size; ++i)
-                    {   
-                        // For every pixel
-                        unsigned char gray = mono8_data[i];
-                        current_rgba_patch[i * 4 + 0] = gray; // Red channel
-                        current_rgba_patch[i * 4 + 1] = gray; // Green channel
-                        current_rgba_patch[i * 4 + 2] = gray; // Blue channel
-                        current_rgba_patch[i * 4 + 3] = 255;  // Alpha channel (fully opaque)
-                    }
-
-                    // Update the pointer to the next patch
-                    patch_rgba_data_ptr += patch_size * patch_size * 4;
-
-                    // Calculate row and column based on the index
-                    int prediction_id = predictions[i++].get<int>();
-                    int row = prediction_id / predictions_per_row;
-                    int col = prediction_id % predictions_per_row;
-
-                    // Calculate position_x
-                    int position_x = col * patch_size; // Standard position in the row
-
-                    // Adjust position_x if this is the last column and it exceeds frame width
-                    if (col == predictions_per_row - 1 && position_x + patch_size > frame_width)
+                    if (m_detection_digital_output_line_number_lbl)
                     {
-                        position_x = frame_width - patch_size;
+                        line_number = m_detection_digital_output_line_number_lbl->get_text();
                     }
 
-                    // Calculate position_y
-                    int position_y = row * patch_size; // Each row is separated by the height of the patch
+                    if (digital_ouput != "" && 
+                        line_number != "" && 
+                        m_connected_device_handles.find(digital_ouput) != m_connected_device_handles.end())
+                    {
+                        void *device_handle = m_connected_device_handles[digital_ouput];
+                        // Select digital output
+                        int nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", line_number.c_str());
+                        if (nRet == MV_OK)
+                        {
+                            // Trigger digital output
+                            int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
+                            if (nRet != MV_OK)
+                            {
+                                std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
+                                m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
+                            }
+                            else
+                            {
+                                std::cout << "Trigger digital output via software succeeded" << std::endl;
+                                m_logger->log("Trigger digital output via software succeeded");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        std::cerr << "Digital output source not found: " << digital_ouput << std::endl;
+                        m_logger->log("Digital output source not found: " + digital_ouput, Logger::ERROR);
+                    }
 
-                    patch_positions.emplace_back(position_x, position_y);
+                    // Read metadata (aligned offsets)
+                    char* metadata_start = static_cast<char*>(shm_ptr_pred) + (shm_size_pred - (total_anomalies * sizeof(uint32_t)));
+                    
+                    // Check alignment
+                    if (reinterpret_cast<uintptr_t>(metadata_start) % alignof(uint32_t) != 0) {
+                        std::cerr << "Metadata is not properly aligned for uint32_t!" << std::endl;
+                        return;
+                    }
+
+                    // Cast to uint32_t* safely
+                    uint32_t* metadata_ptr = reinterpret_cast<uint32_t*>(metadata_start);
+                    std::vector<uint32_t> offsets;
+
+                    // Read metadata into offsets
+                    for (int i = 0; i < total_anomalies; i++) {
+                        offsets.push_back(metadata_ptr[i]);
+                    }
+                    // Print the offsets
+                    // std::cout << "Offsets: ";
+                    // for (const auto& offset : offsets) {
+                    //     std::cout << offset << " ";
+                    // }
+                    // std::cout << std::endl;
+
+                    // Load and position each prediction
+                    auto predictions = response_json["predictions"];
+
+                    int predictions_per_row = frame_width / patch_size;
+                    if (frame_width % patch_size != 0)
+                    {
+                        predictions_per_row++; // Allow for an additional prediction if there's remaining space
+                    }
+
+                    int i = 0;
+                    uint8_t* patch_rgba_data_ptr = m_patch_rgba_data_buffer.data(); // Reset to the beginning of the buffer
+
+                    patch_positions.clear();
+
+                    for (uint32_t offset : offsets)
+                    {
+                        uint8_t* mono8_data = static_cast<uint8_t*>(shm_ptr_pred) + offset;
+
+                        // Convert Mono8 to RGBA for Gdk::Pixbuf
+                        uint8_t* current_rgba_patch = patch_rgba_data_ptr;
+                        for (int i = 0; i < patch_size * patch_size; ++i)
+                        {   
+                            // For every pixel
+                            unsigned char gray = mono8_data[i];
+                            current_rgba_patch[i * RGBA_CHANNELS + 0] = gray; // Red channel
+                            current_rgba_patch[i * RGBA_CHANNELS + 1] = gray; // Green channel
+                            current_rgba_patch[i * RGBA_CHANNELS + 2] = gray; // Blue channel
+                            current_rgba_patch[i * RGBA_CHANNELS + 3] = 255;  // Alpha channel (fully opaque)
+                        }
+
+                        // Update the pointer to the next patch
+                        patch_rgba_data_ptr += patch_size * patch_size * RGBA_CHANNELS;
+
+                        // Calculate row and column based on the index
+                        int prediction_id = predictions[i++].get<int>();
+                        int row = prediction_id / predictions_per_row;
+                        int col = prediction_id % predictions_per_row;
+
+                        // Calculate position_x
+                        int position_x = col * patch_size; // Standard position in the row
+
+                        // Adjust position_x if this is the last column and it exceeds frame width
+                        if (col == predictions_per_row - 1 && position_x + patch_size > frame_width)
+                        {
+                            position_x = frame_width - patch_size;
+                        }
+
+                        // Calculate position_y
+                        int position_y = row * patch_size; // Each row is separated by the height of the patch
+
+                        patch_positions.emplace_back(position_x, position_y);
+                    }
                 }
 
                 // Ensure thread safety
@@ -4452,66 +4462,69 @@ void MainWindow::start_detection()
                     {
                         m_masks_dispatcher_running = true;
                     
-                        // Update # of detected anomalies label
-                        if (m_main_num_anomalies_lbl)
-                        {
-                            m_session_anomaly_count += total_anomalies;
-                            m_main_num_anomalies_lbl->set_text(std::to_string(m_session_anomaly_count));
-                        }
-
                         m_mask_pixbuf_main->fill(0x00000000);
 
-                        uint8_t* data_ptr = m_patch_rgba_data_buffer.data();
-                        int row_stride = patch_size * 4; // RGBA                     
-                        int i = 0;
-
-                        for (auto patch_pos : patch_positions)
+                        if (total_anomalies > 0)
                         {
-                            uint8_t* patch_data_ptr = data_ptr + (i * row_stride * patch_size);
-                            auto position_x = patch_pos.position_x;
-                            auto position_y = patch_pos.position_y;
-                            // std::cout << "position_x: " << position_x << " position_y: " << position_y << std::endl;
-
-                            // Create a Pixbuf from the aligned offset
-                            auto prediction_pixbuf = Gdk::Pixbuf::create_from_data(
-                                patch_data_ptr,
-                                Gdk::COLORSPACE_RGB,
-                                true, // Has alpha
-                                8, // 8 bits per channel
-                                patch_size,
-                                patch_size,
-                                row_stride
-                            );
-
-                            if (!prediction_pixbuf)
+                            // Update # of detected anomalies label
+                            if (m_main_num_anomalies_lbl)
                             {
-                                std::cerr << "Failed to load prediction image" << std::endl;
-                                continue;
+                                m_session_anomaly_count += total_anomalies;
+                                m_main_num_anomalies_lbl->set_text(std::to_string(m_session_anomaly_count));
                             }
-                            // else
-                            // {
-                            //     std::cout << "prediction_pixbuf created" << std::endl;
-                            // }
 
-                            // Update mask pixel buf
-                            update_mask_color(prediction_pixbuf);
-                            update_mask_alpha(prediction_pixbuf, this->m_mask_alpha * 255);
+                            uint8_t* data_ptr = m_patch_rgba_data_buffer.data();
+                            int row_stride = patch_size * RGBA_CHANNELS;                     
+                            int i = 0;
 
-                            // Copy the prediction image into m_mask_pixbuf_toolkit at the specified position
-                            prediction_pixbuf->Gdk::Pixbuf::copy_area(
-                                0,
-                                0,
-                                prediction_pixbuf->get_width(),
-                                prediction_pixbuf->get_height(),
-                                this->m_mask_pixbuf_main,
-                                position_x,
-                                position_y
-                            );
-                            prediction_pixbuf.reset();
+                            for (auto patch_pos : patch_positions)
+                            {
+                                uint8_t* patch_data_ptr = data_ptr + (i * row_stride * patch_size);
+                                auto position_x = patch_pos.position_x;
+                                auto position_y = patch_pos.position_y;
+                                // std::cout << "position_x: " << position_x << " position_y: " << position_y << std::endl;
 
-                            i++;
+                                // Create a Pixbuf from the aligned offset
+                                auto prediction_pixbuf = Gdk::Pixbuf::create_from_data(
+                                    patch_data_ptr,
+                                    Gdk::COLORSPACE_RGB,
+                                    true, // Has alpha
+                                    8,    // 8 bits per channel
+                                    patch_size,
+                                    patch_size,
+                                    row_stride
+                                );
+
+                                if (!prediction_pixbuf)
+                                {
+                                    std::cerr << "Failed to load prediction image" << std::endl;
+                                    continue;
+                                }
+                                else
+                                {
+                                    std::cout << "prediction_pixbuf created" << std::endl;
+                                }
+
+                                // Update mask pixel buf
+                                update_mask_color(prediction_pixbuf);
+                                update_mask_alpha(prediction_pixbuf, this->m_mask_alpha * 255);
+
+                                // Copy the prediction image into m_mask_pixbuf_main at the specified position
+                                prediction_pixbuf->Gdk::Pixbuf::copy_area(
+                                    0,
+                                    0,
+                                    prediction_pixbuf->get_width(),
+                                    prediction_pixbuf->get_height(),
+                                    this->m_mask_pixbuf_main,
+                                    position_x,
+                                    position_y
+                                );
+                                prediction_pixbuf.reset();
+
+                                i++;
+                            }
                         }
-
+                        
                         // Redraw the drawing area
                         this->m_main_drawing_area->queue_draw();
 
@@ -4519,23 +4532,8 @@ void MainWindow::start_detection()
                     });
                 }
             }
-            else
-            {
-                m_main_masks_dispatcher.connect([this]()
-                {
-                    m_masks_dispatcher_running = true;
-                    
-                    // Redraw the drawing area
-                    m_mask_pixbuf_main->fill(0x00000000);
-                    m_main_drawing_area->queue_draw();
-                    
-                    m_masks_dispatcher_running = false;
-                });
-            }
 
             m_main_masks_dispatcher.emit();
-
-            // std::cout << "Exiting processing loop" << std::endl;
         }
 
         // Clean up
