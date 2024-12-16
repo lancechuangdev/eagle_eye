@@ -224,7 +224,9 @@ private:
     std::string m_ws_response;
     std::mutex m_ws_response_mutex;
     std::condition_variable m_ws_response_cv;
+    std::string m_trans_id;
     bool m_ws_response_ready = false; // Condition to wait on
+    size_t m_session_anomaly_count;
 
     Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_main;
     Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_main;
@@ -270,6 +272,8 @@ private:
     std::shared_ptr<Logger> m_logger;
     Glib::Dispatcher m_main_images_dispatcher;
     Glib::Dispatcher m_main_masks_dispatcher;
+    sigc::connection m_images_dispatcher_connection;
+    sigc::connection m_masks_dispatcher_connection;
     std::atomic<bool> m_images_dispatcher_running = false;
     std::atomic<bool> m_masks_dispatcher_running = false;
 

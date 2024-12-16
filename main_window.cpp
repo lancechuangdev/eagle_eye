@@ -2792,6 +2792,14 @@ void MainWindow::on_window_shown()
     m_ws_client.on_message_received([this](const std::string &message) {
         std::cout << "Received message: " << message << std::endl;
 
+        nlohmann::json response_json = nlohmann::json::parse(message);
+        std::string res_trans_id = response_json["transaction_id"];
+        if (res_trans_id != m_trans_id)
+        {
+            std::cout << "Transaction ID mismatch" << std::endl;
+            return;
+        }
+
         // Lock the mutex before modifying shared resource
         {
             std::lock_guard<std::mutex> lock(m_ws_response_mutex);
@@ -3555,7 +3563,7 @@ void MainWindow::on_snap_clicked()
     if (!frame_offsets.empty())
     {
         // Send the command to the ws server
-        auto trans_id = generate_transaction_id();
+        m_trans_id = generate_transaction_id();
 
         // Get confidence threshold and pixel threshold from settings file
         double confidence_threshold = 0.5;
@@ -3576,7 +3584,7 @@ void MainWindow::on_snap_clicked()
 
         // Build JSON transaction data
         nlohmann::json json_data;
-        json_data["transaction_id"] = trans_id;
+        json_data["transaction_id"] = m_trans_id;
         json_data["confidence_threshold"] = confidence_threshold;
         json_data["pixel_threshold"] = pixel_threshold;
         json_data["frame_width"] = frame_width;
@@ -3601,7 +3609,7 @@ void MainWindow::on_snap_clicked()
         std::string status = response_json["status"];
         int total_anomalies = response_json["total_anomalies"];
         
-        if (res_trans_id == trans_id && status == "complete" && total_anomalies > 0)
+        if (res_trans_id == m_trans_id && status == "complete" && total_anomalies > 0)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             update_snap_masks(res_trans_id);
@@ -4138,13 +4146,13 @@ void MainWindow::start_detection()
         FrameData frame_data(nullptr, nullptr, ""); // Initialize FrameData with null pointers
         std::vector<FrameOffsetInfo> frame_offsets;
         std::vector<PatchPosition> patch_positions;
-        size_t session_anomaly_count;
+        m_session_anomaly_count = 0;
 
         while (m_is_running)
         {
             // std::cout << "Entering processing loop" << std::endl;
-            // std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Prevent CPU overuse
-            frame_offsets.clear();            
+            std::this_thread::sleep_for(std::chrono::milliseconds(5)); // Prevent CPU overuse
+            frame_offsets.clear();
             patch_positions.clear();
             size_t offset = 0;
             int num_frames_dequeued = 0;
@@ -4198,65 +4206,68 @@ void MainWindow::start_detection()
             }
 
             // Ensure thread safety
-            m_main_images_dispatcher.connect([this, frame_width, frame_height, num_frames_dequeued]()
+            if (!m_images_dispatcher_connection.connected())
             {
-                m_images_dispatcher_running = true;
-
-                int total_height = frame_height * num_frames_dequeued;
-                int current_y = 0;
-                int row_stride = frame_width * 3;  // Gdk::Pixbuf expects RGB data
-                uint8_t* data_ptr = m_frame_rgb_data_buffer.data();
-
-                for (int i = 0; i < num_frames_dequeued; ++i)
+                m_images_dispatcher_connection = m_main_images_dispatcher.connect([this, &frame_width, &frame_height, &num_frames_dequeued]()
                 {
-                    // Get a pointer to the RGB data for the current frame in the buffer.
-                    uint8_t* frame_data_ptr = data_ptr + (i * row_stride * frame_height);
+                    m_images_dispatcher_running = true;
 
-                    auto image_pixbuf = Gdk::Pixbuf::create_from_data(
-                        frame_data_ptr,     // Pointer to the current frame's RGB data
-                        Gdk::COLORSPACE_RGB,
-                        false,              // No alpha channel
-                        8,                  // 8 bits per channel
-                        frame_width,
-                        frame_height,
-                        row_stride          // Row stride
-                    );
+                    int total_height = frame_height * num_frames_dequeued;
+                    int current_y = 0;
+                    int row_stride = frame_width * 3;  // Gdk::Pixbuf expects RGB data
+                    uint8_t* data_ptr = m_frame_rgb_data_buffer.data();
 
-                    if (image_pixbuf)
+                    for (int i = 0; i < num_frames_dequeued; ++i)
                     {
-                        image_pixbuf->copy_area(
-                            0,
-                            0,
+                        // Get a pointer to the RGB data for the current frame in the buffer.
+                        uint8_t* frame_data_ptr = data_ptr + (i * row_stride * frame_height);
+
+                        auto image_pixbuf = Gdk::Pixbuf::create_from_data(
+                            frame_data_ptr,     // Pointer to the current frame's RGB data
+                            Gdk::COLORSPACE_RGB,
+                            false,              // No alpha channel
+                            8,                  // 8 bits per channel
                             frame_width,
                             frame_height,
-                            this->m_image_pixbuf_main,
-                            0,
-                            current_y
+                            row_stride          // Row stride
                         );
-                        current_y += frame_height;
+
+                        if (image_pixbuf)
+                        {
+                            image_pixbuf->copy_area(
+                                0,
+                                0,
+                                frame_width,
+                                frame_height,
+                                this->m_image_pixbuf_main,
+                                0,
+                                current_y
+                            );
+                            current_y += frame_height;
+                        }
                     }
-                }
 
-                // Get the current size of the drawing area
-                int current_width = 0, current_height = 0;
-                this->m_main_drawing_area->get_size_request(current_width, current_height);
+                    // Get the current size of the drawing area
+                    int current_width = 0, current_height = 0;
+                    this->m_main_drawing_area->get_size_request(current_width, current_height);
 
-                // Check if resizing is necessary
-                if (current_width != frame_width || current_height != total_height)
-                {
-                    this->m_main_drawing_area->set_size_request(frame_width, total_height);
-                }
-                
-                // Redraw the drawing area
-                this->m_main_drawing_area->queue_draw();
+                    // Check if resizing is necessary
+                    if (current_width != frame_width || current_height != total_height)
+                    {
+                        this->m_main_drawing_area->set_size_request(frame_width, total_height);
+                    }
+                    
+                    // Redraw the drawing area
+                    this->m_main_drawing_area->queue_draw();
 
-                m_images_dispatcher_running = false;
-            });
+                    m_images_dispatcher_running = false;
+                });
+            }
 
             m_main_images_dispatcher.emit();
 
             // Generate a transaction ID
-            auto trans_id = generate_transaction_id();
+            m_trans_id = generate_transaction_id();
 
             // Get confidence threshold and pixel threshold from settings file
             double confidence_threshold = 0.5;
@@ -4277,7 +4288,7 @@ void MainWindow::start_detection()
 
             // Send the command to the ws server
             nlohmann::json json_data;
-            json_data["transaction_id"] = trans_id;
+            json_data["transaction_id"] = m_trans_id;
             json_data["confidence_threshold"] = confidence_threshold;
             json_data["pixel_threshold"] = pixel_threshold;
             json_data["frame_width"] = frame_width;
@@ -4304,13 +4315,17 @@ void MainWindow::start_detection()
 
             // Extract values from the JSON object
             std::string res_trans_id = response_json["transaction_id"];
+            if (res_trans_id != m_trans_id)
+            {
+                std::cout << "Transaction ID mismatch" << std::endl;
+                continue;
+            }
+
             std::string status = response_json["status"];
             int total_anomalies = response_json["total_anomalies"];
-            auto serial_numbers = response_json["serial_numbers"];
-            int patch_size = response_json["patch_size"];
-            auto predictions = response_json["predictions"];
+            // auto serial_numbers = response_json["serial_numbers"];
 
-            if (res_trans_id == trans_id && status == "complete" && total_anomalies > 0)
+            if (status == "complete" && total_anomalies > 0)
             {
                 std::string digital_ouput;
                 std::string line_number;
@@ -4352,13 +4367,6 @@ void MainWindow::start_detection()
                     std::cerr << "Digital output source not found: " << digital_ouput << std::endl;
                     m_logger->log("Digital output source not found: " + digital_ouput, Logger::ERROR);
                 }
-
-                // Update # of detected anomalies lable
-                if (m_main_num_anomalies_lbl)
-                {
-                    session_anomaly_count += total_anomalies;
-                    m_main_num_anomalies_lbl->set_text(std::to_string(session_anomaly_count));
-                }
                 
                 // Read metadata (aligned offsets)
                 char* metadata_start = static_cast<char*>(shm_ptr_pred) + (shm_size_pred - (total_anomalies * sizeof(uint32_t)));
@@ -4386,6 +4394,9 @@ void MainWindow::start_detection()
                 // std::cout << std::endl;
 
                 // Load and position each prediction
+                int patch_size = response_json["patch_size"];
+                auto predictions = response_json["predictions"];
+
                 int predictions_per_row = frame_width / patch_size;
                 if (frame_width % patch_size != 0)
                 {
@@ -4435,68 +4446,78 @@ void MainWindow::start_detection()
                 }
 
                 // Ensure thread safety
-                m_main_masks_dispatcher.connect([this, patch_positions, patch_size]()
+                if (!m_masks_dispatcher_connection.connected())
                 {
-                    m_masks_dispatcher_running = true;
-                   
-                    m_mask_pixbuf_main->fill(0x00000000);
-
-                    uint8_t* data_ptr = m_patch_rgba_data_buffer.data();
-                    int row_stride = patch_size * 4; // RGBA                     
-                    int i = 0;
-
-                    for (auto patch_pos : patch_positions)
+                    m_masks_dispatcher_connection = m_main_masks_dispatcher.connect([this, &patch_positions, &patch_size, &total_anomalies]()
                     {
-                        uint8_t* patch_data_ptr = data_ptr + (i * row_stride * patch_size);
-                        auto position_x = patch_pos.position_x;
-                        auto position_y = patch_pos.position_y;
-                        // std::cout << "position_x: " << position_x << " position_y: " << position_y << std::endl;
-
-                        // Create a Pixbuf from the aligned offset
-                        auto prediction_pixbuf = Gdk::Pixbuf::create_from_data(
-                            patch_data_ptr,
-                            Gdk::COLORSPACE_RGB,
-                            true, // Has alpha
-                            8, // 8 bits per channel
-                            patch_size,
-                            patch_size,
-                            row_stride
-                        );
-
-                        if (!prediction_pixbuf)
+                        m_masks_dispatcher_running = true;
+                    
+                        // Update # of detected anomalies label
+                        if (m_main_num_anomalies_lbl)
                         {
-                            std::cerr << "Failed to load prediction image" << std::endl;
-                            continue;
+                            m_session_anomaly_count += total_anomalies;
+                            m_main_num_anomalies_lbl->set_text(std::to_string(m_session_anomaly_count));
                         }
-                        // else
-                        // {
-                        //     std::cout << "prediction_pixbuf created" << std::endl;
-                        // }
 
-                        // Update mask pixel buf
-                        update_mask_color(prediction_pixbuf);
-                        update_mask_alpha(prediction_pixbuf, this->m_mask_alpha * 255);
+                        m_mask_pixbuf_main->fill(0x00000000);
 
-                        // Copy the prediction image into m_mask_pixbuf_toolkit at the specified position
-                        prediction_pixbuf->Gdk::Pixbuf::copy_area(
-                            0,
-                            0,
-                            prediction_pixbuf->get_width(),
-                            prediction_pixbuf->get_height(),
-                            this->m_mask_pixbuf_main,
-                            position_x,
-                            position_y
-                        );
-                        prediction_pixbuf.reset();
+                        uint8_t* data_ptr = m_patch_rgba_data_buffer.data();
+                        int row_stride = patch_size * 4; // RGBA                     
+                        int i = 0;
 
-                        i++;
-                    }
+                        for (auto patch_pos : patch_positions)
+                        {
+                            uint8_t* patch_data_ptr = data_ptr + (i * row_stride * patch_size);
+                            auto position_x = patch_pos.position_x;
+                            auto position_y = patch_pos.position_y;
+                            // std::cout << "position_x: " << position_x << " position_y: " << position_y << std::endl;
 
-                    // Redraw the drawing area
-                    this->m_main_drawing_area->queue_draw();
+                            // Create a Pixbuf from the aligned offset
+                            auto prediction_pixbuf = Gdk::Pixbuf::create_from_data(
+                                patch_data_ptr,
+                                Gdk::COLORSPACE_RGB,
+                                true, // Has alpha
+                                8, // 8 bits per channel
+                                patch_size,
+                                patch_size,
+                                row_stride
+                            );
 
-                    m_masks_dispatcher_running = false;
-                });
+                            if (!prediction_pixbuf)
+                            {
+                                std::cerr << "Failed to load prediction image" << std::endl;
+                                continue;
+                            }
+                            // else
+                            // {
+                            //     std::cout << "prediction_pixbuf created" << std::endl;
+                            // }
+
+                            // Update mask pixel buf
+                            update_mask_color(prediction_pixbuf);
+                            update_mask_alpha(prediction_pixbuf, this->m_mask_alpha * 255);
+
+                            // Copy the prediction image into m_mask_pixbuf_toolkit at the specified position
+                            prediction_pixbuf->Gdk::Pixbuf::copy_area(
+                                0,
+                                0,
+                                prediction_pixbuf->get_width(),
+                                prediction_pixbuf->get_height(),
+                                this->m_mask_pixbuf_main,
+                                position_x,
+                                position_y
+                            );
+                            prediction_pixbuf.reset();
+
+                            i++;
+                        }
+
+                        // Redraw the drawing area
+                        this->m_main_drawing_area->queue_draw();
+
+                        m_masks_dispatcher_running = false;
+                    });
+                }
             }
             else
             {
@@ -4564,6 +4585,16 @@ void MainWindow::stop_detection()
         m_main_num_anomalies_lbl->set_text("");
     }
 
+    if (m_images_dispatcher_connection.connected())
+    {
+        m_images_dispatcher_connection.disconnect();
+    }
+
+    if (m_masks_dispatcher_connection.connected())
+    {
+        m_masks_dispatcher_connection.disconnect();
+    }
+
     RetentionManager retention_manager;
     retention_manager.enforce_daily_limit();
 }
@@ -4578,14 +4609,31 @@ void MainWindow::send_ws_message(std::string message)
 
         // wait until receive the response
         std::unique_lock<std::mutex> lock(m_ws_response_mutex);
-        m_ws_response_cv.wait(lock, [this]{ return m_ws_response_ready; });
-        
-        // print the response
-        std::cout << "receiving a ws response: " << m_ws_response << std::endl;
-        m_logger->log("receiving a ws response: " + m_ws_response);
+        auto timeout_duration = std::chrono::milliseconds(2500);
+        if (m_ws_response_cv.wait_for(lock, timeout_duration, [this]{ return m_ws_response_ready; }))
+        {
+            // Response received within timeout
+            std::cout << "receiving a ws response: " << m_ws_response << std::endl;
+            m_logger->log("receiving a ws response: " + m_ws_response);
 
-        // Reset the condition for future use if needed
-        m_ws_response_ready = false;
+            // Reset the condition for future use if needed
+            m_ws_response_ready = false;
+        }
+        else
+        {
+            // Timeout occurred
+            std::cerr << "Timeout waiting for ws response" << std::endl;
+            m_logger->log("Timeout waiting for ws response", Logger::ERROR);
+
+            // Create a JSON object
+            nlohmann::json json_obj;
+            
+            // Add the key-value pair
+            json_obj["transaction_id"] = "N/A";
+
+            // Convert to a JSON string
+            m_ws_response = json_obj.dump();
+        }
     }
     else
     {

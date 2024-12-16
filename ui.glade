@@ -36,6 +36,14 @@
     <property name="step-increment">1</property>
     <property name="page-increment">10</property>
   </object>
+  <object class="GtkFileFilter" id="image_file_filter">
+    <patterns>
+      <pattern>*.png</pattern>
+      <pattern>*.jpeg</pattern>
+      <pattern>*.jpg</pattern>
+      <pattern>*.bmp</pattern>
+    </patterns>
+  </object>
   <object class="GtkAdjustment" id="max_per_day_adjustment">
     <property name="upper">5000</property>
     <property name="value">1000</property>
@@ -998,7 +1006,7 @@
                                         <property name="visible">True</property>
                                         <property name="can-focus">False</property>
                                         <property name="halign">start</property>
-                                        <property name="label" translatable="yes">Take a snapshot from a selected camera to run anomaly detection.</property>
+                                        <property name="label" translatable="yes">Take a snapshot from a selected camera or load an image from a file to test anomaly detection.</property>
                                       </object>
                                       <packing>
                                         <property name="expand">False</property>
@@ -1050,6 +1058,56 @@
                                             <property name="expand">False</property>
                                             <property name="fill">True</property>
                                             <property name="position">2</property>
+                                          </packing>
+                                        </child>
+                                        <child>
+                                          <object class="GtkLabel">
+                                            <property name="visible">True</property>
+                                            <property name="can-focus">False</property>
+                                            <property name="label" translatable="yes">- or -</property>
+                                          </object>
+                                          <packing>
+                                            <property name="expand">False</property>
+                                            <property name="fill">True</property>
+                                            <property name="position">3</property>
+                                          </packing>
+                                        </child>
+                                        <child>
+                                          <object class="GtkLabel">
+                                            <property name="visible">True</property>
+                                            <property name="can-focus">False</property>
+                                            <property name="label" translatable="yes">Load Image From:</property>
+                                          </object>
+                                          <packing>
+                                            <property name="expand">False</property>
+                                            <property name="fill">True</property>
+                                            <property name="position">4</property>
+                                          </packing>
+                                        </child>
+                                        <child>
+                                          <object class="GtkFileChooserButton" id="toolkit_image_picker_fcb">
+                                            <property name="visible">True</property>
+                                            <property name="can-focus">False</property>
+                                            <property name="filter">image_file_filter</property>
+                                            <property name="title" translatable="yes"/>
+                                          </object>
+                                          <packing>
+                                            <property name="expand">False</property>
+                                            <property name="fill">True</property>
+                                            <property name="position">5</property>
+                                          </packing>
+                                        </child>
+                                        <child>
+                                          <object class="GtkButton" id="toolkit_detection_test_btn">
+                                            <property name="label" translatable="yes">Test</property>
+                                            <property name="visible">True</property>
+                                            <property name="can-focus">True</property>
+                                            <property name="receives-default">True</property>
+                                          </object>
+                                          <packing>
+                                            <property name="expand">False</property>
+                                            <property name="fill">True</property>
+                                            <property name="position">6</property>
                                           </packing>
                                         </child>
                                       </object>
