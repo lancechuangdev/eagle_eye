@@ -117,6 +117,59 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     }
 
     m_builder->get_widget("toolkit_image_picker_fcb", m_toolkit_image_picker_fcb);
+    if (m_toolkit_image_picker_fcb)
+    {
+        m_toolkit_image_picker_fcb->signal_selection_changed().connect([this]()
+        {
+            // Reset zoom and pan when a new image is loaded
+            m_zoom_factor_toolkit = 1.0;
+            m_offset_x_toolkit = 0.0;
+            m_offset_y_toolkit = 0.0;
+
+            // Reset image pixel buffer
+            if (m_image_pixbuf_toolkit)
+            {
+                m_image_pixbuf_toolkit.reset();
+            }
+            // Reset mask pixel buffer
+            if (m_mask_pixbuf_toolkit)
+            {
+                m_mask_pixbuf_toolkit.reset();
+            }
+
+            // Load the frame from file    
+            auto image_under_test = m_toolkit_image_picker_fcb->get_filename();
+            try
+            {
+                m_image_pixbuf_toolkit = Gdk::Pixbuf::create_from_file(image_under_test);
+            }
+            catch (const Glib::FileError &ex)
+            {
+                std::cerr << "File Error: " << ex.what() << std::endl;
+                return;
+            }
+            catch (const Gdk::PixbufError &ex)
+            {
+                std::cerr << "Pixbuf Error: " << ex.what() << std::endl;
+                return;
+            }
+
+            if (!m_image_pixbuf_toolkit)
+            {
+                std::cerr << "Failed to load the image!" << std::endl;
+                return;
+            }
+
+            auto frame_width = m_image_pixbuf_toolkit->get_width();
+            auto frame_height = m_image_pixbuf_toolkit->get_height();
+            
+            if (m_toolkit_display_area)
+            {
+                m_toolkit_display_area->set_size_request(frame_width, frame_height);
+                m_toolkit_display_area->queue_draw();
+            }
+        });
+    }
 
     m_builder->get_widget("toolkit_detection_test_btn", m_toolkit_detection_test_btn);
     if (m_toolkit_detection_test_btn)
@@ -3655,46 +3708,6 @@ void MainWindow::on_snap_clicked()
 
 void MainWindow::on_toolkit_test_clicked()
 {
-    // Reset image pixel buffer
-    if (m_image_pixbuf_toolkit)
-    {
-        m_image_pixbuf_toolkit.reset();
-    }
-    // Reset mask pixel buffer
-    if (m_mask_pixbuf_toolkit)
-    {
-        m_mask_pixbuf_toolkit.reset();
-    }
-    m_toolkit_display_area->queue_draw();
-
-    // Load the frame from file    
-    auto image_under_test = m_toolkit_image_picker_fcb->get_filename();
-    try
-    {
-        m_image_pixbuf_toolkit = Gdk::Pixbuf::create_from_file(image_under_test);
-    }
-    catch (const Glib::FileError &ex)
-    {
-        std::cerr << "File Error: " << ex.what() << std::endl;
-        return;
-    }
-    catch (const Gdk::PixbufError &ex)
-    {
-        std::cerr << "Pixbuf Error: " << ex.what() << std::endl;
-        return;
-    }
-
-    if (!m_image_pixbuf_toolkit)
-    {
-        std::cerr << "Failed to load the image!" << std::endl;
-        return;
-    }
-
-    // Reset zoom and pan when a new image is loaded
-    m_zoom_factor_toolkit = 1.0;
-    m_offset_x_toolkit = 0.0;
-    m_offset_y_toolkit = 0.0;
-
     // Open shared memory object
     auto patch_size = PATCH_SIZE;
     std::string shm_name = SHM_NAME_FRAMES;
