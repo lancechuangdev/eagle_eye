@@ -184,6 +184,7 @@ def message_received(client, server, message):
     output_path = os.path.join(output_dir, transaction_id)
     num_frames = 0
     num_patches = 0
+    anomaly_metadata = []
 
     # Build the initial transaction json object
     transaction_json = {
@@ -224,7 +225,6 @@ def message_received(client, server, message):
             
             aligned_offsets = []
             total_sh_mem_size = 0
-            anomaly_metadata = []
             anomaly_data = []
 
             # Write prediction data into the shared memory

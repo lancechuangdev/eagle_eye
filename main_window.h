@@ -46,6 +46,8 @@ protected:
     Gtk::Button *m_stop_btn;
     Gtk::Button *m_snap_btn;
     Gtk::ComboBoxText *m_snap_source_cbox;
+    Gtk::FileChooserButton *m_toolkit_image_picker_fcb;
+    Gtk::Button *m_toolkit_detection_test_btn;
     Gtk::DrawingArea *m_toolkit_display_area;
     Gtk::Stack *m_content_stack;
     Gtk::Grid *m_cam_grid;
@@ -126,6 +128,7 @@ protected:
     void on_start_clicked();
     void on_stop_clicked();
     void on_snap_clicked();
+    void on_toolkit_test_clicked();
     void on_connect_clicked(const std::string& sn);
     void on_disconnect_clicked(const std::string& sn);
     void on_view_clicked(const std::string& sn);

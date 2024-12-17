@@ -116,6 +116,14 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_snap_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_snap_clicked));
     }
 
+    m_builder->get_widget("toolkit_image_picker_fcb", m_toolkit_image_picker_fcb);
+
+    m_builder->get_widget("toolkit_detection_test_btn", m_toolkit_detection_test_btn);
+    if (m_toolkit_detection_test_btn)
+    {
+        m_toolkit_detection_test_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_toolkit_test_clicked));
+    }
+
     m_builder->get_widget("toolkit_drawing_area", m_toolkit_display_area);
     if (m_toolkit_display_area)
     {
@@ -3613,47 +3621,6 @@ void MainWindow::on_snap_clicked()
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             update_snap_masks(res_trans_id);
-
-            std::string digital_ouput;
-            std::string line_number;
-
-            if (m_detection_digital_output_lbl)
-            {
-                digital_ouput = m_detection_digital_output_lbl->get_text();
-            }
-            if (m_detection_digital_output_line_number_lbl)
-            {
-                line_number = m_detection_digital_output_line_number_lbl->get_text();
-            }
-
-            if (digital_ouput != "" && 
-                line_number != "" && 
-                m_connected_device_handles.find(digital_ouput) != m_connected_device_handles.end())
-            {
-                void *device_handle = m_connected_device_handles[digital_ouput];
-                // Select digital output
-                int nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", line_number.c_str());
-                if (nRet == MV_OK)
-                {
-                    // Trigger digital output
-                    int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
-                    if (nRet != MV_OK)
-                    {
-                        std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
-                        m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
-                    }
-                    else
-                    {
-                        std::cout << "Trigger digital output via software succeeded" << std::endl;
-                        m_logger->log("Trigger digital output via software succeeded");
-                    }
-                }
-            }
-            else
-            {
-                std::cerr << "Digital output source not found: " << digital_ouput << std::endl;
-                m_logger->log("Digital output source not found: " + digital_ouput, Logger::ERROR);
-            }
         }
     }
 
@@ -3684,6 +3651,172 @@ void MainWindow::on_snap_clicked()
         std::cout << "Failed to disconnect from the camera: " << sn << std::endl;
         m_logger->log("Failed to disconnect from the camera: " + sn, Logger::ERROR);
     }
+}
+
+void MainWindow::on_toolkit_test_clicked()
+{
+    // Reset image pixel buffer
+    if (m_image_pixbuf_toolkit)
+    {
+        m_image_pixbuf_toolkit.reset();
+    }
+    // Reset mask pixel buffer
+    if (m_mask_pixbuf_toolkit)
+    {
+        m_mask_pixbuf_toolkit.reset();
+    }
+    m_toolkit_display_area->queue_draw();
+
+    // Load the frame from file    
+    auto image_under_test = m_toolkit_image_picker_fcb->get_filename();
+    try
+    {
+        m_image_pixbuf_toolkit = Gdk::Pixbuf::create_from_file(image_under_test);
+    }
+    catch (const Glib::FileError &ex)
+    {
+        std::cerr << "File Error: " << ex.what() << std::endl;
+        return;
+    }
+    catch (const Gdk::PixbufError &ex)
+    {
+        std::cerr << "Pixbuf Error: " << ex.what() << std::endl;
+        return;
+    }
+
+    if (!m_image_pixbuf_toolkit)
+    {
+        std::cerr << "Failed to load the image!" << std::endl;
+        return;
+    }
+
+    // Reset zoom and pan when a new image is loaded
+    m_zoom_factor_toolkit = 1.0;
+    m_offset_x_toolkit = 0.0;
+    m_offset_y_toolkit = 0.0;
+
+    // Open shared memory object
+    auto patch_size = PATCH_SIZE;
+    std::string shm_name = SHM_NAME_FRAMES;
+    size_t buffer = 2448 * 2048 * MAX_FRAME_BATCH_SIZE;
+
+    int shm_fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0666);
+    if (shm_fd == -1)
+    {
+        std::cerr << "Failed to open shared memory object." << std::endl;
+        return;
+    }
+
+    // Resize shared memory object to the initial data size
+    if (ftruncate(shm_fd, buffer) == -1)
+    {
+        std::cerr << "Failed to resize shared memory object." << std::endl;
+        ::close(shm_fd);
+        return;
+    }
+
+    // Map shared memory into address space
+    void *shm_ptr = mmap(0, buffer, PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (shm_ptr == MAP_FAILED)
+    {
+        std::cerr << "Failed to map shared memory." << std::endl;
+        ::close(shm_fd);
+        return;
+    }
+
+    auto frame_width = m_image_pixbuf_toolkit->get_width();
+    auto frame_height = m_image_pixbuf_toolkit->get_height();
+
+    // Create a new buffer to hold a single channel (grayscale)
+    std::vector<uint8_t> single_channel_data(frame_width * frame_height);
+
+    // Get the pointer to the image data (raw pixel data)
+    uint8_t* pData = reinterpret_cast<uint8_t*>(m_image_pixbuf_toolkit->get_pixels());
+
+    // Iterate over each pixel and extract the red channel (index 0 = Red, 1 = Green, 2 = Blue)
+    for (int i = 0; i < frame_width * frame_height; ++i) {
+        uint8_t gray = pData[i * RGB_CHANNELS];  // Take data from the Red channel
+        single_channel_data[i] = gray;           // Set grayscale pixel based on Red channel
+    }
+
+    // Copy the frame data into the calculated memory location
+    auto frame_size = frame_width * frame_height;
+    void* frame_ptr = static_cast<uint8_t*>(shm_ptr);
+    std::memcpy(frame_ptr, single_channel_data.data(), frame_size);
+
+    // Save the frame metadata
+    std::vector<FrameOffsetInfo> frame_offsets;
+    frame_offsets.push_back({ 0, frame_size, "N/A" });
+    
+    if (!frame_offsets.empty())
+    {
+        // Send the command to the ws server
+        m_trans_id = generate_transaction_id();
+
+        // Get confidence threshold and pixel threshold from settings file
+        double confidence_threshold = 0.5;
+        double pixel_threshold = 0.03;
+
+        auto settings = SettingsService::get_settings("[detection]");
+        for (const auto &[key, value] : settings)
+        {
+            if (key == "confidence_threshold")
+            {
+                confidence_threshold = std::stod(value);
+            }
+            else if (key == "pixel_threshold")
+            {
+                pixel_threshold = std::stod(value);
+            }
+        }
+
+        // Build JSON transaction data
+        nlohmann::json json_data;
+        json_data["transaction_id"] = m_trans_id;
+        json_data["confidence_threshold"] = confidence_threshold;
+        json_data["pixel_threshold"] = pixel_threshold;
+        json_data["frame_width"] = frame_width;
+        json_data["frame_height"] = frame_height;
+        for (const auto& info : frame_offsets)
+        {
+            json_data["frames"].push_back({
+                {"offset", info.offset},
+                {"frame_size", info.frame_size},
+                {"serial_number", info.serial_number}
+            });
+        }
+
+        std::string frame_info_string = json_data.dump(); // Convert JSON to string
+        send_ws_message(frame_info_string);
+
+        // Parse the JSON response
+        nlohmann::json response_json = nlohmann::json::parse(m_ws_response);
+
+        // Extract values from the JSON object
+        std::string res_trans_id = response_json["transaction_id"];
+        std::string status = response_json["status"];
+        int total_anomalies = response_json["total_anomalies"];
+        
+        if (res_trans_id == m_trans_id && status == "complete" && total_anomalies > 0)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            update_snap_masks(res_trans_id);
+        }
+    }
+
+    if (m_toolkit_display_area)
+    {
+        m_toolkit_display_area->set_size_request(frame_width, frame_height);
+        m_toolkit_display_area->queue_draw();
+    }
+
+    // Clean up
+    std::cout << "Clean up shared memory object" << std::endl; 
+    if (munmap(shm_ptr, buffer) == -1) // Unmap the shared memory
+    {
+        std::cerr << "Failed to unmap shared memory." << std::endl;
+    }
+    ::close(shm_fd);
 }
 
 void MainWindow::update_snap_masks(std::string trans_id)
@@ -4607,7 +4740,7 @@ void MainWindow::send_ws_message(std::string message)
 
         // wait until receive the response
         std::unique_lock<std::mutex> lock(m_ws_response_mutex);
-        auto timeout_duration = std::chrono::milliseconds(2500);
+        auto timeout_duration = std::chrono::milliseconds(200);
         if (m_ws_response_cv.wait_for(lock, timeout_duration, [this]{ return m_ws_response_ready; }))
         {
             // Response received within timeout
