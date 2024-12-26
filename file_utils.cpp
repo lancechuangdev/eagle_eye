@@ -41,7 +41,19 @@ std::string FileUtils::getCssFilePath()
 }
 
 bool FileUtils::createSubdirectory(const std::string &parent, const std::string &sub)
-{
+{  
+    // Check if the parent directory exists; if not, create it recursively
+    struct stat st;
+    if (stat(parent.c_str(), &st) != 0)
+    {
+        // Parent directory does not exist, create it
+        if (mkdir(parent.c_str(), 0755) != 0)
+        {
+            std::cerr << "Error creating parent directory: " << strerror(errno) << std::endl;
+            return false; // Failure to create the parent directory
+        }
+    }
+
     // Check if the directory already exists
     if (directoryExists(parent, sub))
     {

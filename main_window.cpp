@@ -433,6 +433,8 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_detection_results_listbox->signal_row_selected().connect(sigc::mem_fun(*this, &MainWindow::on_detection_result_selected));
     }
 
+    m_builder->get_widget("detection_patches_box", m_detection_patches_box);
+
     m_builder->get_widget("detection_results_display_area", m_detection_results_display_area);
     if (m_detection_results_display_area)
     {
@@ -848,15 +850,15 @@ void MainWindow::on_detection_result_selected(Gtk::ListBoxRow* row)
 
 void MainWindow::load_detection_result(std::string &detection_result_folder)
 {
-    std::filesystem::path trans_json = std::filesystem::path(detection_result_folder) / "transaction_data.json";
-    if (!std::filesystem::exists(trans_json))
+    std::filesystem::path trans_json_path = std::filesystem::path(detection_result_folder) / "transaction_data.json";
+    if (!std::filesystem::exists(trans_json_path))
     {
         std::cerr << "File not exists: transaction_data.json" << std::endl;
         return;
     }
 
     // Read the content of the JSON file
-    std::ifstream json_file(trans_json);
+    std::ifstream json_file(trans_json_path);
     if (!json_file.is_open())
     {
         std::cerr << "Failed to open the file." << std::endl;
@@ -874,6 +876,8 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
     try
     {
         json_file >> json_data;
+        json_file.close();
+
         patch_size = json_data["patch_size"].get<int>();
         frame_width = json_data["frame_width"].get<int>();
         frame_height = json_data["frame_height"].get<int>();
@@ -890,8 +894,8 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
     // Gdk::Pixbuf does not directly support a single-channel format, 
     // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
     m_image_pixbuf_detection_result = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
-    m_image_pixbuf_detection_result->fill(0xffffffbe); // For testing
-    // m_image_pixbuf_detection_result->fill(0x00000000); // Fill with black
+    // m_image_pixbuf_detection_result->fill(0xffffffbe); // For testing
+    m_image_pixbuf_detection_result->fill(0x00000000); // Fill with black
 
     int current_y = 0;
     bool load_images_error = false;
@@ -933,12 +937,24 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
     // m_mask_pixbuf_detection_result->fill(0xffffffbe); // For testing
     m_mask_pixbuf_detection_result->fill(0x00000000); // Initialize the mask to be fully transparent black
 
+    // Clear patches box before adding
+    for (auto *child : m_detection_patches_box->get_children())
+    {
+        m_detection_patches_box->remove(*child);
+    }
+
     // Load and position each prediction
     int predictions_per_row = frame_width / patch_size;
     if (frame_width % patch_size != 0)
     {
         predictions_per_row++; // Allow for an additional prediction if there's remaining space
     }
+
+    // Preserve the original frame pixbuf
+    auto frame_pixbuf_original = m_image_pixbuf_detection_result;
+    // Extract transaction ID
+    auto transaction_id = json_data["transaction_id"].get<std::string>();
+    
     for (const auto &prediction : json_data["predictions"])
     {
         int prediction_id = prediction["prediction_id"].get<int>();
@@ -969,16 +985,222 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
         int position_y = row * patch_size; // Each row is separated by the height of the patch
 
         // Copy the prediction image into m_mask_pixbuf_toolkit at the specified position
+        int patch_width = prediction_pixbuf->get_width();
+        int patch_height = prediction_pixbuf->get_height();
         prediction_pixbuf->Gdk::Pixbuf::copy_area(
             0,
             0,
-            prediction_pixbuf->get_width(),
-            prediction_pixbuf->get_height(),
+            patch_width,
+            patch_height,
             m_mask_pixbuf_detection_result,
             position_x,
             position_y
         );
+
+        // Create a vertical box for each item
+        auto item_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+        item_box->set_spacing(5); // Spacing between child elements
+
+        // Create and add the title label
+        auto label = Gtk::make_managed<Gtk::Label>("Patch ID: " + std::to_string(prediction_id));
+        label->set_halign(Gtk::ALIGN_START); // Align text to the left
+        item_box->pack_start(*label, Gtk::PACK_SHRINK);
+
+        // Create and add the thumbnail
+        const int thumbnail_width = 80;
+        const int thumbnail_height = 80;
+        auto thumbnail_pixbuf = prediction_pixbuf->scale_simple(
+            thumbnail_width, 
+            thumbnail_height, 
+            Gdk::INTERP_BILINEAR);
+        auto thumbnail = Gtk::make_managed<Gtk::Image>(thumbnail_pixbuf);
+        thumbnail->set_halign(Gtk::ALIGN_START);
+        item_box->pack_start(*thumbnail, Gtk::PACK_SHRINK);
+
+        // Create a horizontal box for buttons
+        auto action_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+        action_box->set_spacing(10); // Spacing between buttons
+
+        // Add "Focus" button
+        auto view_button = Gtk::make_managed<Gtk::Button>();
+        view_button->set_margin_top(5);
+        view_button->signal_clicked().connect([this, label, frame_pixbuf_original, position_x, position_y, patch_width, patch_height]() {
+            try 
+            {
+                // Remove the "highlighted" class from the currently highlighted label
+                if (m_current_selected_patch_lbl)
+                {
+                    m_current_selected_patch_lbl->get_style_context()->remove_class("highlighted");
+                }
+
+                // Highlight the new label
+                auto style_context = label->get_style_context();
+                style_context->add_class("highlighted");
+
+                // Update the currently highlighted label
+                m_current_selected_patch_lbl = label;
+
+                // Create a Cairo surface based on the existing pixbuf
+                auto surface = Cairo::ImageSurface::create(
+                    Cairo::FORMAT_ARGB32,
+                    m_image_pixbuf_detection_result->get_width(),
+                    m_image_pixbuf_detection_result->get_height());
+                auto cr = Cairo::Context::create(surface);
+
+                // Clear existing drawings by re-rendering the original pixbuf
+                Gdk::Cairo::set_source_pixbuf(cr, frame_pixbuf_original, 0, 0); // Use the original pixbuf
+                cr->paint();
+
+                // Set the stroke color (e.g., red)
+                cr->set_source_rgba(1.0, 0.0, 0.0, 1.0); // RGBA: red, fully opaque
+
+                // Set line width for the rectangle edges
+                cr->set_line_width(2.0);
+
+                // Draw the edges of the rectangle
+                cr->move_to(position_x, position_y); // Top-left corner
+                cr->line_to(position_x + patch_width, position_y); // Top edge
+                cr->line_to(position_x + patch_width, position_y + patch_height); // Right edge
+                cr->line_to(position_x, position_y + patch_height); // Bottom edge
+                cr->close_path(); // Close the rectangle (connect back to top-left)
+
+                // Stroke the rectangle edges
+                cr->stroke();
+
+                // Update the pixbuf with the modified surface
+                m_image_pixbuf_detection_result = Gdk::Pixbuf::create(
+                    surface, 0, 0,
+                    surface->get_width(),
+                    surface->get_height());
+
+                // // Refresh the UI with the updated pixbuf
+                m_detection_results_display_area->queue_draw();
+            }
+            catch (const Glib::Error& ex)
+            {
+                std::cerr << "Error drawing rectangle: " << ex.what() << std::endl;
+            }
+        });
+        set_button_icon(view_button, "/com/example/eagle_eye/focus.svg");
+        action_box->pack_start(*view_button, Gtk::PACK_SHRINK);
+
+        // Add "Delete" button
+        auto delete_button = Gtk::make_managed<Gtk::Button>();
+        delete_button->set_margin_top(5);
+        
+        // Load button icon
+        auto remark = prediction.value("remark", "TP");
+        if (remark == "FP") // Marked as False Positive, the available action is to revert it back to True Positive.
+        {
+            set_button_icon(delete_button, "/com/example/eagle_eye/confirm.svg");
+            update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 128);
+        }
+        else // 'remark' does not exist or was True Positive, the available action is to mark it as False Positive.
+        {
+            set_button_icon(delete_button, "/com/example/eagle_eye/delete.svg");
+            update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 255);
+        }
+
+        delete_button->signal_clicked().connect([this, delete_button, trans_json_path, transaction_id, prediction_id, thumbnail, thumbnail_pixbuf, frame_pixbuf_original, position_x, position_y, patch_width, patch_height]()
+        {
+            try
+            {
+                std::string filename = transaction_id + "_patch_" + std::to_string(prediction_id) + ".png";
+                auto remark = get_patch_remark(trans_json_path, prediction_id);
+
+                if (remark == "TP") // 'remark' does not exist or marked as True Positive, changing to False Positive
+                {
+                    bool is_images_dir_created = FileUtils::createSubdirectory(AppPaths::Dataset_Path.string(), "images");
+                    bool is_masks_dir_created = FileUtils::createSubdirectory(AppPaths::Dataset_Path.string(), "masks");
+                    
+                    if (!is_images_dir_created || !is_masks_dir_created)
+                    {
+                        throw std::runtime_error("Failed to create images or masks directory");
+                    }
+
+                    // Ensure the patch coordinates and dimensions are within bounds
+                    if (position_x >= 0 && position_y >= 0 &&
+                        position_x + patch_width <= frame_pixbuf_original->get_width() &&
+                        position_y + patch_height <= frame_pixbuf_original->get_height()) {
+                        
+                        // Create a subpixbuf for the patch
+                        auto patch_pixbuf = Gdk::Pixbuf::create_subpixbuf(frame_pixbuf_original, position_x, position_y, patch_width, patch_height);
+
+                        // Save the patch to a file
+                        if (patch_pixbuf)
+                        {
+                            patch_pixbuf->save((AppPaths::Dataset_Path / "images" / filename).string(), "png");
+                            
+                            // Create a black mask pixbuf
+                            auto mask_pixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, patch_width, patch_height);
+                            mask_pixbuf->fill(0x000000);
+                            
+                            // Save the mask to a file
+                            if (mask_pixbuf)
+                            {
+                                mask_pixbuf->save((AppPaths::Dataset_Path / "masks" / filename).string(), "png");
+                            }
+                        }
+
+                        // Mark the patch as FP and update transaction json file
+                        update_patch_remark(trans_json_path, prediction_id, "FP");
+                        set_button_icon(delete_button, "/com/example/eagle_eye/confirm.svg");
+                        update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 128);
+                    }
+                    else
+                    {
+                        std::cerr << "Patch coordinates are out of bounds!" << std::endl;
+                    }
+                }
+                else if (remark == "FP") // Was False Positive, changing to True Positive.
+                {
+                    // Mark the patch as TP and update transaction json file
+                    update_patch_remark(trans_json_path, prediction_id, "TP");
+
+                    // Delete image/mask pair from Dataset path
+                    auto imagePath = AppPaths::Dataset_Path / "images" / filename;
+                    if (std::filesystem::exists(imagePath))
+                    {
+                        // Delete the image
+                        std::filesystem::remove(imagePath);
+                        std::cout << "File deleted: " << imagePath << std::endl;
+                    }
+                    else
+                    {
+                        std::cerr << "File not found: " << imagePath << std::endl;
+                    }
+
+                    auto maskPath = AppPaths::Dataset_Path / "masks" / filename;
+                    if (std::filesystem::exists(maskPath))
+                    {
+                        // Delete the mask
+                        std::filesystem::remove(maskPath);
+                        std::cout << "File deleted: " << maskPath << std::endl;
+                    }
+                    else
+                    {
+                        std::cerr << "File not found: " << maskPath << std::endl;
+                    }
+
+                    set_button_icon(delete_button, "/com/example/eagle_eye/delete.svg");
+                    update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 255);
+                }
+            }
+            catch (const Glib::Exception& e)
+            {
+                std::cerr << "Error saving or deleting patch: " << e.what() << std::endl;
+            }
+        });
+        action_box->pack_start(*delete_button, Gtk::PACK_SHRINK);
+
+        // Add the button box to the item box
+        item_box->pack_start(*action_box, Gtk::PACK_SHRINK);
+
+        // Add the item box to the main box
+        m_detection_patches_box->pack_start(*item_box, Gtk::PACK_SHRINK);
     }
+
+    m_detection_patches_box->show_all_children();
 
     // Update mask pixel buf
     if (m_mask_pixbuf_detection_result)
@@ -992,6 +1214,121 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
     {
         m_detection_results_display_area->set_size_request(frame_width, total_height);
         m_detection_results_display_area->queue_draw();
+    }
+}
+
+void MainWindow::update_patch_thumbnail_alpha(Glib::RefPtr<Gdk::Pixbuf> thumbnail_pixbuf, Gtk::Image *thumbnail, int alpha_value)
+{
+    // Get the current width and height of the thumbnail
+    const int thumbnail_width = thumbnail_pixbuf->get_width();
+    const int thumbnail_height = thumbnail_pixbuf->get_height();
+
+    // Create a copy of the Pixbuf with an alpha channel (RGBA format)
+    auto alpha_pixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, thumbnail_width, thumbnail_height);
+
+    // Get the pixel data of the original and the new alpha Pixbuf
+    guchar* original_data = thumbnail_pixbuf->get_pixels();
+    guchar* alpha_data = alpha_pixbuf->get_pixels();
+
+    // Loop through each pixel to copy the RGB values and modify the alpha
+    for (int y = 0; y < thumbnail_height; ++y) {
+        for (int x = 0; x < thumbnail_width; ++x) {
+            int i = (y * thumbnail_width + x) * RGB_CHANNELS;
+            int j = (y * thumbnail_width + x) * RGBA_CHANNELS;
+            // Copy the RGB values from the original Pixbuf
+            alpha_data[j] = original_data[i];         // Red
+            alpha_data[j + 1] = original_data[i + 1]; // Green
+            alpha_data[j + 2] = original_data[i + 2]; // Blue
+            alpha_data[j + 3] = alpha_value;          // Set the alpha (opacity)
+        }
+    }
+
+    thumbnail->set(alpha_pixbuf);
+}
+
+std::string MainWindow::get_patch_remark(const std::string &transaction_json_path, int prediction_id)
+{
+    nlohmann::json json_data;
+    std::string remark_default = "TP";
+
+    try
+    {
+        // Open the JSON file for reading
+        std::ifstream json_file(transaction_json_path);
+        if (!json_file.is_open())
+        {
+            throw std::ios_base::failure("Failed to open JSON file.");
+        }
+
+        // Parse the JSON content
+        json_file >> json_data;
+        json_file.close();
+
+        // Update the JSON
+        if (json_data.contains("predictions") && json_data["predictions"].is_array())
+        {
+            for (auto &prediction : json_data["predictions"])
+            {
+                if (prediction.contains("prediction_id") && prediction["prediction_id"] == prediction_id)
+                {
+                    auto remark = prediction.value("remark", remark_default);
+                    return remark;
+                }
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error: " << e.what() << std::endl;
+    }
+    
+    return remark_default;
+}
+
+void MainWindow::update_patch_remark(const std::string &transaction_json_path, int prediction_id, const std::string &remark)
+{
+    nlohmann::json json_data;
+
+    try
+    {
+        // Open the JSON file for reading
+        std::ifstream json_file(transaction_json_path);
+        if (!json_file.is_open())
+        {
+            throw std::ios_base::failure("Failed to open JSON file.");
+        }
+
+        // Parse the JSON content
+        json_file >> json_data;
+        json_file.close();
+
+        // Update the JSON
+        if (json_data.contains("predictions") && json_data["predictions"].is_array())
+        {
+            for (auto &prediction : json_data["predictions"])
+            {
+                if (prediction.contains("prediction_id") && prediction["prediction_id"] == prediction_id)
+                {
+                    prediction["remark"] = remark; // Add or update the remark field
+                    std::cout << "Remark added to prediction_id " << prediction_id << std::endl;
+                }
+            }
+        }
+
+        // Write the updated JSON back to the file
+        std::ofstream output_file(transaction_json_path);
+        if (!output_file.is_open())
+        {
+            throw std::ios_base::failure("Failed to open JSON file for writing.");
+        }
+        output_file << json_data.dump(4); // Pretty-print with 4 spaces
+        output_file.close();
+
+        std::cout << "JSON file updated successfully." << std::endl;
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error: " << e.what() << std::endl;
     }
 }
 
@@ -1506,6 +1843,7 @@ void MainWindow::on_test_digital_out_clicked()
     else
     {
         std::cout << "Trigger digital output via software succeeded" << std::endl;
+        m_logger->log("Trigger digital output via software succeeded");
     }
 
     if (!disconnect_camera(sn))
@@ -3976,6 +4314,9 @@ void MainWindow::update_mask_alpha(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf, gint32
     int rowstride = mask_pixbuf->get_rowstride();
     int n_channels = mask_pixbuf->get_n_channels();
 
+    if (n_channels != 4)
+        return;
+
     // Get pointer to the pixel data
     guchar *pixels = mask_pixbuf->get_pixels();
 
@@ -4753,7 +5094,7 @@ void MainWindow::send_ws_message(std::string message)
 
         // wait until receive the response
         std::unique_lock<std::mutex> lock(m_ws_response_mutex);
-        auto timeout_duration = std::chrono::milliseconds(200);
+        auto timeout_duration = std::chrono::milliseconds(2500);
         if (m_ws_response_cv.wait_for(lock, timeout_duration, [this]{ return m_ws_response_ready; }))
         {
             // Response received within timeout

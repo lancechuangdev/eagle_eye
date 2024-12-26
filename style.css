@@ -27,3 +27,8 @@
     background-image: none;
     background-color: #aa0000; /* Red background */
 }
+
+.highlighted {
+    background-color: #305cde;
+    color: white;
+}

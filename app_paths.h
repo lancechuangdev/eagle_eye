@@ -12,7 +12,8 @@ public:
     static const std::filesystem::path Settings_File_Path;
     static const std::filesystem::path Detection_Results_Path;
     static const std::filesystem::path Detection_Results_Archive_Path;
-
+    static const std::filesystem::path Dataset_Path;
+    
 private:
     static std::filesystem::path getHomePath() {
         const char* home_env = std::getenv("HOME");

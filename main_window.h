@@ -110,6 +110,8 @@ protected:
     Gtk::Button *m_cancel_detection_settings_btn;
     Gtk::Button *m_save_detection_settings_btn;
     Gtk::ListBox *m_detection_results_listbox;
+    Gtk::Box *m_detection_patches_box;
+    Gtk::Label* m_current_selected_patch_lbl;
     Gtk::DrawingArea *m_detection_results_display_area;
     Gtk::ComboBoxText *m_recent_detection_results_selector_cbox;
     Gtk::Button *m_detection_results_refresh_btn;
@@ -313,6 +315,9 @@ private:
     void on_directory_changed(const Glib::RefPtr<Gio::File> &file, const Glib::RefPtr<Gio::File> &other_file, Gio::FileMonitorEvent event_type);
     double calc_detection_results_memory_usage_in_gb(size_t max_per_day, size_t days_to_retain);
     void update_detection_results_memory_usage_label(size_t max_per_day, size_t days_to_retain);
+    std::string get_patch_remark(const std::string &transaction_json_path, int prediction_id);
+    void update_patch_thumbnail_alpha(Glib::RefPtr<Gdk::Pixbuf> thumbnail_pixbuf, Gtk::Image *thumbnail, int alpha_value);
+    void update_patch_remark(const std::string &transaction_json_path, int prediction_id, const std::string &remark);
 };
 
 #endif
