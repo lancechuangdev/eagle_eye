@@ -45,6 +45,7 @@ protected:
     Gtk::Button *m_start_btn;
     Gtk::Button *m_stop_btn;
     Gtk::Button *m_snap_btn;
+    Gtk::Button *m_create_report_btn;
     Gtk::ComboBoxText *m_snap_source_cbox;
     Gtk::FileChooserButton *m_toolkit_image_picker_fcb;
     Gtk::Button *m_toolkit_detection_test_btn;
@@ -134,6 +135,7 @@ protected:
     void on_connect_clicked(const std::string& sn);
     void on_disconnect_clicked(const std::string& sn);
     void on_view_clicked(const std::string& sn);
+    void on_create_report_clicked();
     bool on_main_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_toolkit_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_settings_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);

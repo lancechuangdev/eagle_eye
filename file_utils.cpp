@@ -135,6 +135,60 @@ bool FileUtils::directoryExists(const std::string &parent, const std::string &su
     return Glib::file_test(path, Glib::FILE_TEST_IS_DIR);
 }
 
+template <typename TP>
+std::time_t to_time_t(TP tp)
+{
+    using namespace std::chrono;
+    auto sctp = time_point_cast<system_clock::duration>(tp - TP::clock::now() + system_clock::now());
+    return system_clock::to_time_t(sctp);
+}
+
+std::vector<std::filesystem::path> FileUtils::get_folders_by_time(const std::filesystem::path& directory, const std::chrono::system_clock::time_point &start_time, const std::chrono::system_clock::time_point &end_time)
+{
+    std::vector<std::filesystem::path> matching_folders;
+
+    try
+    {
+        // Collect folders, sort them by modification time
+        std::vector<std::filesystem::directory_entry> directories;
+        for (const auto &entry : std::filesystem::directory_iterator(directory))
+        {
+            if (entry.is_directory())
+            {
+                directories.push_back(entry);
+            }
+        }
+
+        std::sort(directories.begin(), directories.end(), [](const std::filesystem::directory_entry &a, const std::filesystem::directory_entry &b)
+                  { return std::filesystem::last_write_time(a) < std::filesystem::last_write_time(b); });
+
+        // Iterate through sorted directories and filter by modification time
+        for (const auto &entry : directories)
+        {
+            auto mod_time = std::filesystem::last_write_time(entry);
+            auto mod_time_t = to_time_t(mod_time);
+            auto mod_tp = std::chrono::system_clock::from_time_t(mod_time_t);
+
+            if (mod_tp > end_time)
+            {
+                // Early quit: subsequent folders will also be out of range
+                break;
+            }
+
+            if (mod_tp >= start_time && mod_tp <= end_time)
+            {
+                matching_folders.push_back(entry.path().string());
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error: " << e.what() << std::endl;
+    }
+
+    return matching_folders;
+}
+
 std::vector<std::filesystem::path> FileUtils::get_recent_folders(const std::filesystem::path& directory, size_t count)
 {
     std::vector<std::filesystem::path> folders;

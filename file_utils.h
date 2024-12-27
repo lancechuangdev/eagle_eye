@@ -18,6 +18,7 @@ public:
     static std::string getCssFilePath();
     static bool directoryExists(const std::string &parent, const std::string &sub);
     static std::vector<std::filesystem::path> get_recent_folders(const std::filesystem::path& directory, size_t count);
+    static std::vector<std::filesystem::path> get_folders_by_time(const std::filesystem::path& directory, const std::chrono::system_clock::time_point &start_time, const std::chrono::system_clock::time_point &end_time);
     static void delete_all_in_directory(std::filesystem::path dir_path);
 };
 

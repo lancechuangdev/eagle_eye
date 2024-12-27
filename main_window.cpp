@@ -3,6 +3,7 @@
 #include "settings_service.h"
 #include "retention_manager.h"
 #include "constants.h"
+#include "report_window.h"
 
 MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &refBuilder, std::shared_ptr<Logger> logger)
     : Gtk::Window(obj),
@@ -106,6 +107,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_main_drawing_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_btn_press_event));
         m_main_drawing_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_btn_release_event));
         m_main_drawing_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_motion_notify_event));
+    }
+
+    m_builder->get_widget("create_report_btn", m_create_report_btn);
+    if (m_create_report_btn)
+    {
+        m_create_report_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_create_report_clicked));
     }
 
     m_builder->get_widget("snap_source_cbox", m_snap_source_cbox);
@@ -1510,6 +1517,18 @@ void MainWindow::load_detection_settings()
         m_days_to_retain_sb->set_value(days_to_retain);
     }
     update_detection_results_memory_usage_label(max_per_day, days_to_retain);
+}
+
+void MainWindow::on_create_report_clicked()
+{
+    // Create the ReportWindow from the Glade file
+    auto gladeFile = FileUtils::getGladeFilePath();
+    ReportWindow *reportWindow = ReportWindow::create(gladeFile);
+
+    if (reportWindow)
+    {
+        reportWindow->present(); // Show the window
+    }
 }
 
 void MainWindow::update_detection_results_memory_usage_label(size_t max_per_day, size_t days_to_retain)
@@ -4457,6 +4476,11 @@ void MainWindow::start_detection()
         time_stream << std::put_time(std::localtime(&now_time_t), "%Y-%m-%d %H:%M:%S");
 
         m_main_detection_start_time_lbl->set_text(time_stream.str());
+
+        // // Save to settings file
+        // std::stringstream settings_content;
+        // settings_content << "start_time=" << time_stream.str() << std::endl;
+        // SettingsService::save_settings(settings_content.str(), "[detection]");
     }
 
     if (m_main_num_anomalies_lbl)
@@ -5055,6 +5079,19 @@ void MainWindow::start_detection()
 
 void MainWindow::stop_detection()
 {
+    // Get the current time
+    auto now = std::chrono::system_clock::now();
+    auto now_time_t = std::chrono::system_clock::to_time_t(now);
+
+    // Format the time as a string
+    std::stringstream time_stream;
+    time_stream << std::put_time(std::localtime(&now_time_t), "%Y-%m-%d %H:%M:%S");
+
+    // // Save 'stop_time' to settings file
+    // std::stringstream settings_content;
+    // settings_content << "stop_time=" << time_stream.str() << std::endl;
+    // SettingsService::save_settings(settings_content.str(), "[detection]");
+
     if (m_processing_thread.joinable()) 
     {
         m_processing_thread.join();  // Wait for previous thread to finish
