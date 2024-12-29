@@ -819,7 +819,6 @@ void MainWindow::load_detection_results()
             listbox_row->add(*row_box);
             // Set margin around the row
             listbox_row->set_margin_top(5);      // Space above the row
-            listbox_row->set_margin_bottom(5);   // Space below the row
             listbox_row->set_margin_start(5);   // Space to the left of the row
             listbox_row->set_margin_end(5);     // Space to the right of the row
             // Add the Gtk::ListBoxRow to the list box
@@ -4479,7 +4478,7 @@ void MainWindow::start_detection()
 
         // // Save to settings file
         // std::stringstream settings_content;
-        // settings_content << "start_time=" << time_stream.str() << std::endl;
+        // settings_content << "last_session_start_time=" << time_stream.str() << std::endl;
         // SettingsService::save_settings(settings_content.str(), "[detection]");
     }
 

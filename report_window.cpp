@@ -1,7 +1,7 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <fstream>
-
+#include <iomanip> // For std::put_time
 #include "report_window.h"
 #include "file_utils.h"
 #include "app_paths.h"
@@ -38,17 +38,17 @@ ReportWindow::ReportWindow(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Buil
     m_refGlade->get_widget("report_display_area", m_report_image_display_area);
     if (m_report_image_display_area)
     {
-        m_report_image_display_area->signal_draw().connect(sigc::mem_fun(*this, &ReportWindow::on_report_image_display_area_draw));
+        m_report_image_display_area->signal_draw().connect(sigc::mem_fun(*this, &ReportWindow::on_report_display_area_draw));
 
-        // // Connect mouse scroll event
-        // m_detection_results_display_area->add_events(Gdk::SCROLL_MASK);
-        // m_detection_results_display_area->signal_scroll_event().connect(sigc::mem_fun(*this, &MainWindow::on_detection_display_area_scroll_event));
+        // Connect mouse scroll event
+        m_report_image_display_area->add_events(Gdk::SCROLL_MASK);
+        m_report_image_display_area->signal_scroll_event().connect(sigc::mem_fun(*this, &ReportWindow::on_report_display_area_scroll_event));
 
         // // Connect mouse press and motion events
-        // m_detection_results_display_area->add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
-        // m_detection_results_display_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_detection_display_area_btn_press_event));
-        // m_detection_results_display_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_detection_display_area_btn_release_event));
-        // m_detection_results_display_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_detection_display_area_motion_notify_event));
+        m_report_image_display_area->add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
+        m_report_image_display_area->signal_button_press_event().connect(sigc::mem_fun(*this, &ReportWindow::on_report_display_area_btn_press_event));
+        m_report_image_display_area->signal_button_release_event().connect(sigc::mem_fun(*this, &ReportWindow::on_report_display_area_btn_release_event));
+        m_report_image_display_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &ReportWindow::on_report_display_area_motion_notify_event));
     }
 
     m_refGlade->get_widget("report_timeline_drawing_area", m_report_timeline_drawing_area);
@@ -57,7 +57,11 @@ ReportWindow::ReportWindow(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Buil
         m_report_timeline_drawing_area->signal_draw().connect(sigc::mem_fun(*this, &ReportWindow::on_report_timeline_draw));
     }
     
+    m_refGlade->get_widget("detection_result_datetime_lbl", m_detection_result_datetime_lbl);
 
+    m_refGlade->get_widget("detection_result_path_lbl", m_detection_result_path_lbl);
+
+    m_refGlade->get_widget("moving_speed_entry", m_moving_speed_entry);
 }
 
 ReportWindow *ReportWindow::create(const std::string &gladeFilePath)
@@ -77,6 +81,24 @@ void ReportWindow::on_window_shown()
     this->set_title("Eagle Eye - Generate Reports");
 }
 
+bool ReportWindow::on_key_press_event(GdkEventKey *key_event)
+{
+    if (key_event->keyval == GDK_KEY_Control_L || key_event->keyval == GDK_KEY_Control_R)
+    {
+        m_ctrl_pressed = true;
+    }
+    return Gtk::Window::on_key_press_event(key_event);
+}
+
+bool ReportWindow::on_key_release_event(GdkEventKey *key_event)
+{
+    if (key_event->keyval == GDK_KEY_Control_L || key_event->keyval == GDK_KEY_Control_R)
+    {
+        m_ctrl_pressed = false;
+    }
+    return Gtk::Window::on_key_release_event(key_event);
+}
+
 void ReportWindow::on_enable_masking_changed()
 {
     m_show_mask_detection_result = m_report_masking_switch->get_active();
@@ -87,11 +109,11 @@ void ReportWindow::on_enable_masking_changed()
     }
 }
 
-bool ReportWindow::on_report_image_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+bool ReportWindow::on_report_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
 {
     // Apply zoom and pan transformations
-    // cr->translate(m_offset_x_detection, m_offset_y_detection);   // Apply panning offset
-    // cr->scale(m_zoom_factor_detection, m_zoom_factor_detection); // Apply zoom
+    cr->translate(m_offset_x, m_offset_y);   // Apply panning offset
+    cr->scale(m_zoom_factor, m_zoom_factor); // Apply zoom
 
     // Draw the images
     if (m_image_pixbuf_detection_result)
@@ -110,54 +132,92 @@ bool ReportWindow::on_report_image_display_area_draw(const Cairo::RefPtr<Cairo::
     return true;
 }
 
-bool ReportWindow::on_report_timeline_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+bool ReportWindow::on_report_display_area_scroll_event(GdkEventScroll *scroll_event)
 {
-    // Get the DrawingArea dimensions
-    int width = m_report_timeline_drawing_area->get_allocated_width();
-    int height = m_report_timeline_drawing_area->get_allocated_height();
-
-    // Draw the timeline (horizontal line)
-    cr->set_line_width(height / 2);
-    cr->set_source_rgb(0, 0, 0); // Black
-    cr->move_to(0, height / 2);
-    cr->line_to(width, height / 2);
-    cr->stroke();
-
-    // Draw events
-    auto events = {50, 150, 200};
-    for (const auto& event : events) {
-        // Draw the vertical line
-        cr->set_line_width(2.0);
-        cr->set_source_rgb(1.0, 0.5, 0.0); // Amber
-        cr->move_to(event, 15);
-        cr->line_to(event, height - 15);
-        cr->stroke();
-
-        // Draw event position text at the bottom
-        cr->set_source_rgb(0.0, 0.0, 0.0); // Black
-        std::ostringstream oss;
-        oss << event; // Example: Use actual event time if available
-        cr->move_to(event - 10, height - 5); // Slightly offset for better alignment
-        cr->show_text(oss.str());
-        cr->stroke();
-
-        // Highlight selected event
-        if (event == 150)
+    if (m_ctrl_pressed)
+    {
+        // Adjust alpha when Ctrl is pressed
+        if (scroll_event->direction == GDK_SCROLL_UP)
         {
-            // Draw a triangle at the top of the selected event line
-            const double triangle_size = 10.0; // Size of the triangle
-            cr->set_source_rgb(1.0, 0.5, 0.0); // Amber
-            cr->move_to(event, 15);           // Top point of the triangle
-            cr->line_to(event - triangle_size, 0); // Bottom-left point
-            cr->line_to(event + triangle_size, 0); // Bottom-right point
-            cr->close_path();
-            cr->fill();
+            m_mask_alpha = std::min(m_mask_alpha + 0.1, 1.0); // Max alpha is 1.0
+        }
+        else if (scroll_event->direction == GDK_SCROLL_DOWN)
+        {
+            m_mask_alpha = std::max(m_mask_alpha - 0.1, 0.1); // Min alpha is 0.1
+        }
+
+        update_mask_alpha(m_mask_pixbuf_detection_result, m_mask_alpha * 255);
+    }
+    else
+    {
+        const double zoom_step = 0.1;
+
+        if (scroll_event->direction == GDK_SCROLL_UP)
+        {
+            m_zoom_factor += zoom_step;
+        }
+        else if (scroll_event->direction == GDK_SCROLL_DOWN)
+        {
+            m_zoom_factor = std::max(zoom_step, m_zoom_factor - zoom_step);
         }
     }
 
+    // Trigger a redraw of the drawing area
+    m_report_image_display_area->queue_draw();
+
+    // Return true to indicate that the event has been handled
     return true;
 }
 
+bool ReportWindow::on_report_display_area_btn_press_event(GdkEventButton *button_event)
+{
+    if (button_event->button == 1)
+    {
+        // Start dragging
+        m_is_dragging = true;
+        m_drag_start_x = button_event->x;
+        m_drag_start_y = button_event->y;
+    }
+
+    // Return true to indicate that the event has been handled
+    return true;
+}
+
+bool ReportWindow::on_report_display_area_btn_release_event(GdkEventButton *button_event)
+{
+    if (button_event->button == 1)
+    {
+        // Stop dragging
+        m_is_dragging = false;
+    }
+    
+    // Return true to indicate that the event has been handled
+    return true;
+}
+
+bool ReportWindow::on_report_display_area_motion_notify_event(GdkEventMotion *motion_event)
+{
+    if (m_is_dragging)
+    {
+        // Calculate the distance moved
+        double deltaX = motion_event->x - m_drag_start_x;
+        double deltaY = motion_event->y - m_drag_start_y;
+
+        // Update the panning offset
+        m_offset_x += deltaX;
+        m_offset_y += deltaY;
+
+        // Update the start position for the next motion event
+        m_drag_start_x = motion_event->x;
+        m_drag_start_y = motion_event->y;
+    }
+
+    // Trigger a redraw of the drawing area
+    m_report_image_display_area->queue_draw();
+
+    // Return true to indicate that the event has been handled
+    return true;
+}
 
 void ReportWindow::load_detection_result(std::string &detection_result_folder)
 {
@@ -318,26 +378,96 @@ void ReportWindow::load_detection_result(std::string &detection_result_folder)
     }
 }
 
+bool ReportWindow::on_report_timeline_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+{
+    // Get the DrawingArea dimensions
+    int width = m_report_timeline_drawing_area->get_allocated_width();
+    int height = m_report_timeline_drawing_area->get_allocated_height();
+
+    // Draw the timeline (horizontal line)
+    cr->set_line_width(height);
+    cr->set_source_rgb(0, 0, 0); // Black
+    cr->move_to(0, height / 2);
+    cr->line_to(width, height / 2);
+    cr->stroke();
+
+    std::string session_start_time = "2024-12-27 22:38:06";
+    std::string session_end_time = "2024-12-27 22:38:28";
+    auto session_start_tp = parse_time(session_start_time);
+    auto session_end_tp = parse_time(session_end_time);
+    auto session_duration = session_end_tp - session_start_tp;
+
+    // Draw detection results
+    for (const auto &result_folder : m_detection_results_in_report)
+    {
+        auto creation_time = FileUtils::get_creation_time(result_folder.string());
+        if (creation_time.has_value())
+        {
+            auto x = (*creation_time - session_start_tp) * width / session_duration;
+            auto creation_time_time_t = std::chrono::system_clock::to_time_t(*creation_time);
+
+            // Draw the vertical line
+            cr->set_line_width(2.0);
+            cr->set_source_rgb(1.0, 0.5, 0.0); // Amber
+            cr->move_to(x, 0);
+            cr->line_to(x, height);
+            cr->stroke();
+        }
+        else
+        {
+            std::cerr << "Error: Creation time is not available for this folder." << std::endl;
+        }
+    }
+
+    // Highlight selected result
+    auto creation_time = FileUtils::get_creation_time(m_selected_detection_result_in_report);
+    if (creation_time.has_value())
+    {
+        // Draw a triangle at the top of the selected event line
+        auto x = (*creation_time - session_start_tp) * width / session_duration;
+        const double triangle_size = 10.0; // Size of the triangle
+        cr->set_source_rgb(1.0, 0.5, 0.0); // Amber
+        cr->move_to(x, 15);           // Top point of the triangle
+        cr->line_to(x - triangle_size, 0); // Bottom-left point
+        cr->line_to(x + triangle_size, 0); // Bottom-right point
+        cr->close_path();
+        cr->fill();
+
+        // // Draw event position text at the bottom
+        // auto creation_time_time_t = std::chrono::system_clock::to_time_t(*creation_time);
+        // cr->set_source_rgb(0.0, 0.0, 0.0); // Black
+        // std::ostringstream oss;
+        // oss << ctime(&creation_time_time_t);
+        // cr->move_to(x - 30, height - 5); // Slightly offset for better alignment
+        // cr->show_text(oss.str());
+        // cr->stroke();
+    }
+    else
+    {
+        std::cerr << "Error: Creation time is not available for this folder." << std::endl;
+    }
+
+    return true;
+}
+
 void ReportWindow::on_report_time_range_selector_changed()
 {
     auto selected_time_range = m_report_time_range_selector_cbox->get_active_text();
 
     // Update report start and end time
 
-    // Load transactions list
-    std::vector<std::filesystem::path> recent_results_folders;
-    
+    // Load transactions list    
     if (selected_time_range == "Last Session")
     {
-        std::string session_start_time = "2024-12-26 15:41:44";
-        std::string session_end_time = "2024-12-26 15:43:10";
+        std::string session_start_time = "2024-12-27 22:38:06";
+        std::string session_end_time = "2024-12-27 22:38:28";
         auto session_start_tp = parse_time(session_start_time);
         auto session_end_tp = parse_time(session_end_time);
-        recent_results_folders = FileUtils::get_folders_by_time(AppPaths::Detection_Results_Path, session_start_tp, session_end_tp);
+        m_detection_results_in_report = FileUtils::get_folders_by_time(AppPaths::Detection_Results_Path, session_start_tp, session_end_tp);
     }
 
     // Populating the detection results list box with rows
-    for (const auto &result_folder : recent_results_folders)
+    for (const auto &result_folder : m_detection_results_in_report)
     {
         std::cout << result_folder << std::endl;
 
@@ -349,10 +479,9 @@ void ReportWindow::on_report_time_range_selector_changed()
         auto listbox_row = Gtk::make_managed<Gtk::ListBoxRow>();
         listbox_row->add(*row_box);
         // Set margin around the row
-        listbox_row->set_margin_top(5);      // Space above the row
-        listbox_row->set_margin_bottom(5);   // Space below the row
-        listbox_row->set_margin_start(5);   // Space to the left of the row
-        listbox_row->set_margin_end(5);     // Space to the right of the row
+        listbox_row->set_margin_top(5);
+        listbox_row->set_margin_start(5);
+        listbox_row->set_margin_end(5);
         // Add the Gtk::ListBoxRow to the list box
         m_report_transactions_listbox->append(*listbox_row);
         // Show all the newly added widgets
@@ -367,6 +496,10 @@ void ReportWindow::on_report_time_range_selector_changed()
     }
 
     // Load timeline
+    if (m_report_timeline_drawing_area)
+    {
+        m_report_timeline_drawing_area->queue_draw();
+    }
 }
 
 void ReportWindow::on_transaction_selected(Gtk::ListBoxRow* row)
@@ -376,9 +509,38 @@ void ReportWindow::on_transaction_selected(Gtk::ListBoxRow* row)
         auto row_box = dynamic_cast<Gtk::Box*>(row->get_child());
         if (row_box)
         {
-            std::string result_folder = row_box->get_tooltip_text();
-            std::cout << "Selected row: " << result_folder << std::endl;
-            load_detection_result(result_folder);
+            m_selected_detection_result_in_report = row_box->get_tooltip_text();
+            std::cout << "Selected row: " << m_selected_detection_result_in_report << std::endl;
+            load_detection_result(m_selected_detection_result_in_report);
+
+            // Redraw timeline and indicator
+            if (m_report_timeline_drawing_area)
+            {
+                m_report_timeline_drawing_area->queue_draw();
+            }
+
+            // Update properties panel
+            if (m_detection_result_datetime_lbl)
+            {
+                auto creation_time = FileUtils::get_creation_time(m_selected_detection_result_in_report);
+                if (creation_time.has_value())
+                {
+                    auto creation_time_time_t = std::chrono::system_clock::to_time_t(*creation_time);
+                    std::ostringstream oss;
+                    // Format the time using std::put_time
+                    oss << std::put_time(std::localtime(&creation_time_time_t), "%Y-%m-%d %H:%M:%S");
+                    m_detection_result_datetime_lbl->set_text(oss.str());
+                }
+                else
+                {
+                    m_detection_result_datetime_lbl->set_text("N/A");
+                }
+            }
+
+            if (m_detection_result_path_lbl)
+            {
+                m_detection_result_path_lbl->set_text(m_selected_detection_result_in_report);
+            }
         }
     }
     else

@@ -4,7 +4,7 @@
 #include "retention_manager.h"
 
 int main(int argc, char **argv)
-{   
+{
     // Create a shared Logger instance
     std::shared_ptr<Logger> logger = std::make_shared<Logger>(AppPaths::Log_File_Path.string());
     logger->log("app started");

@@ -1,3 +1,5 @@
+#include <sys/syscall.h> // For syscall() and SYS_statx
+#include <fcntl.h>      // For AT_FDCWD and AT_NO_AUTOMOUNT
 #include "file_utils.h"
 
 std::string FileUtils::getGladeFilePath()
@@ -135,21 +137,13 @@ bool FileUtils::directoryExists(const std::string &parent, const std::string &su
     return Glib::file_test(path, Glib::FILE_TEST_IS_DIR);
 }
 
-template <typename TP>
-std::time_t to_time_t(TP tp)
-{
-    using namespace std::chrono;
-    auto sctp = time_point_cast<system_clock::duration>(tp - TP::clock::now() + system_clock::now());
-    return system_clock::to_time_t(sctp);
-}
-
-std::vector<std::filesystem::path> FileUtils::get_folders_by_time(const std::filesystem::path& directory, const std::chrono::system_clock::time_point &start_time, const std::chrono::system_clock::time_point &end_time)
+std::vector<std::filesystem::path> FileUtils::get_folders_by_time(const std::filesystem::path &directory, const std::chrono::system_clock::time_point &start_time, const std::chrono::system_clock::time_point &end_time)
 {
     std::vector<std::filesystem::path> matching_folders;
 
     try
     {
-        // Collect folders, sort them by modification time
+        // Collect folders, sort them by creation time
         std::vector<std::filesystem::directory_entry> directories;
         for (const auto &entry : std::filesystem::directory_iterator(directory))
         {
@@ -160,24 +154,37 @@ std::vector<std::filesystem::path> FileUtils::get_folders_by_time(const std::fil
         }
 
         std::sort(directories.begin(), directories.end(), [](const std::filesystem::directory_entry &a, const std::filesystem::directory_entry &b)
-                  { return std::filesystem::last_write_time(a) < std::filesystem::last_write_time(b); });
+        {
+            auto creation_time_a = FileUtils::get_creation_time(a.path().string());
+            auto creation_time_b = FileUtils::get_creation_time(b.path().string());
 
-        // Iterate through sorted directories and filter by modification time
+            // If creation time is unavailable, treat it as later than any valid time
+            if (!creation_time_a) return false;
+            if (!creation_time_b) return true;
+
+            return *creation_time_a < *creation_time_b;
+        });
+
+        // Iterate through sorted directories and filter by creation time
         for (const auto &entry : directories)
         {
-            auto mod_time = std::filesystem::last_write_time(entry);
-            auto mod_time_t = to_time_t(mod_time);
-            auto mod_tp = std::chrono::system_clock::from_time_t(mod_time_t);
+            auto creation_time = FileUtils::get_creation_time(entry.path().string());
 
-            if (mod_tp > end_time)
+            if (!creation_time)
+            {
+                std::cerr << "Failed to retrieve creation time for: " << entry.path() << std::endl;
+                continue;
+            }
+
+            if (*creation_time > end_time)
             {
                 // Early quit: subsequent folders will also be out of range
                 break;
             }
 
-            if (mod_tp >= start_time && mod_tp <= end_time)
+            if (*creation_time >= start_time && *creation_time <= end_time)
             {
-                matching_folders.push_back(entry.path().string());
+                matching_folders.push_back(entry.path());
             }
         }
     }
@@ -242,5 +249,24 @@ void FileUtils::delete_all_in_directory(std::filesystem::path dir_path)
     catch (const std::exception &e)
     {
         std::cerr << "General error: " << e.what() << std::endl;
+    }
+}
+
+std::optional<std::chrono::system_clock::time_point> FileUtils::get_creation_time(const std::string &folderPath)
+{
+    struct statx statxBuf;
+    int result = syscall(SYS_statx, AT_FDCWD, folderPath.c_str(), AT_NO_AUTOMOUNT, STATX_BTIME, &statxBuf);
+
+    if (result == 0 && (statxBuf.stx_mask & STATX_BTIME))
+    {
+        // Convert the `stx_btime` to std::chrono::system_clock::time_point
+        auto btime = std::chrono::system_clock::from_time_t(statxBuf.stx_btime.tv_sec);
+        btime += std::chrono::nanoseconds(statxBuf.stx_btime.tv_nsec);
+        return btime;
+    }
+    else
+    {
+        std::cerr << "Creation time not available or syscall failed on: " << folderPath << strerror(errno) << std::endl;
+        return std::nullopt;
     }
 }
