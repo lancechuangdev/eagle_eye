@@ -46,14 +46,10 @@
 void RetentionManager::enforce_daily_limit()
 {
     auto max_per_day = 1000;
-    auto settings = SettingsService::get_settings("[detection]");
-    for (const auto &[key, value] : settings)
+    auto detection_settings = SettingsService::get_settings("detection");
+    if (!detection_settings.empty())
     {
-        if (key == "max_per_day")
-        {
-            max_per_day = std::stod(value);
-            break;
-        }
+        max_per_day = detection_settings["max_per_day"];
     }
 
     try
@@ -114,14 +110,10 @@ void RetentionManager::enforce_daily_limit(const std::filesystem::path& path, in
 void RetentionManager::enforce_archive_retention()
 {
     auto days_to_retain = 30;
-    auto settings = SettingsService::get_settings("[detection]");
-    for (const auto &[key, value] : settings)
+    auto detection_settings = SettingsService::get_settings("detection");
+    if (!detection_settings.empty())
     {
-        if (key == "days_to_retain")
-        {
-            days_to_retain = std::stod(value);
-            break;
-        }
+        days_to_retain = detection_settings["days_to_retain"];
     }
 
     // Enforce max_to_retain in archive path

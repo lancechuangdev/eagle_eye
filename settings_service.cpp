@@ -1,136 +1,114 @@
 #include <fstream>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include "settings_service.h"
 #include "app_paths.h"
 #include "file_utils.h"
-#include "web_socket_client.h"
 
-std::map<std::string, std::string> SettingsService::get_settings(const std::string &settings_header)
+nlohmann::json SettingsService::get_settings(const std::string &section_name)
 {
-    std::map<std::string, std::string> settings;
+    nlohmann::json settings;
 
-    // Step 1: Read the content of the settings file
-    auto path = AppPaths::Settings_File_Path.string();
-    std::ifstream settingsFile(path);
-    if (!settingsFile.is_open())
+    // Step 1: Read the JSON file
+    std::ifstream settings_file(AppPaths::Settings_File_Path.string());
+    if (!settings_file.is_open())
     {
         std::cerr << "Unable to open settings file: " << AppPaths::Settings_File_Path.string() << std::endl;
         return settings;
     }
 
-    std::stringstream buffer;
-    buffer << settingsFile.rdbuf();
-    settingsFile.close();
-    std::string content = buffer.str();
-
-    // Step 2: Find the requested section
-    size_t sectionPos = content.find(settings_header);
-    if (sectionPos == std::string::npos)
+    try
     {
-        // Section not found
-        return settings;
-    }
+        // Parse the JSON content
+        nlohmann::json json_content;
+        settings_file >> json_content;
+        settings_file.close();
 
-    // Step 3: Extract the section content
-    size_t nextSectionPos = content.find('[', sectionPos + 1); // Find the next section's starting position
-    std::string sectionContent;
-    if (nextSectionPos == std::string::npos)
-    {
-        // Section is the last one in the file
-        sectionContent = content.substr(sectionPos + settings_header.length());
-    }
-    else
-    {
-        // Extract content up to the next section
-        sectionContent = content.substr(sectionPos + settings_header.length(), nextSectionPos - sectionPos - settings_header.length());
-    }
-
-    // Step 4: Parse the key-value pairs
-    std::istringstream sectionStream(sectionContent);
-    std::string line;
-    while (std::getline(sectionStream, line))
-    {
-        // Trim whitespace
-        line.erase(0, line.find_first_not_of(" \t\r\n"));
-        line.erase(line.find_last_not_of(" \t\r\n") + 1);
-
-        // Split the line into key and value
-        size_t delimiterPos = line.find('=');
-        if (delimiterPos != std::string::npos)
+        // Check if the section exists
+        if (json_content.contains(section_name))
         {
-            std::string key = line.substr(0, delimiterPos);
-            std::string value = line.substr(delimiterPos + 1);
-
-            // Trim whitespace from key and value
-            key.erase(0, key.find_first_not_of(" \t\r\n"));
-            key.erase(key.find_last_not_of(" \t\r\n") + 1);
-            value.erase(0, value.find_first_not_of(" \t\r\n"));
-            value.erase(value.find_last_not_of(" \t\r\n") + 1);
-
-            settings[key] = value;
+            // Extract the section as a JSON object
+            settings = json_content[section_name];
         }
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error reading JSON settings: " << e.what() << std::endl;
     }
 
     return settings;
 }
 
-void SettingsService::save_settings(std::string &settings_to_save, std::string &settings_header)
+void SettingsService::save_settings(const std::string &section_name, const nlohmann::json &new_settings) 
 {
-    if (!FileUtils::createFile(AppPaths::Settings_File_Path.string()))
+    auto settings_file_path = AppPaths::Settings_File_Path.string();
+
+    // Ensure the settings file exists with empty JSON content if it doesn't exist
+    if (!std::filesystem::exists(settings_file_path)) 
     {
+        std::ofstream new_file(settings_file_path, std::ios::out | std::ios::trunc);
+        if (new_file.is_open()) 
+        {
+            new_file << "{}";
+            new_file.close();
+        } 
+        else 
+        {
+            std::cerr << "Unable to create settings file: " << settings_file_path << std::endl;
+            return;
+        }
+    }
+
+    // Read the existing JSON content
+    std::ifstream settings_file(settings_file_path);
+    nlohmann::json json_data;
+    if (settings_file.is_open()) 
+    {
+        try 
+        {
+            settings_file >> json_data;
+        } 
+        catch (const std::exception& e) 
+        {
+            std::cerr << "Error reading JSON from settings file: " << e.what() << std::endl;
+            settings_file.close();
+            return;
+        }
+        settings_file.close();
+    } 
+    else 
+    {
+        std::cerr << "Unable to open settings file: " << settings_file_path << std::endl;
         return;
     }
 
-    // Step 1: Read the existing content of the file
-    std::ifstream settingsFile(AppPaths::Settings_File_Path.string());
-    std::stringstream buffer;
-    if (settingsFile.is_open())
+    // Update or create the specified section
+    if (!json_data.contains(section_name)) 
     {
-        buffer << settingsFile.rdbuf();
-        settingsFile.close();
+        json_data[section_name] = nlohmann::json::object();
     }
-    else
+
+    for (const auto& [key, value] : new_settings.items()) 
     {
-        std::cerr << "Unable to open settings file: " << AppPaths::Settings_File_Path.string() << std::endl;
+        json_data[section_name][key] = value;
     }
-    std::string content = buffer.str();
 
-    // Step 2: Find if the section for the device already exists
-    size_t sectionPos = content.find(settings_header);
-    bool sectionExists = (sectionPos != std::string::npos);
-
-    if (sectionExists)
+    // Write the updated JSON content back to the file
+    std::ofstream out_file(settings_file_path, std::ios::out | std::ios::trunc);
+    if (out_file.is_open()) 
     {
-        // Step 3: If the section exists, replace its contents
-        size_t nextSectionPos = content.find('[', sectionPos + 1); // Find the next section's starting position
-
-        // Replace the old section with the new one
-        if (nextSectionPos == std::string::npos)
+        try 
         {
-            // The section is the last one, so replace to the end of the file
-            content.replace(sectionPos, std::string::npos, settings_to_save);
-        }
-        else
+            out_file << json_data.dump(4);
+        } 
+        catch (const std::exception& e) 
         {
-            // Replace up to the next section
-            content.replace(sectionPos, nextSectionPos - sectionPos, settings_to_save);
+            std::cerr << "Error writing JSON to settings file: " << e.what() << std::endl;
         }
-    }
-    else
+        out_file.close();
+    } 
+    else 
     {
-        // Step 4: If the section doesn't exist, append the new section at the end
-        content += settings_to_save;
-    }
-
-    // Step 5: Write the updated content back to the file (overwrite)
-    std::ofstream outFile(AppPaths::Settings_File_Path.string());
-    if (outFile.is_open()) 
-    {
-        outFile << content;
-        outFile.close();
-    }
-    else
-    {
-        std::cerr << "Unable to open settings file for writing." << std::endl;
+        std::cerr << "Unable to open settings file for writing: " << settings_file_path << std::endl;
     }
 }
