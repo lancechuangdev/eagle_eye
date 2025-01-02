@@ -175,6 +175,7 @@ def message_received(client, server, message):
     data = json.loads(message)
     frames_array = data.get('frames', [])
     transaction_id = data.get('transaction_id', 0)
+    transaction_datetime = data.get('transaction_datetime', '')
     confidence_threshold = data.get('confidence_threshold', 0.8)
     pixel_threshold = data.get('pixel_threshold', 0.03)
     pixel_threshold = pixel_threshold * patch_size * patch_size
@@ -189,6 +190,7 @@ def message_received(client, server, message):
     # Build the initial transaction json object
     transaction_json = {
         "transaction_id": transaction_id,
+        "transaction_datetime": transaction_datetime,
         "patch_size": patch_size,
         "confidence_threshold": confidence_threshold,
         "pixel_threshold": pixel_threshold,

@@ -4693,9 +4693,13 @@ void MainWindow::start_detection()
                 pixel_threshold = detection_settings["pixel_threshold"];
             }
 
+            // Get current Datetime
+            std::string datetime = TimeUtils::get_current_time();
+
             // Send the command to the ws server
             nlohmann::json json_data;
             json_data["transaction_id"] = m_trans_id;
+            json_data["transaction_datetime"] = datetime;
             json_data["confidence_threshold"] = confidence_threshold;
             json_data["pixel_threshold"] = pixel_threshold;
             json_data["frame_width"] = frame_width;
