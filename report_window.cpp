@@ -590,19 +590,31 @@ void ReportWindow::on_transaction_selected(Gtk::ListBoxRow* row)
             // Update properties panel
             if (m_detection_result_datetime_lbl)
             {
-                auto creation_time = FileUtils::get_creation_time(m_selected_detection_result_in_report);
-                if (creation_time.has_value())
+                std::string transaction_datetime = "N/A";
+                std::filesystem::path trans_json_path = std::filesystem::path(m_selected_detection_result_in_report) / "transaction_data.json";
+                if (std::filesystem::exists(trans_json_path))
                 {
-                    auto creation_time_time_t = std::chrono::system_clock::to_time_t(*creation_time);
-                    std::ostringstream oss;
-                    // Format the time using std::put_time
-                    oss << std::put_time(std::localtime(&creation_time_time_t), "%Y-%m-%d %H:%M:%S");
-                    m_detection_result_datetime_lbl->set_text(oss.str());
+                    // Read the content of the JSON file
+                    std::ifstream json_file(trans_json_path);
+                    if (json_file.is_open())
+                    {
+                        // Parse the JSON content
+                        nlohmann::json json_data;
+                        try
+                        {
+                            json_file >> json_data;
+                            json_file.close();
+
+                            transaction_datetime = json_data["transaction_datetime"];
+                        }
+                        catch (const std::exception& e)
+                        {
+                            std::cerr << e.what() << '\n';
+                        }
+                    }
                 }
-                else
-                {
-                    m_detection_result_datetime_lbl->set_text("N/A");
-                }
+
+                m_detection_result_datetime_lbl->set_text(transaction_datetime);
             }
 
             if (m_detection_result_path_lbl)
@@ -642,6 +654,7 @@ void ReportWindow::on_save_report_clicked()
             std::cout << "File selected to save: " << file_path << std::endl;
 
             // Save the file
+
             std::ofstream outfile(file_path);
             if (outfile)
             {
