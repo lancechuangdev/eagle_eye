@@ -2,9 +2,12 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iomanip> // For std::put_time
+#include <gtkmm.h>
 #include "report_window.h"
 #include "file_utils.h"
+#include "time_utils.h"
 #include "app_paths.h"
+#include "settings_service.h"
 
 ReportWindow::ReportWindow(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Builder> &refGlade)
     : Gtk::Window(cobject), m_refGlade(refGlade)
@@ -18,6 +21,10 @@ ReportWindow::ReportWindow(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Buil
     }
 
     m_refGlade->get_widget("report_progress_bar", m_report_progress_bar);
+
+    m_refGlade->get_widget("report_start_time_lbl", m_report_start_time_lbl);
+
+    m_refGlade->get_widget("report_end_time_lbl", m_report_end_time_lbl);
 
     m_refGlade->get_widget("report_masking_switch", m_report_masking_switch);
     if (m_report_masking_switch)
@@ -62,6 +69,12 @@ ReportWindow::ReportWindow(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Buil
     m_refGlade->get_widget("detection_result_path_lbl", m_detection_result_path_lbl);
 
     m_refGlade->get_widget("moving_speed_entry", m_moving_speed_entry);
+
+    m_refGlade->get_widget("save_report_btn", m_save_report_btn);
+    if (m_save_report_btn)
+    {
+        m_save_report_btn->signal_clicked().connect(sigc::mem_fun(*this, &ReportWindow::on_save_report_clicked));
+    }
 }
 
 ReportWindow *ReportWindow::create(const std::string &gladeFilePath)
@@ -78,7 +91,7 @@ ReportWindow *ReportWindow::create(const std::string &gladeFilePath)
 
 void ReportWindow::on_window_shown()
 {
-    this->set_title("Eagle Eye - Generate Reports");
+    this->set_title("Eagle Eye - Create Reports");
 }
 
 bool ReportWindow::on_key_press_event(GdkEventKey *key_event)
@@ -391,11 +404,17 @@ bool ReportWindow::on_report_timeline_draw(const Cairo::RefPtr<Cairo::Context> &
     cr->line_to(width, height / 2);
     cr->stroke();
 
-    std::string session_start_time = "2024-12-27 22:38:06";
-    std::string session_end_time = "2024-12-27 22:38:28";
-    auto session_start_tp = parse_time(session_start_time);
-    auto session_end_tp = parse_time(session_end_time);
-    auto session_duration = session_end_tp - session_start_tp;
+    auto start_time_str = m_report_start_time_lbl->get_text();
+    auto end_time_str = m_report_end_time_lbl->get_text();
+
+    if (start_time_str == "N/A" || end_time_str == "N/A")
+    {
+        return true;
+    }
+
+    auto start_tp = TimeUtils::parse_time(start_time_str);
+    auto end_tp = TimeUtils::parse_time(end_time_str);
+    auto session_duration = end_tp - start_tp;
 
     // Draw detection results
     for (const auto &result_folder : m_detection_results_in_report)
@@ -403,7 +422,7 @@ bool ReportWindow::on_report_timeline_draw(const Cairo::RefPtr<Cairo::Context> &
         auto creation_time = FileUtils::get_creation_time(result_folder.string());
         if (creation_time.has_value())
         {
-            auto x = (*creation_time - session_start_tp) * width / session_duration;
+            auto x = (*creation_time - start_tp) * width / session_duration;
             auto creation_time_time_t = std::chrono::system_clock::to_time_t(*creation_time);
 
             // Draw the vertical line
@@ -424,7 +443,7 @@ bool ReportWindow::on_report_timeline_draw(const Cairo::RefPtr<Cairo::Context> &
     if (creation_time.has_value())
     {
         // Draw a triangle at the top of the selected event line
-        auto x = (*creation_time - session_start_tp) * width / session_duration;
+        auto x = (*creation_time - start_tp) * width / session_duration;
         const double triangle_size = 10.0; // Size of the triangle
         cr->set_source_rgb(1.0, 0.5, 0.0); // Amber
         cr->move_to(x, 15);           // Top point of the triangle
@@ -453,17 +472,66 @@ bool ReportWindow::on_report_timeline_draw(const Cairo::RefPtr<Cairo::Context> &
 void ReportWindow::on_report_time_range_selector_changed()
 {
     auto selected_time_range = m_report_time_range_selector_cbox->get_active_text();
+    std::string start_time = "N/A";
+    std::string end_time = TimeUtils::get_current_time();
 
-    // Update report start and end time
-
-    // Load transactions list    
     if (selected_time_range == "Last Session")
     {
-        std::string session_start_time = "2024-12-27 22:38:06";
-        std::string session_end_time = "2024-12-27 22:38:28";
-        auto session_start_tp = parse_time(session_start_time);
-        auto session_end_tp = parse_time(session_end_time);
-        m_detection_results_in_report = FileUtils::get_folders_by_time(AppPaths::Detection_Results_Path, session_start_tp, session_end_tp);
+        auto detection_settings = SettingsService::get_settings("detection");
+        if (!detection_settings.empty())
+        {
+            if (detection_settings.contains("last_session_start_time"))
+            {
+                start_time = detection_settings["last_session_start_time"];
+            }
+
+            if (detection_settings.contains("last_session_end_time"))
+            {
+                end_time = detection_settings["last_session_end_time"];
+            }
+        }
+    }
+    else if (selected_time_range == "Past 15 Minutes")
+    {
+        start_time = TimeUtils::get_time_minutes_ago(15);
+    }
+    else if (selected_time_range == "Past 1 Hour")
+    {
+        start_time = TimeUtils::get_time_hours_ago(1);
+    }
+    else if (selected_time_range == "Past 4 Hours")
+    {
+        start_time = TimeUtils::get_time_hours_ago(4);
+    }
+    else if (selected_time_range == "Past 8 Hours")
+    {
+        start_time = TimeUtils::get_time_hours_ago(8);
+    }
+    else if (selected_time_range == "Past 24 Hours")
+    {
+        start_time = TimeUtils::get_time_hours_ago(24);
+    }
+
+    if (m_report_start_time_lbl)
+    {
+        m_report_start_time_lbl->set_text(start_time);
+    }
+
+    if (m_report_end_time_lbl)
+    {
+        m_report_end_time_lbl->set_text(end_time);
+    }
+
+    auto start_tp = TimeUtils::parse_time(start_time);
+    auto end_tp = TimeUtils::parse_time(end_time);
+
+    // Load transactions list
+    m_detection_results_in_report = FileUtils::get_folders_by_time(AppPaths::Detection_Results_Path, start_tp, end_tp);
+
+    // Clear the resutls before loading
+    for (auto *child : m_report_transactions_listbox->get_children())
+    {
+        m_report_transactions_listbox->remove(*child);
     }
 
     // Populating the detection results list box with rows
@@ -510,7 +578,7 @@ void ReportWindow::on_transaction_selected(Gtk::ListBoxRow* row)
         if (row_box)
         {
             m_selected_detection_result_in_report = row_box->get_tooltip_text();
-            std::cout << "Selected row: " << m_selected_detection_result_in_report << std::endl;
+            // std::cout << "Selected row: " << m_selected_detection_result_in_report << std::endl;
             load_detection_result(m_selected_detection_result_in_report);
 
             // Redraw timeline and indicator
@@ -549,16 +617,52 @@ void ReportWindow::on_transaction_selected(Gtk::ListBoxRow* row)
     }
 }
 
-std::chrono::system_clock::time_point ReportWindow::parse_time(const std::string &time_str)
+void ReportWindow::on_save_report_clicked()
 {
-    std::tm tm = {};
-    std::istringstream ss(time_str);
-    ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-    if (ss.fail())
+    // Create a FileChooserDialog in Save mode
+    Gtk::FileChooserDialog dialog("Save File", Gtk::FileChooserAction::FILE_CHOOSER_ACTION_SAVE);
+    // dialog.set_transient_for(this);
+
+    // Add buttons for user actions
+    dialog.add_button("_Cancel", Gtk::ResponseType::RESPONSE_REJECT);
+    dialog.add_button("_Save", Gtk::ResponseType::RESPONSE_ACCEPT);
+
+    // Set default filename (optional)
+    dialog.set_current_name("detection_report.csv");
+
+    // Show the dialog and wait for user response
+    int result = dialog.run();
+
+    switch (result)
     {
-        throw std::runtime_error("Failed to parse time: " + time_str);
+        case Gtk::ResponseType::RESPONSE_ACCEPT:
+        {
+            // Get the selected file path
+            std::string file_path = dialog.get_filename();
+            std::cout << "File selected to save: " << file_path << std::endl;
+
+            // Save the file
+            std::ofstream outfile(file_path);
+            if (outfile)
+            {
+                outfile << "Your data here..." << std::endl;
+                outfile.close();
+                std::cout << "File saved successfully." << std::endl;
+            }
+            else
+            {
+                std::cerr << "Error saving file!" << std::endl;
+            }
+            break;
+        }
+        case Gtk::ResponseType::RESPONSE_REJECT:
+            std::cout << "Save operation canceled." << std::endl;
+            break;
+
+        default:
+            std::cout << "Unexpected response." << std::endl;
+            break;
     }
-    return std::chrono::system_clock::from_time_t(std::mktime(&tm));
 }
 
 void ReportWindow::update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf)

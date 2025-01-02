@@ -4,6 +4,7 @@
 #include "retention_manager.h"
 #include "constants.h"
 #include "report_window.h"
+#include "time_utils.h"
 
 MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &refBuilder, std::shared_ptr<Logger> logger)
     : Gtk::Window(obj),
@@ -836,7 +837,7 @@ void MainWindow::on_detection_result_selected(Gtk::ListBoxRow* row)
         if (row_box)
         {
             std::string result_folder = row_box->get_tooltip_text();
-            std::cout << "Selected row: " << result_folder << std::endl;
+            // std::cout << "Selected row: " << result_folder << std::endl;
             load_detection_result(result_folder);
         }
     }
@@ -4368,19 +4369,15 @@ void MainWindow::start_detection()
     if (m_main_detection_start_time_lbl)
     {
         // Get the current time
-        auto now = std::chrono::system_clock::now();
-        auto now_time_t = std::chrono::system_clock::to_time_t(now);
+        auto now = TimeUtils::get_current_time();
 
-        // Format the time as a string
-        std::stringstream time_stream;
-        time_stream << std::put_time(std::localtime(&now_time_t), "%Y-%m-%d %H:%M:%S");
+        // Show start time
+        m_main_detection_start_time_lbl->set_text(now);
 
-        m_main_detection_start_time_lbl->set_text(time_stream.str());
-
-        // // Save to settings file
-        // std::stringstream settings_content;
-        // settings_content << "last_session_start_time=" << time_stream.str() << std::endl;
-        // SettingsService::save_settings(settings_content.str(), "[detection]");
+        // Save start time to settings file
+        nlohmann::json new_setting;
+        new_setting["last_session_start_time"] = now;
+        SettingsService::save_settings("detection", new_setting);
     }
 
     if (m_main_num_anomalies_lbl)
@@ -4972,19 +4969,14 @@ void MainWindow::start_detection()
 void MainWindow::stop_detection()
 {
     // Get the current time
-    auto now = std::chrono::system_clock::now();
-    auto now_time_t = std::chrono::system_clock::to_time_t(now);
+    auto now = TimeUtils::get_current_time();
 
-    // Format the time as a string
-    std::stringstream time_stream;
-    time_stream << std::put_time(std::localtime(&now_time_t), "%Y-%m-%d %H:%M:%S");
+    // Save stop time to settings file
+    nlohmann::json new_setting;
+    new_setting["last_session_end_time"] = now;
+    SettingsService::save_settings("detection", new_setting);
 
-    // // Save 'stop_time' to settings file
-    // std::stringstream settings_content;
-    // settings_content << "stop_time=" << time_stream.str() << std::endl;
-    // SettingsService::save_settings(settings_content.str(), "[detection]");
-
-    if (m_processing_thread.joinable()) 
+    if (m_processing_thread.joinable())
     {
         m_processing_thread.join();  // Wait for previous thread to finish
     }

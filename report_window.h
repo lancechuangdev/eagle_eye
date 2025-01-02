@@ -13,6 +13,8 @@ public:
 protected:
     Gtk::ComboBoxText *m_report_time_range_selector_cbox;
     Gtk::ProgressBar *m_report_progress_bar;
+    Gtk::Label *m_report_start_time_lbl;
+    Gtk::Label *m_report_end_time_lbl;
     Gtk::DrawingArea *m_report_image_display_area;
     Gtk::DrawingArea *m_report_timeline_drawing_area;
     Gtk::ListBox *m_report_transactions_listbox;
@@ -22,6 +24,7 @@ protected:
     Gtk::Label *m_detection_result_datetime_lbl;
     Gtk::Label *m_detection_result_path_lbl;
     Gtk::Entry *m_moving_speed_entry;
+    Gtk::Button *m_save_report_btn;
 
     // Key events
     bool on_key_press_event(GdkEventKey *key_event) override;
@@ -37,7 +40,8 @@ protected:
     bool on_report_display_area_btn_release_event(GdkEventButton *button_event);
     bool on_report_display_area_motion_notify_event(GdkEventMotion *motion_event);
     bool on_report_timeline_draw(const Cairo::RefPtr<Cairo::Context> &cr);
-
+    void on_save_report_clicked();
+    
 private:
     Glib::RefPtr<Gtk::Builder> m_refGlade;
     bool m_show_mask_detection_result = false;

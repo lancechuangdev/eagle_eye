@@ -51,7 +51,7 @@ void SettingsService::save_settings(const std::string &section_name, const nlohm
         {
             new_file << "{}";
             new_file.close();
-        } 
+        }
         else 
         {
             std::cerr << "Unable to create settings file: " << settings_file_path << std::endl;
