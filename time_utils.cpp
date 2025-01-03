@@ -79,3 +79,27 @@ std::chrono::system_clock::time_point TimeUtils::parse_time(const std::string& t
     return time_point;
 }
 
+std::string TimeUtils::get_time_interval(std::chrono::system_clock::time_point current_time_point, std::chrono::system_clock::time_point previous_time_point)
+{
+    auto duration = current_time_point - previous_time_point;
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+
+    // Convert duration to H:M:S.ms format
+    int hours = static_cast<int>(duration_ms / (1000 * 60 * 60));
+    duration_ms %= (1000 * 60 * 60);
+    int minutes = static_cast<int>(duration_ms / (1000 * 60));
+    duration_ms %= (1000 * 60);
+    int seconds = static_cast<int>(duration_ms / 1000);
+    int milliseconds = duration_ms % 1000;
+
+    std::ostringstream duration_stream;
+    duration_stream << std::setw(2) << std::setfill('0') << hours << ":"
+                    << std::setw(2) << std::setfill('0') << minutes << ":"
+                    << std::setw(2) << std::setfill('0') << seconds << "."
+                    << std::setw(3) << std::setfill('0') << milliseconds;
+
+    std::string duration_str = duration_stream.str();
+
+    return duration_str;
+}
+

@@ -633,14 +633,16 @@ void ReportWindow::on_save_report_clicked()
 {
     // Create a FileChooserDialog in Save mode
     Gtk::FileChooserDialog dialog("Save File", Gtk::FileChooserAction::FILE_CHOOSER_ACTION_SAVE);
-    // dialog.set_transient_for(this);
 
     // Add buttons for user actions
     dialog.add_button("_Cancel", Gtk::ResponseType::RESPONSE_REJECT);
     dialog.add_button("_Save", Gtk::ResponseType::RESPONSE_ACCEPT);
 
-    // Set default filename (optional)
+    // Set default filename
     dialog.set_current_name("detection_report.csv");
+
+    // Enable overwrite confirmation
+    dialog.set_do_overwrite_confirmation(true);
 
     // Show the dialog and wait for user response
     int result = dialog.run();
@@ -654,18 +656,7 @@ void ReportWindow::on_save_report_clicked()
             std::cout << "File selected to save: " << file_path << std::endl;
 
             // Save the file
-
-            std::ofstream outfile(file_path);
-            if (outfile)
-            {
-                outfile << "Your data here..." << std::endl;
-                outfile.close();
-                std::cout << "File saved successfully." << std::endl;
-            }
-            else
-            {
-                std::cerr << "Error saving file!" << std::endl;
-            }
+            create_csv_file(file_path);
             break;
         }
         case Gtk::ResponseType::RESPONSE_REJECT:
@@ -676,6 +667,90 @@ void ReportWindow::on_save_report_clicked()
             std::cout << "Unexpected response." << std::endl;
             break;
     }
+}
+
+void ReportWindow::create_csv_file(const std::string &file_name)
+{
+    // Open the file for writing
+    std::ofstream csv_file(file_name);
+
+    if (!csv_file.is_open())
+    {
+        std::cerr << "Failed to open file: " << file_name << std::endl;
+        return;
+    }
+
+    // Write the moving speed in the first row
+    double moving_speed;
+    try
+    {
+        moving_speed = std::stod(m_moving_speed_entry->get_text());
+        csv_file << "Moving Speed (mm/s):," << moving_speed << "\n";
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+
+    // Write the headers
+    csv_file << "Transaction ID,Date Time (yyyy-mm-dd hh:mm:ss.000),Interval (hh:mm:ss.000),Position (mm)\n";
+
+    // Write the rows
+    std::chrono::system_clock::time_point previous_time_point;
+    bool is_first_transaction = true;
+
+    for (const auto &result_folder : m_detection_results_in_report)
+    {
+        std::filesystem::path trans_json_path = result_folder / "transaction_data.json";
+        if (std::filesystem::exists(trans_json_path))
+        {
+            // Read the content of the JSON file
+            std::ifstream json_file(trans_json_path);
+            if (json_file.is_open())
+            {
+                // Parse the JSON content
+                nlohmann::json json_data;
+                try
+                {
+                    json_file >> json_data;
+                    json_file.close();
+
+                    auto transaction_id = json_data["transaction_id"];
+                    auto transaction_datetime = json_data["transaction_datetime"];
+                    auto current_time_point = TimeUtils::parse_time(transaction_datetime);
+
+                    // Calculate the duration since the last transaction
+                    std::string duration_str = "00:00:00.000";
+                    if (!is_first_transaction)
+                    {
+                        duration_str = TimeUtils::get_time_interval(current_time_point, previous_time_point);
+                    }
+
+                    // Calculate the position
+                    double moving_speed = std::stod(m_moving_speed_entry->get_text());
+                    double position = is_first_transaction ? 0.0 : std::chrono::duration_cast<std::chrono::duration<double>>(current_time_point - previous_time_point).count() * moving_speed;
+                    
+                    // Write the data row
+                    csv_file << transaction_id << ','
+                             << '=' << transaction_datetime << ','
+                             << '=' << '"' << duration_str << '"' << ','
+                             << position << '\n';
+
+                    // Update previous_time_point and mark as not the first transaction
+                    previous_time_point = current_time_point;
+                    is_first_transaction = false;
+                }
+                catch (const std::exception& e)
+                {
+                    std::cerr << e.what() << '\n';
+                }
+            }
+        }
+    }
+
+    // Close the file
+    csv_file.close();
+    std::cout << "CSV file created successfully: " << file_name << std::endl;
 }
 
 void ReportWindow::update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf)

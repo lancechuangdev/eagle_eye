@@ -41,7 +41,7 @@ protected:
     bool on_report_display_area_motion_notify_event(GdkEventMotion *motion_event);
     bool on_report_timeline_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     void on_save_report_clicked();
-    
+
 private:
     Glib::RefPtr<Gtk::Builder> m_refGlade;
     bool m_show_mask_detection_result = false;
@@ -59,8 +59,7 @@ private:
     void load_detection_result(std::string &detection_result_folder);
     void update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf);
     void update_mask_alpha(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf, gint32 alpha);
-    std::chrono::system_clock::time_point parse_time(const std::string &time_str);
-
+    void create_csv_file(const std::string &file_name);
 };
 
 #endif
