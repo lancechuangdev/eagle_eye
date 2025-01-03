@@ -2418,8 +2418,9 @@
                                 <property name="can-focus">False</property>
                                 <child>
                                   <!-- n-columns=2 n-rows=14 -->
-                                  <object class="GtkGrid">
+                                  <object class="GtkGrid" id="cam_settings_grid">
                                     <property name="visible">True</property>
+                                    <property name="sensitive">False</property>
                                     <property name="can-focus">False</property>
                                     <property name="margin-start">5</property>
                                     <property name="margin-end">5</property>
@@ -2432,6 +2433,7 @@
                                       <object class="GtkLabel">
                                         <property name="visible">True</property>
                                         <property name="can-focus">False</property>
+                                        <property name="halign">end</property>
                                         <property name="label" translatable="yes">Serial Number:</property>
                                       </object>
                                       <packing>
@@ -2643,7 +2645,7 @@
                                             <property name="visible">True</property>
                                             <property name="can-focus">False</property>
                                             <property name="halign">end</property>
-                                            <property name="label" translatable="yes">Digital Input:</property>
+                                            <property name="label" translatable="yes">Digital Input #:</property>
                                           </object>
                                           <packing>
                                             <property name="left-attach">0</property>
@@ -2750,7 +2752,7 @@
                                             <property name="visible">True</property>
                                             <property name="can-focus">False</property>
                                             <property name="halign">end</property>
-                                            <property name="label" translatable="yes">Digital Output:</property>
+                                            <property name="label" translatable="yes">Digital Output #:</property>
                                           </object>
                                           <packing>
                                             <property name="left-attach">0</property>

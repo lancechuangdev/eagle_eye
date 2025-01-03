@@ -219,7 +219,19 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_settings_display_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_settings_display_area_motion_notify_event));
     }
 
+    m_builder->get_widget("cam_settings_grid", m_cam_settings_grid);
+
     m_builder->get_widget("sn_lbl", m_sn_lbl);
+    if (m_sn_lbl)
+    {
+        // Get the PropertyProxy for the active property of the switch
+        auto label_property = m_sn_lbl->property_label();
+
+        // Connect to the signal_changed() of the PropertyProxy
+        label_property.signal_changed().connect([this]() {
+            m_cam_settings_grid->set_sensitive(!m_sn_lbl->get_text().empty());
+        });
+    }
 
     m_builder->get_widget("exposure_time_entry", m_exposure_time_entry);
     if (m_exposure_time_entry)
@@ -531,6 +543,10 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     m_builder->get_widget("detection_digital_output_line_number_lbl", m_detection_digital_output_line_number_lbl);
 
     m_builder->get_widget("settings_digital_input_line_number_cbox", m_settings_digital_input_line_number_cbox);
+    if (m_settings_digital_input_line_number_cbox)
+    {
+        m_settings_digital_input_line_number_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_digital_input_line_number_changed));
+    }
 
     m_builder->get_widget("settings_digital_input_debouncer_time_sb", m_settings_digital_input_debouncer_time_sb);
 
@@ -1368,6 +1384,7 @@ void MainWindow::load_detection_settings()
 {
     std::string detection_camera;
     auto detection_rate = 0;
+    std::string digital_io_type;
     std::string digital_input;
     std::string digital_input_line_number;
     std::string digital_output;
@@ -1424,18 +1441,44 @@ void MainWindow::load_detection_settings()
     if (digital_input != "")
     {
         auto cam_settings = SettingsService::get_settings(digital_input);
-        if (!cam_settings.empty() && cam_settings.contains("digital_input_line_number"))
+
+        if (!cam_settings.empty() && cam_settings.contains("digital_io_type"))
         {
-            digital_input_line_number = cam_settings["digital_input_line_number"];
+            digital_io_type = cam_settings["digital_io_type"];
+            if (digital_io_type == "Input")
+            {
+                if (cam_settings.contains("digital_input_line_number"))
+                {
+                    digital_input_line_number = cam_settings["digital_input_line_number"];
+                }
+            }
+            else
+            {
+                // Digital IO type mismatch, reset digital_input to empty string
+                digital_input = "";
+            }
         }
     }
 
     if (digital_output != "")
     {
         auto cam_settings = SettingsService::get_settings(digital_output);
-        if (!cam_settings.empty() && cam_settings.contains("digital_output_line_number"))
+
+        if (!cam_settings.empty() && cam_settings.contains("digital_io_type"))
         {
-            digital_output_line_number = cam_settings["digital_output_line_number"];
+            digital_io_type = cam_settings["digital_io_type"];
+            if (digital_io_type == "Output")
+            {
+                if (cam_settings.contains("digital_output_line_number"))
+                {
+                    digital_output_line_number = cam_settings["digital_output_line_number"];
+                }
+            }
+            else
+            {
+                // Digital IO type mismatch, reset digital_output to empty string
+                digital_output = "";
+            }
         }
     }
 
@@ -1599,7 +1642,7 @@ void MainWindow::on_save_detection_settings_clicked()
     }
 
     // Save detection settings
-    SettingsService::save_settings("detection", new_settings);
+    SettingsService::add_or_update_settings("detection", new_settings);
 }
 
 void MainWindow::on_digital_io_type_changed()
@@ -1619,6 +1662,87 @@ void MainWindow::on_digital_io_type_changed()
     {
         m_digital_input_grid->set_visible(false);
         m_digital_output_grid->set_visible(false);        
+    }
+}
+
+void MainWindow::on_digital_input_line_number_changed()
+{
+    auto sn = m_sn_lbl->get_text();
+    if (m_connected_device_handles.find(sn) != m_connected_device_handles.end())
+    {
+        void *device_handle = m_connected_device_handles[sn];
+        std::string selected_line_number = m_settings_digital_input_line_number_cbox->get_active_text();
+        if (selected_line_number != "")
+        {
+            int nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", selected_line_number.c_str());
+            if (nRet == MV_OK)
+            {
+                // Wait a bit or Network error occurs - MV_E_NETER (0x80000206)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+                // Update Input Event Trigger
+                m_settings_digital_input_event_trigger_cbox->remove_all();
+
+                MVCC_ENUMVALUE event_trigger = {0};
+                nRet = MV_CC_GetEnumValue(device_handle, "EventSelector", &event_trigger);
+                if (nRet == MV_OK)
+                {
+                    std::string active_text = "";
+                    for (unsigned int i = 0; i < event_trigger.nSupportedNum; ++i)
+                    {
+                        MVCC_ENUMENTRY event_trigger_entry = {0};
+                        event_trigger_entry.nValue = event_trigger.nSupportValue[i];
+                        nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "EventSelector", &event_trigger_entry);
+                        if (nRet == MV_OK)
+                        {
+                            std::string trigger = event_trigger_entry.chSymbolic;
+                            std::cout << "Digital input event trigger: " << trigger << std::endl;
+                            // Only add Digital Input event triggers
+                            if (trigger == "Line0RisingEdge" || trigger == "Line0FallingEdge")
+                            {
+                                m_settings_digital_input_event_trigger_cbox->append(trigger);
+                            }
+                        }
+                        else
+                        {
+                            std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
+                        }
+                    }
+                }
+                else
+                {
+                    std::cerr << "Failed to get event_trigger. Error code: " << nRet << std::endl;
+                }
+
+                // Update Digital Input Event Notification
+                m_settings_digital_input_notification_status_cbox->remove_all();
+
+                MVCC_ENUMVALUE notification_status = {0};
+                nRet = MV_CC_GetEnumValue(device_handle, "EventNotification", &notification_status);
+                if (nRet == MV_OK)
+                {
+                    std::string active_text = "";
+                    for (unsigned int i = 0; i < notification_status.nSupportedNum; ++i)
+                    {
+                        MVCC_ENUMENTRY notification_status_entry = {0};
+                        notification_status_entry.nValue = notification_status.nSupportValue[i];
+                        nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "EventNotification", &notification_status_entry);
+                        if (nRet == MV_OK)
+                        {
+                            m_settings_digital_input_notification_status_cbox->append(notification_status_entry.chSymbolic);
+                        }
+                        else
+                        {
+                            std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
+                        }
+                    }
+                }
+                else
+                {
+                    std::cerr << "Failed to get notification_status. Error code: " << nRet << std::endl;
+                }
+            }
+        }
     }
 }
 
@@ -2066,8 +2190,15 @@ void MainWindow::on_save_camera_settings_clicked()
         return;
     }
 
+    std::string serial_number;
+    if (m_sn_lbl)
+    {
+        serial_number = m_sn_lbl->get_text();
+    }
+    std::string section_name = serial_number;
     nlohmann::json new_settings;
-
+    std::vector<std::string> settings_to_remove;
+    
     // Build settings content
     if (m_exposure_time_entry)
     {
@@ -2100,8 +2231,17 @@ void MainWindow::on_save_camera_settings_clicked()
     if (m_digital_io_type_cbox)
     {
         std::string digital_io_type = m_digital_io_type_cbox->get_active_text();
+        new_settings["digital_io_type"] = digital_io_type;
+
         if (digital_io_type == "Input")
         {
+            // Remove digital output settings
+            settings_to_remove.push_back("digital_output_line_number");
+            settings_to_remove.push_back("digital_output_line_mode");
+            settings_to_remove.push_back("digital_output_line_source");
+            settings_to_remove.push_back("digital_output_strobe_enable");
+            settings_to_remove.push_back("digital_output_strobe_duration");
+
             if (m_settings_digital_input_line_number_cbox)
             {
                 new_settings["digital_input_line_number"] = m_settings_digital_input_line_number_cbox->get_active_text();
@@ -2121,6 +2261,16 @@ void MainWindow::on_save_camera_settings_clicked()
         }
         else if (digital_io_type == "Output")
         {
+            std::cout << new_settings.dump(4) << std::endl;
+
+            // Remove digital input settings
+            settings_to_remove.push_back("digital_input_line_number");
+            settings_to_remove.push_back("digital_input_debouncer_time");
+            settings_to_remove.push_back("digital_input_event_trigger");
+            settings_to_remove.push_back("digital_input_notification_status");
+
+            std::cout << new_settings.dump(4) << std::endl;
+            
             if (m_settings_digital_output_line_number_cbox)
             {
                 new_settings["digital_output_line_number"] = m_settings_digital_output_line_number_cbox->get_active_text();
@@ -2144,14 +2294,11 @@ void MainWindow::on_save_camera_settings_clicked()
         }
     }
 
+    std::cout << new_settings.dump(4) << std::endl;
+
     // Save detection settings
-    std::string serialNumber;
-    if (m_sn_lbl)
-    {
-        serialNumber = m_sn_lbl->get_text();
-    }
-    std::string section_name = serialNumber;
-    SettingsService::save_settings(section_name, new_settings);
+    SettingsService::remove_settings(section_name, settings_to_remove);
+    SettingsService::add_or_update_settings(section_name, new_settings);
 }
 
 void MainWindow::snap_and_display(void *device_handle)
@@ -2779,9 +2926,20 @@ void MainWindow::populate_camera_settings(void *device_handle)
         m_logger->log("Error on MV_CC_GetIntValue(OffsetY): " + std::to_string(nRet), Logger::ERROR);
     }
 
-    // Load digital Input line number from .ini file
     auto cam_settings = SettingsService::get_settings(serial_number);
 
+    // Load digital IO type
+    std::string digital_io_type = "";
+    if (!cam_settings.empty() && cam_settings.contains("digital_io_type"))
+    {
+        digital_io_type = cam_settings["digital_io_type"];
+        if (m_digital_io_type_cbox)
+        {
+            m_digital_io_type_cbox->set_active_text(digital_io_type);
+        }
+    }
+
+    // Load digital Input line number
     std::string digital_input_line_number = "";
     if (!cam_settings.empty() && cam_settings.contains("digital_input_line_number"))
     {
@@ -2898,36 +3056,6 @@ void MainWindow::populate_camera_settings(void *device_handle)
     m_settings_digital_output_line_number_cbox->append("Line1");
     m_settings_digital_output_line_number_cbox->append("Line2");
     m_settings_digital_output_line_number_cbox->set_active_text(digital_output_line_number);
-    
-    // MVCC_ENUMVALUE line_number = {0};
-    // nRet = MV_CC_GetEnumValue(device_handle, "LineSelector", &line_number);
-    // if (nRet == MV_OK)
-    // {
-    //     std::string active_text = "";
-    //     for (unsigned int i = 0; i < line_number.nSupportedNum; ++i)
-    //     {
-    //         MVCC_ENUMENTRY line_entry = {0};
-    //         line_entry.nValue = line_number.nSupportValue[i];
-    //         nRet = MV_CC_GetEnumEntrySymbolic(device_handle, "LineSelector", &line_entry);
-    //         if (nRet == MV_OK)
-    //         {
-    //             m_settings_digital_output_line_number_cbox->append(line_entry.chSymbolic);
-    //             if (line_entry.nValue == line_number.nCurValue)
-    //             {
-    //                 active_text = line_entry.chSymbolic;
-    //             }
-    //         }
-    //         else
-    //         {
-    //             std::cerr << "Failed to get symbolic name for entry " << i << ". Error code: " << nRet << std::endl;
-    //         }
-    //     }
-    //     m_settings_digital_output_line_number_cbox->set_active_text(active_text);
-    // }
-    // else
-    // {
-    //     std::cerr << "Failed to get line_number. Error code: " << nRet << std::endl;
-    // }
 
     if (digital_output_line_number != "")
     {
@@ -4377,7 +4505,7 @@ void MainWindow::start_detection()
         // Save start time to settings file
         nlohmann::json new_setting;
         new_setting["last_session_start_time"] = now;
-        SettingsService::save_settings("detection", new_setting);
+        SettingsService::add_or_update_settings("detection", new_setting);
     }
 
     if (m_main_num_anomalies_lbl)
@@ -4978,7 +5106,7 @@ void MainWindow::stop_detection()
     // Save stop time to settings file
     nlohmann::json new_setting;
     new_setting["last_session_end_time"] = now;
-    SettingsService::save_settings("detection", new_setting);
+    SettingsService::add_or_update_settings("detection", new_setting);
 
     if (m_processing_thread.joinable())
     {

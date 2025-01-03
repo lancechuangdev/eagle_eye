@@ -53,6 +53,7 @@ protected:
     Gtk::Stack *m_content_stack;
     Gtk::Grid *m_cam_grid;
     Gtk::DrawingArea *m_settings_display_area;
+    Gtk::Grid *m_cam_settings_grid;
     Gtk::Label *m_sn_lbl;
     Gtk::Entry *m_exposure_time_entry;
     Gtk::SpinButton *m_width_sb;
@@ -145,6 +146,7 @@ protected:
     void on_offset_x_value_changed();
     void on_offset_y_value_changed();
     void on_digital_io_type_changed();
+    void on_digital_input_line_number_changed();
     void on_digital_output_line_number_changed();
     void on_digital_output_line_mode_changed();
     void on_digital_output_line_source_changed();

@@ -39,7 +39,7 @@ nlohmann::json SettingsService::get_settings(const std::string &section_name)
     return settings;
 }
 
-void SettingsService::save_settings(const std::string &section_name, const nlohmann::json &new_settings) 
+void SettingsService::add_or_update_settings(const std::string &section_name, const nlohmann::json &new_settings) 
 {
     auto settings_file_path = AppPaths::Settings_File_Path.string();
 
@@ -91,6 +91,78 @@ void SettingsService::save_settings(const std::string &section_name, const nlohm
     for (const auto& [key, value] : new_settings.items()) 
     {
         json_data[section_name][key] = value;
+    }
+
+    // Write the updated JSON content back to the file
+    std::ofstream out_file(settings_file_path, std::ios::out | std::ios::trunc);
+    if (out_file.is_open()) 
+    {
+        try 
+        {
+            out_file << json_data.dump(4);
+        } 
+        catch (const std::exception& e) 
+        {
+            std::cerr << "Error writing JSON to settings file: " << e.what() << std::endl;
+        }
+        out_file.close();
+    } 
+    else 
+    {
+        std::cerr << "Unable to open settings file for writing: " << settings_file_path << std::endl;
+    }
+}
+
+void SettingsService::remove_settings(const std::string &section_name, const std::vector<std::string> &settings_to_remove)
+{
+    auto settings_file_path = AppPaths::Settings_File_Path.string();
+
+    // Ensure the settings file exists with empty JSON content if it doesn't exist
+    if (!std::filesystem::exists(settings_file_path)) 
+    {
+        std::ofstream new_file(settings_file_path, std::ios::out | std::ios::trunc);
+        if (new_file.is_open()) 
+        {
+            new_file << "{}";
+            new_file.close();
+        }
+        else 
+        {
+            std::cerr << "Unable to create settings file: " << settings_file_path << std::endl;
+            return;
+        }
+    }
+
+    // Read the existing JSON content
+    std::ifstream settings_file(settings_file_path);
+    nlohmann::json json_data;
+    if (settings_file.is_open()) 
+    {
+        try 
+        {
+            settings_file >> json_data;
+        } 
+        catch (const std::exception& e) 
+        {
+            std::cerr << "Error reading JSON from settings file: " << e.what() << std::endl;
+            settings_file.close();
+            return;
+        }
+        settings_file.close();
+    } 
+    else 
+    {
+        std::cerr << "Unable to open settings file: " << settings_file_path << std::endl;
+        return;
+    }
+
+    // remove the specified settings
+    if (json_data.contains(section_name)) 
+    {
+        for (const auto& key: settings_to_remove) 
+        {
+            json_data[section_name].erase(key);
+        }
     }
 
     // Write the updated JSON content back to the file
