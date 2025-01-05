@@ -524,6 +524,10 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_delete_detection_results_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_delete_detection_results_clicked));
     }
 
+    m_builder->get_widget("settings_moving_speed_entry", m_settings_moving_speed_entry);
+
+    m_builder->get_widget("detection_reports_path_lbl", m_detection_reports_path_lbl);
+
     m_builder->get_widget("digital_io_type_cbox", m_digital_io_type_cbox);
     if (m_digital_io_type_cbox)
     {
@@ -810,9 +814,36 @@ void MainWindow::load_detection_results()
 
     if (m_recent_detection_results_selector_cbox)
     {
-        auto result_count = std::stoi(m_recent_detection_results_selector_cbox->get_active_id());
-        const char* home = std::getenv("HOME");
-        auto recent_results_folders = FileUtils::get_recent_folders(AppPaths::Detection_Results_Path, result_count);
+        auto selected_time_range = m_recent_detection_results_selector_cbox->get_active_text();
+        std::string start_time;
+        std::string end_time = TimeUtils::get_current_time();
+
+        if (selected_time_range == "Past 15 Minutes")
+        {
+            start_time = TimeUtils::get_time_minutes_ago(15);
+        }
+        else if (selected_time_range == "Past 1 Hour")
+        {
+            start_time = TimeUtils::get_time_hours_ago(1);
+        }
+        else if (selected_time_range == "Past 4 Hours")
+        {
+            start_time = TimeUtils::get_time_hours_ago(4);
+        }
+        else if (selected_time_range == "Past 8 Hours")
+        {
+            start_time = TimeUtils::get_time_hours_ago(8);
+        }
+        else if (selected_time_range == "Past 24 Hours")
+        {
+            start_time = TimeUtils::get_time_hours_ago(24);
+        }
+
+        auto start_tp = TimeUtils::parse_time(start_time);
+        auto end_tp = TimeUtils::parse_time(end_time);
+
+        // Load transactions list
+        auto recent_results_folders = FileUtils::get_folders_by_time(AppPaths::Detection_Results_Path, start_tp, end_tp);
         
         // Populating the detection results list box with rows
         for (const auto &result_folder : recent_results_folders)
@@ -1551,6 +1582,29 @@ void MainWindow::load_detection_settings()
         m_days_to_retain_sb->set_value(days_to_retain);
     }
     update_detection_results_memory_usage_label(max_per_day, days_to_retain);
+    
+    // Load report settings
+    auto moving_speed = 0.0;
+    auto report_settings = SettingsService::get_settings("report");
+
+    if (!report_settings.empty())
+    {
+        if (report_settings.contains("moving_speed"))
+        {
+            moving_speed = report_settings["moving_speed"];
+        }
+    }
+
+    if (m_settings_moving_speed_entry)
+    {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(1) << moving_speed; // Set precision to 1 decimal place
+        m_settings_moving_speed_entry->set_text(oss.str());
+    }
+    if (m_detection_reports_path_lbl)
+    {
+        m_detection_reports_path_lbl->set_text(AppPaths::Detection_Reports_Path.string());
+    }
 }
 
 void MainWindow::on_create_report_clicked()
@@ -1643,6 +1697,25 @@ void MainWindow::on_save_detection_settings_clicked()
 
     // Save detection settings
     SettingsService::add_or_update_settings("detection", new_settings);
+
+    nlohmann::json report_settings;
+
+    if (m_settings_moving_speed_entry)
+    {
+        try 
+        {
+            // Convert string to float and store in JSON
+            auto moving_speed = std::stof(m_settings_moving_speed_entry->get_text());
+            report_settings["moving_speed"] = moving_speed;
+        } 
+        catch (const std::exception& e) 
+        {
+            std::cerr << "Error converting moving_speed to float: " << e.what() << std::endl;
+        }
+    }
+
+    // Save report settings
+    SettingsService::add_or_update_settings("report", report_settings);
 }
 
 void MainWindow::on_digital_io_type_changed()
@@ -2209,7 +2282,7 @@ void MainWindow::on_save_camera_settings_clicked()
         } 
         catch (const std::exception& e) 
         {
-            std::cerr << "Error converting exposure_time to int: " << e.what() << std::endl;
+            std::cerr << "Error converting exposure_time to float: " << e.what() << std::endl;
         }
     }
     if (m_width_sb)

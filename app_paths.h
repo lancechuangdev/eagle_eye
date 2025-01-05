@@ -11,6 +11,7 @@ public:
     static const std::filesystem::path Log_File_Path;
     static const std::filesystem::path Settings_File_Path;
     static const std::filesystem::path Detection_Results_Path;
+    static const std::filesystem::path Detection_Reports_Path;
     static const std::filesystem::path Detection_Results_Archive_Path;
     static const std::filesystem::path Dataset_Path;
     

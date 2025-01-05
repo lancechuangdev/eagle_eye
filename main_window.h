@@ -124,7 +124,9 @@ protected:
     Gtk::SpinButton *m_days_to_retain_sb;
     Gtk::Label *m_detection_results_memory_usage_lbl;
     Gtk::Button *m_delete_detection_results_btn;
-
+    Gtk::Entry *m_settings_moving_speed_entry;
+    Gtk::Label *m_detection_reports_path_lbl;
+    
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
     void on_menu_toggled();
