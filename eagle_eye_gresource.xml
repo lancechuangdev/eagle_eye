@@ -1,9 +1,13 @@
 <gresources>
   <gresource prefix="/com/example/eagle_eye">
-    <file>run.svg</file>
+    <file>startup.svg</file>
+    <file>runtime.svg</file>
     <file>explore.svg</file>
     <file>toolkit.svg</file>
     <file>settings.svg</file>
+    <file>new_project.svg</file>
+    <file>open_project.svg</file>
+    <file>quick_start.svg</file>
     <file>connect.svg</file>
     <file>disconnect.svg</file>
     <file>view.svg</file>

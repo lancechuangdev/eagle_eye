@@ -34,10 +34,16 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     m_builder->get_widget("main_window", root);
     root->set_title("Eagle Eye");
 
-    m_builder->get_widget("run_rbtn", m_run_btn);
-    if (m_run_btn)
+    m_builder->get_widget("startup_rbtn", m_startup_btn);
+    if (m_startup_btn)
     {
-        m_run_btn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_menu_toggled));
+        m_startup_btn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_menu_toggled));
+    }
+
+    m_builder->get_widget("runtime_rbtn", m_runtime_btn);
+    if (m_runtime_btn)
+    {
+        m_runtime_btn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_menu_toggled));
     }
 
     m_builder->get_widget("explore_rbtn", m_explore_btn);
@@ -3700,13 +3706,17 @@ void MainWindow::discover_cameras()
 
 void MainWindow::on_menu_toggled()
 {
-    if (m_toolkit_btn->get_active())
+    if (m_startup_btn->get_active())
+    {
+        m_content_stack->set_visible_child("page_startup");
+    }
+    else if (m_runtime_btn->get_active())
+    {
+        m_content_stack->set_visible_child("page_runtime");
+    }
+    else if (m_toolkit_btn->get_active())
     {
         m_content_stack->set_visible_child("page_toolkit");
-    }
-    else if (m_run_btn->get_active())
-    {
-        m_content_stack->set_visible_child("page_run");
     }
     else if (m_explore_btn->get_active())
     {

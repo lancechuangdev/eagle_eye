@@ -26,9 +26,10 @@ public:
     virtual ~MainWindow();
 
 protected:
-    Gtk::RadioButton *m_toolkit_btn;
-    Gtk::RadioButton *m_run_btn;
+    Gtk::RadioButton *m_startup_btn;
+    Gtk::RadioButton *m_runtime_btn;
     Gtk::RadioButton *m_explore_btn;
+    Gtk::RadioButton *m_toolkit_btn;
     Gtk::RadioButton *m_settings_btn;
     Gtk::RadioButton *m_main_control_panel_rbtn;
     Gtk::RadioButton *m_main_rt_monitoring_rbtn;
