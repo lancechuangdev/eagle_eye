@@ -30,9 +30,7 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     signal_delete_event().connect(sigc::mem_fun(*this, &MainWindow::on_window_delete));
 
     // Set the window title
-    Gtk::Window *root;
-    m_builder->get_widget("main_window", root);
-    root->set_title("Eagle Eye");
+    set_window_title("Eagle Eye");
 
     m_builder->get_widget("startup_rbtn", m_startup_btn);
     if (m_startup_btn)
@@ -66,18 +64,34 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("content_stack", m_content_stack);
 
-    m_builder->get_widget("main_stack", m_main_stack);
+    m_builder->get_widget("runtime_stack", m_runtime_stack);
 
-    m_builder->get_widget("main_control_panel_rbtn", m_main_control_panel_rbtn);
-    if (m_main_control_panel_rbtn)
+    m_builder->get_widget("new_project_btn", m_new_project_btn);
+    if (m_new_project_btn)
     {
-        m_main_control_panel_rbtn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_main_toggled));
+        m_new_project_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_new_project_clicked));
     }
 
-    m_builder->get_widget("main_rt_monitoring_rbtn", m_main_rt_monitoring_rbtn);
-    if (m_main_rt_monitoring_rbtn)
+    m_builder->get_widget("runtime_no_project_lbl", m_runtime_no_project_lbl);
+
+    m_builder->get_widget("runtime_nav_button_box", m_runtime_nav_button_box);
+
+    m_builder->get_widget("runtime_control_panel_rbtn", m_runtime_control_panel_rbtn);
+    if (m_runtime_control_panel_rbtn)
     {
-        m_main_rt_monitoring_rbtn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_main_toggled));
+        m_runtime_control_panel_rbtn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_runtime_tab_clicked));
+    }
+
+    m_builder->get_widget("runtime_monitoring_rbtn", m_runtime_monitoring_rbtn);
+    if (m_runtime_monitoring_rbtn)
+    {
+        m_runtime_monitoring_rbtn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_runtime_tab_clicked));
+    }
+
+    m_builder->get_widget("runtime_report_rbtn", m_runtime_report_rbtn);
+    if (m_runtime_report_rbtn)
+    {
+        m_runtime_report_rbtn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_runtime_tab_clicked));
     }
 
     m_builder->get_widget("detection_camera_lbl", m_detection_camera_lbl);
@@ -495,8 +509,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         active_property.signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_enable_masking_changed));
     }
 
-    // setup_directory_monitor(AppPaths::Detection_Results_Path.string());
-
     // Set the default time to one second before the app starts
     m_last_load_time = std::chrono::steady_clock::now() - std::chrono::seconds(1);
 
@@ -569,16 +581,26 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     m_builder->get_widget("digital_input_event_tv", m_digital_input_event_tv);
 }
 
-void MainWindow::on_main_toggled()
+void MainWindow::set_window_title(const std::string &title)
 {
+    Gtk::Window *root;
+    m_builder->get_widget("main_window", root);
+    root->set_title(title);
+}
 
-    if (m_main_control_panel_rbtn->get_active())
+void MainWindow::on_runtime_tab_clicked()
+{
+    if (m_runtime_control_panel_rbtn->get_active())
     {
-        m_main_stack->set_visible_child("page_control_panel");
+        m_runtime_stack->set_visible_child("page_rt_control_panel");
     }
-    else if (m_main_rt_monitoring_rbtn->get_active())
+    else if (m_runtime_monitoring_rbtn->get_active())
     {
-        m_main_stack->set_visible_child("page_rt_monitoring");
+        m_runtime_stack->set_visible_child("page_rt_monitoring");
+    }
+    else if (m_runtime_report_rbtn->get_active())
+    {
+        m_runtime_stack->set_visible_child("page_rt_report");
     }
 }
 
@@ -743,7 +765,7 @@ void MainWindow::on_delete_detection_results_clicked()
 
     if (response == Gtk::RESPONSE_YES)
     {
-        FileUtils::delete_all_in_directory(AppPaths::Detection_Results_Path); // Replace with your directory path
+        FileUtils::delete_all_in_directory(AppPaths::Detection_Results_Path);
     }
     else
     {
@@ -3752,6 +3774,171 @@ void MainWindow::on_settings_toggled()
     }
 }
 
+void MainWindow::on_new_project_clicked()
+{
+    // Load the dialog from Glade
+    Gtk::Dialog* dialog = nullptr;
+    m_builder->get_widget("new_project_dialog", dialog);
+    
+    Gtk::Entry* project_name_entry = nullptr;
+    m_builder->get_widget("project_name_entry", project_name_entry);
+
+    // Populate a default project name
+    if (project_name_entry)
+    {
+        project_name_entry->set_text("detection_project");
+    }
+
+    if (dialog)
+    {
+        // Run the dialog
+        int response = dialog->run();
+
+        if (response == Gtk::ResponseType::RESPONSE_OK)
+        {
+            if (project_name_entry)
+            {
+                Glib::ustring project_name = project_name_entry->get_text();
+                if (!project_name.empty())
+                {
+                    if (create_project(project_name))
+                    {
+                        // Update main window title with a project name
+                        set_window_title("Eagle Eye - " + project_name);
+                        
+                        // Update runtime page
+                        update_runtime_page("create_project");
+
+                        // Navigate to runtime page
+                        m_runtime_btn->set_active(true);
+                        
+                        // Update recent projects list (ToDo)
+                    }
+                }
+                else
+                {
+                    std::cout << "No project name provided." << std::endl;
+                }
+            }
+        }
+        else
+        {
+            std::cout << "Dialog canceled." << std::endl;
+        }
+
+        if (project_name_entry)
+        {
+            project_name_entry->set_text("");
+        }
+
+        // Hide the dialog after use
+        dialog->hide();
+    }
+}
+
+bool MainWindow::create_project(const std::string &project_name)
+{
+    // Create a project file (*.dscanproj) within a folder
+    try
+    {
+        // Create the directory path
+        std::filesystem::path project_folder = std::filesystem::path(AppPaths::Detection_Projects_Path) / project_name;
+        std::filesystem::create_directories(project_folder);
+
+        // Create the JSON object with project name
+        nlohmann::json project_json;
+        project_json["project_name"] = project_name;
+
+        // Generate the project file path
+        std::filesystem::path project_file = project_folder / (project_name + ".dscanproj");
+
+        // Write JSON to the file
+        std::ofstream ofs(project_file);
+        if (!ofs.is_open())
+        {
+            std::cerr << "Failed to open file: " << project_file << std::endl;
+            return false;
+        }
+        ofs << project_json.dump(4); // Pretty-print with 4 spaces
+        ofs.close();
+
+        std::cout << "Project created successfully: " << project_file << std::endl;
+        m_curr_project_name = project_name;
+        return true;
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error creating project: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+void MainWindow::update_runtime_page(const std::string &mode)
+{
+    // Hide the no project text
+    if (m_runtime_no_project_lbl)
+    {
+        m_runtime_no_project_lbl->set_visible(false);
+    }
+
+    // Make all runtime nav buttons visible
+    if (m_runtime_nav_button_box)
+    {
+        m_runtime_nav_button_box->set_visible(true);
+
+        for (auto * child : m_runtime_nav_button_box->get_children())
+        {
+            child->set_visible(true);
+        }
+    }
+
+    // Make all children of the runtime stack visible
+    if (m_runtime_stack)
+    {
+        m_runtime_stack->set_visible(true);
+
+        for (auto* child : m_runtime_stack->get_children())
+        {
+            child->set_visible(true);
+        }
+    }
+
+    // Populate the runtime page base on the given mode
+    if (mode == "create_project")
+    {
+        if (m_runtime_stack)
+        {
+            m_runtime_stack->set_visible_child("page_control_panel");
+        }
+    }
+    else if (mode == "open_project")
+    {
+        if (m_runtime_control_panel_rbtn)
+        {
+            m_runtime_control_panel_rbtn->set_visible(false);
+        }
+        if (m_runtime_monitoring_rbtn)
+        {
+            m_runtime_monitoring_rbtn->set_visible(false);
+        }
+        if (m_runtime_stack)
+        {
+            m_runtime_stack->set_visible_child("page_rt_report");
+        }
+    }
+    else if (mode == "quick_start")
+    {
+        if (m_runtime_report_rbtn)
+        {
+            m_runtime_report_rbtn->set_visible(false);
+        }
+        if (m_runtime_stack)
+        {
+            m_runtime_stack->set_visible_child("page_control_panel");
+        }
+    }
+}
+
 void MainWindow::on_start_clicked()
 {
     m_is_running = true;
@@ -4909,6 +5096,7 @@ void MainWindow::start_detection()
 
             // Send the command to the ws server
             nlohmann::json json_data;
+            json_data["project_name"] = m_curr_project_name;
             json_data["transaction_id"] = m_trans_id;
             json_data["transaction_datetime"] = datetime;
             json_data["confidence_threshold"] = confidence_threshold;

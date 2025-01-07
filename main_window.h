@@ -31,9 +31,13 @@ protected:
     Gtk::RadioButton *m_explore_btn;
     Gtk::RadioButton *m_toolkit_btn;
     Gtk::RadioButton *m_settings_btn;
-    Gtk::RadioButton *m_main_control_panel_rbtn;
-    Gtk::RadioButton *m_main_rt_monitoring_rbtn;
-    Gtk::Stack *m_main_stack;
+    Gtk::RadioButton *m_runtime_control_panel_rbtn;
+    Gtk::RadioButton *m_runtime_monitoring_rbtn;
+    Gtk::RadioButton *m_runtime_report_rbtn;
+    Gtk::Stack *m_runtime_stack;
+    Gtk::Button *m_new_project_btn;
+    Gtk::Label *m_runtime_no_project_lbl;
+    Gtk::ButtonBox *m_runtime_nav_button_box;
     Gtk::DrawingArea *m_main_drawing_area;
     Gtk::Label *m_main_detection_start_time_lbl;
     Gtk::Label *m_main_num_anomalies_lbl;
@@ -131,7 +135,8 @@ protected:
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
     void on_menu_toggled();
-    void on_main_toggled();
+    void on_runtime_tab_clicked();
+    void on_new_project_clicked();
     void on_start_clicked();
     void on_stop_clicked();
     void on_snap_clicked();
@@ -223,6 +228,7 @@ private:
     };
 
     Glib::RefPtr<Gtk::Builder> m_builder;
+    std::string m_curr_project_name;
     MV_CC_DEVICE_INFO_LIST m_cam_list;
     std::unordered_map<std::string, void*> m_connected_device_handles;
     std::atomic<bool> m_is_running;
@@ -292,6 +298,9 @@ private:
     std::vector<uint8_t> m_frame_rgb_data_buffer;
     std::vector<uint8_t> m_patch_rgba_data_buffer;
 
+    void set_window_title(const std::string &title);
+    bool create_project(const std::string &project_name);
+    void update_runtime_page(const std::string &mode);
     void discover_cameras();
     bool connect_camera(const std::string& sn);
     bool disconnect_camera(const std::string& sn);

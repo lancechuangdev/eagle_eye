@@ -18,8 +18,8 @@ shared_memory_name_predictions = "/ee_shared_memory_predictions" # DONOT CHANGE
 model_path = '/usr/local/share/eagle_eye/ds.keras'
 patch_size = 256
 home_dir = os.path.expanduser("~")
-output_dir = os.path.join(home_dir, "eagle_eye", "detection_results")
-os.makedirs(output_dir, exist_ok=True)
+output_dir_base = os.path.join(home_dir, "eagle_eye", "detection_projects")
+os.makedirs(output_dir_base, exist_ok=True)
 executor = concurrent.futures.ThreadPoolExecutor() # ThreadPoolExecutor for saving files
 preallocated_pred_shm_size = patch_size * patch_size * 100 + mmap.PAGESIZE  # Include extra for alignment metadata
 
@@ -129,7 +129,7 @@ def get_welcome_message():
             f"Configuration:\n"
             f"Model Path: {model_path}\n"
             f"Patch Size: {patch_size}\n"
-            f"Output Directory: {output_dir}\n")
+            f"Output Directory: {output_dir_base}\n")
 
 # Called for every client connecting (after handshake)
 def new_client(client, server):
@@ -174,6 +174,7 @@ def message_received(client, server, message):
     print_with_ts("Receiving a message from Client(%d): %s" % (client['id'], message))
     data = json.loads(message)
     frames_array = data.get('frames', [])
+    project_name = data.get('project_name', 'ad-hoc')
     transaction_id = data.get('transaction_id', 0)
     transaction_datetime = data.get('transaction_datetime', '')
     confidence_threshold = data.get('confidence_threshold', 0.8)
@@ -182,7 +183,7 @@ def message_received(client, server, message):
     frame_width = data.get('frame_width', 0)
     frame_height = data.get('frame_height', 0)
     total_anomalies = 0
-    output_path = os.path.join(output_dir, transaction_id)
+    output_path = os.path.join(output_dir_base, project_name, 'detection_results', transaction_id)
     num_frames = 0
     num_patches = 0
     anomaly_metadata = []
