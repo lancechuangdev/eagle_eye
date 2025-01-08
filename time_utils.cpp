@@ -19,8 +19,27 @@ std::string TimeUtils::get_current_time()
     // Add the milliseconds
     time_stream << '.' << std::setfill('0') << std::setw(3) << now_ms.count();
 
-    return time_stream.str();
+    return time_stream.str();       
 }
+
+std::string TimeUtils::get_formatted_time(std::chrono::system_clock::time_point tp)
+{
+    auto tp_time_t = std::chrono::system_clock::to_time_t(tp);
+
+    // Get the fractional seconds (milliseconds)
+    auto tp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        tp.time_since_epoch()) % 1000;
+
+    // Format the time as a string
+    std::stringstream time_stream;
+    time_stream << std::put_time(std::localtime(&tp_time_t), "%Y-%m-%d %H:%M:%S");
+
+    // Add the milliseconds
+    time_stream << '.' << std::setfill('0') << std::setw(3) << tp_ms.count();
+
+    return time_stream.str();    
+}
+
 
 std::string TimeUtils::get_time_minutes_ago(int minutes)
 {

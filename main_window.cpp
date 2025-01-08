@@ -110,30 +110,74 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_stop_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_stop_clicked));
     }    
 
-    m_builder->get_widget("main_detection_start_time_lbl", m_main_detection_start_time_lbl);
+    m_builder->get_widget("rt_monitoring_detection_start_time_lbl", m_rt_monitoring_detection_start_time_lbl);
 
-    m_builder->get_widget("main_num_anomalies_lbl", m_main_num_anomalies_lbl);
+    m_builder->get_widget("rt_monitoring_num_anomalies_lbl", m_rt_monitoring_num_anomalies_lbl);
 
-    m_builder->get_widget("main_drawing_area", m_main_drawing_area);
-    if (m_main_drawing_area)
+    m_builder->get_widget("rt_monitoring_drawing_area", m_rt_monitoring_drawing_area);
+    if (m_rt_monitoring_drawing_area)
     {
-        m_main_drawing_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_draw));
+        m_rt_monitoring_drawing_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_rt_monitoring_display_area_draw));
 
-        // // Connect mouse scroll event
-        m_main_drawing_area->add_events(Gdk::SCROLL_MASK);
-        m_main_drawing_area->signal_scroll_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_scroll_event));
+        // Connect mouse scroll event
+        m_rt_monitoring_drawing_area->add_events(Gdk::SCROLL_MASK);
+        m_rt_monitoring_drawing_area->signal_scroll_event().connect(sigc::mem_fun(*this, &MainWindow::on_rt_monitoring_display_area_scroll_event));
 
-        // // Connect mouse press and motion events
-        m_main_drawing_area->add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
-        m_main_drawing_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_btn_press_event));
-        m_main_drawing_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_btn_release_event));
-        m_main_drawing_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_main_display_area_motion_notify_event));
+        // Connect mouse press and motion events
+        m_rt_monitoring_drawing_area->add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
+        m_rt_monitoring_drawing_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_rt_monitoring_display_area_btn_press_event));
+        m_rt_monitoring_drawing_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_rt_monitoring_display_area_btn_release_event));
+        m_rt_monitoring_drawing_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_rt_monitoring_display_area_motion_notify_event));
     }
 
-    m_builder->get_widget("create_report_btn", m_create_report_btn);
-    if (m_create_report_btn)
+    m_builder->get_widget("report_refresh_btn", m_report_refresh_btn);
+    if (m_report_refresh_btn)
     {
-        m_create_report_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_create_report_clicked));
+        m_report_refresh_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_report_refresh_clicked));
+    }
+
+    m_builder->get_widget("report_last_refresh_time_lbl", m_report_last_refresh_time_lbl);
+
+    m_builder->get_widget("report_start_time_lbl", m_report_start_time_lbl);
+
+    m_builder->get_widget("report_transactions_listbox", m_report_transactions_listbox);
+    if (m_report_transactions_listbox)
+    {
+        m_report_transactions_listbox->signal_row_selected().connect(sigc::mem_fun(*this, &MainWindow::on_transaction_selected));
+    }
+
+    m_builder->get_widget("report_display_area", m_report_image_display_area);
+    if (m_report_image_display_area)
+    {
+        m_report_image_display_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_report_display_area_draw));
+
+        // Connect mouse scroll event
+        m_report_image_display_area->add_events(Gdk::SCROLL_MASK);
+        m_report_image_display_area->signal_scroll_event().connect(sigc::mem_fun(*this, &MainWindow::on_report_display_area_scroll_event));
+
+        // Connect mouse press and motion events
+        m_report_image_display_area->add_events(Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::POINTER_MOTION_MASK);
+        m_report_image_display_area->signal_button_press_event().connect(sigc::mem_fun(*this, &MainWindow::on_report_display_area_btn_press_event));
+        m_report_image_display_area->signal_button_release_event().connect(sigc::mem_fun(*this, &MainWindow::on_report_display_area_btn_release_event));
+        m_report_image_display_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &MainWindow::on_report_display_area_motion_notify_event));
+    }
+
+    m_builder->get_widget("report_masking_switch", m_report_masking_switch);
+    if (m_report_masking_switch)
+    {
+        // Get the PropertyProxy for the active property of the switch
+        Glib::PropertyProxy<bool> active_property = m_report_masking_switch->property_active();
+
+        // Connect to the signal_changed() of the PropertyProxy
+        active_property.signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_report_enable_masking_changed));
+    }
+
+    m_builder->get_widget("report_patches_box", m_report_patches_box);
+
+    m_builder->get_widget("report_position_display_area", m_report_position_display_area);
+    if (m_report_position_display_area)
+    {
+        m_report_position_display_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_report_position_draw));
     }
 
     m_builder->get_widget("snap_source_cbox", m_snap_source_cbox);
@@ -604,30 +648,112 @@ void MainWindow::on_runtime_tab_clicked()
     }
 }
 
-bool MainWindow::on_main_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+void MainWindow::on_report_refresh_clicked()
+{
+    std::string formatted_time;
+
+    // Set report strat time
+    if (m_report_start_time_lbl)
+    {
+        if (m_report_start_time == std::chrono::system_clock::time_point())
+        {
+            // Reset the start time label for a new project
+            m_report_start_time_lbl->set_text("N/A");
+        }
+        else
+        {
+            formatted_time = TimeUtils::get_formatted_time(m_report_start_time);
+            m_report_start_time_lbl->set_text(formatted_time);
+        }
+    }
+
+    // Set report last refresh time
+    m_report_last_refresh_time = std::chrono::system_clock::now();
+    formatted_time = TimeUtils::get_formatted_time(m_report_last_refresh_time);
+    if (m_report_last_refresh_time_lbl)
+    {
+        m_report_last_refresh_time_lbl->set_text(formatted_time);
+    }
+
+    // Load transactions list
+    m_detection_results_in_report = FileUtils::get_folders_by_time(AppPaths::Project_Detection_Results_Path(m_curr_project_name), m_report_start_time, m_report_last_refresh_time);
+
+    // Clear the resutls before loading
+    for (auto *child : m_report_transactions_listbox->get_children())
+    {
+        m_report_transactions_listbox->remove(*child);
+    }
+
+    // Populating the detection results list box with rows
+    for (const auto &result_folder : m_detection_results_in_report)
+    {
+        std::cout << result_folder << std::endl;
+
+        auto row_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+        auto trans_label = Gtk::make_managed<Gtk::Label>(result_folder.filename().string());
+        row_box->set_tooltip_text(result_folder.string());
+        row_box->pack_start(*trans_label, Gtk::PACK_SHRINK);
+        // Create a Gtk::ListBoxRow to wrap the box
+        auto listbox_row = Gtk::make_managed<Gtk::ListBoxRow>();
+        listbox_row->add(*row_box);
+        // Set margin around the row
+        listbox_row->set_margin_top(5);
+        listbox_row->set_margin_start(5);
+        listbox_row->set_margin_end(5);
+        // Add the Gtk::ListBoxRow to the list box
+        m_report_transactions_listbox->append(*listbox_row);
+        // Show all the newly added widgets
+        listbox_row->show_all();
+    }
+
+    // Select the first row
+    auto most_recent_result = m_report_transactions_listbox->get_row_at_index(0);
+    if (most_recent_result)
+    {
+        m_report_transactions_listbox->select_row(*most_recent_result);
+    }
+
+    // Load timeline
+    if (m_report_position_display_area)
+    {
+        m_report_position_display_area->queue_draw();
+    }
+}
+
+void MainWindow::on_report_enable_masking_changed()
+{
+    m_show_mask_in_report = m_report_masking_switch->get_active();
+    Gtk::ListBoxRow* selected_row = m_report_transactions_listbox->get_selected_row();
+    if (selected_row)
+    {
+        on_transaction_selected(selected_row);
+    }
+}
+
+bool MainWindow::on_report_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
 {
     // Apply zoom and pan transformations
-    cr->translate(m_offset_x_main, m_offset_y_main);   // Apply panning offset
-    cr->scale(m_zoom_factor_main, m_zoom_factor_main); // Apply zoom
+    cr->translate(m_offset_x_report, m_offset_y_report);   // Apply panning offset
+    cr->scale(m_zoom_factor_report, m_zoom_factor_report); // Apply zoom
 
-    // Draw the image
-    if (m_image_pixbuf_main)
+    // Draw the images
+    if (m_image_pixbuf_report)
     {
-        Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_main, 0, 0);
+        Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_report, 0, 0);
         cr->paint();
     }
 
-    // Draw the mask
-    if (m_mask_pixbuf_main)
+    // Draw the masks
+    if (m_show_mask_in_report && m_mask_pixbuf_report)
     {
-        Gdk::Cairo::set_source_pixbuf(cr, m_mask_pixbuf_main, 0, 0);
+        Gdk::Cairo::set_source_pixbuf(cr, m_mask_pixbuf_report, 0, 0);
         cr->paint();
     }
 
     return true;
 }
 
-bool MainWindow::on_main_display_area_scroll_event(GdkEventScroll *scroll_event)
+bool MainWindow::on_report_display_area_scroll_event(GdkEventScroll *scroll_event)
 {
     if (m_ctrl_pressed)
     {
@@ -641,7 +767,7 @@ bool MainWindow::on_main_display_area_scroll_event(GdkEventScroll *scroll_event)
             m_mask_alpha = std::max(m_mask_alpha - 0.1, 0.1); // Min alpha is 0.1
         }
 
-        update_mask_alpha(m_mask_pixbuf_main, m_mask_alpha * 255);
+        update_mask_alpha(m_mask_pixbuf_report, m_mask_alpha * 255);
     }
     else
     {
@@ -649,66 +775,259 @@ bool MainWindow::on_main_display_area_scroll_event(GdkEventScroll *scroll_event)
 
         if (scroll_event->direction == GDK_SCROLL_UP)
         {
-            m_zoom_factor_main += zoom_step;
+            m_zoom_factor_report += zoom_step;
         }
         else if (scroll_event->direction == GDK_SCROLL_DOWN)
         {
-            m_zoom_factor_main = std::max(zoom_step, m_zoom_factor_main - zoom_step);
+            m_zoom_factor_report = std::max(zoom_step, m_zoom_factor_report - zoom_step);
         }
     }
 
     // Trigger a redraw of the drawing area
-    m_main_drawing_area->queue_draw();
+    m_report_image_display_area->queue_draw();
 
     // Return true to indicate that the event has been handled
     return true;
 }
 
-bool MainWindow::on_main_display_area_btn_press_event(GdkEventButton *button_event)
+bool MainWindow::on_report_display_area_btn_press_event(GdkEventButton *button_event)
 {
     if (button_event->button == 1)
     {
         // Start dragging
-        m_is_dragging_main = true;
-        m_drag_start_x_main = button_event->x;
-        m_drag_start_y_main = button_event->y;
+        m_is_dragging_report = true;
+        m_drag_start_x_report = button_event->x;
+        m_drag_start_y_report = button_event->y;
     }
 
     // Return true to indicate that the event has been handled
     return true;
 }
 
-bool MainWindow::on_main_display_area_btn_release_event(GdkEventButton *button_event)
+bool MainWindow::on_report_display_area_btn_release_event(GdkEventButton *button_event)
 {
     if (button_event->button == 1)
     {
         // Stop dragging
-        m_is_dragging_main = false;
+        m_is_dragging_report = false;
     }
     
     // Return true to indicate that the event has been handled
     return true;
 }
 
-bool MainWindow::on_main_display_area_motion_notify_event(GdkEventMotion *motion_event)
+bool MainWindow::on_report_display_area_motion_notify_event(GdkEventMotion *motion_event)
 {
-    if (m_is_dragging_main)
+    if (m_is_dragging_report)
     {
         // Calculate the distance moved
-        double deltaX = motion_event->x - m_drag_start_x_main;
-        double deltaY = motion_event->y - m_drag_start_y_main;
+        double deltaX = motion_event->x - m_drag_start_x_report;
+        double deltaY = motion_event->y - m_drag_start_y_report;
 
         // Update the panning offset
-        m_offset_x_main += deltaX;
-        m_offset_y_main += deltaY;
+        m_offset_x_report += deltaX;
+        m_offset_y_report += deltaY;
 
         // Update the start position for the next motion event
-        m_drag_start_x_main = motion_event->x;
-        m_drag_start_y_main = motion_event->y;
+        m_drag_start_x_report = motion_event->x;
+        m_drag_start_y_report = motion_event->y;
     }
 
     // Trigger a redraw of the drawing area
-    m_main_drawing_area->queue_draw();
+    m_report_image_display_area->queue_draw();
+
+    // Return true to indicate that the event has been handled
+    return true;
+}
+
+bool MainWindow::on_report_position_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+{
+    // Get the DrawingArea dimensions
+    int width = m_report_position_display_area->get_allocated_width();
+    int height = m_report_position_display_area->get_allocated_height();
+
+    // Draw the position track (horizontal line)
+    cr->set_line_width(height);
+    cr->set_source_rgb(0, 0, 0); // Black
+    cr->move_to(0, height / 2);
+    cr->line_to(width, height / 2);
+    cr->stroke();
+
+    auto session_duration = m_report_last_refresh_time - m_report_start_time;
+
+    // Draw detection results
+    for (const auto &result_folder : m_detection_results_in_report)
+    {
+        auto creation_time = FileUtils::get_creation_time(result_folder.string());
+        if (creation_time.has_value())
+        {
+            auto x = (*creation_time - m_report_start_time) * width / session_duration;
+            auto creation_time_time_t = std::chrono::system_clock::to_time_t(*creation_time);
+
+            // Draw the vertical line
+            cr->set_line_width(2.0);
+            cr->set_source_rgb(1.0, 0.5, 0.0); // Amber
+            cr->move_to(x, 0);
+            cr->line_to(x, height);
+            cr->stroke();
+        }
+        else
+        {
+            std::cerr << "Error: Creation time is not available for this folder." << std::endl;
+        }
+    }
+
+    // Highlight selected result
+    auto creation_time = FileUtils::get_creation_time(m_selected_detection_result_in_report);
+    if (creation_time.has_value())
+    {
+        // Draw a triangle at the top of the selected event line
+        auto x = (*creation_time - m_report_start_time) * width / session_duration;
+        const double triangle_size = 10.0; // Size of the triangle
+        cr->set_source_rgb(1.0, 0.5, 0.0); // Amber
+        cr->move_to(x, 15);           // Top point of the triangle
+        cr->line_to(x - triangle_size, 0); // Bottom-left point
+        cr->line_to(x + triangle_size, 0); // Bottom-right point
+        cr->close_path();
+        cr->fill();
+    }
+    else
+    {
+        std::cerr << "Error: Creation time is not available for this folder." << std::endl;
+    }
+
+    return true;
+}
+
+void MainWindow::on_transaction_selected(Gtk::ListBoxRow* row)
+{
+    if (row)
+    {
+        auto row_box = dynamic_cast<Gtk::Box*>(row->get_child());
+        if (row_box)
+        {
+            m_selected_detection_result_in_report = row_box->get_tooltip_text();
+            // std::cout << "Selected row: " << m_selected_detection_result_in_report << std::endl;
+            load_detection_result_in_report(m_selected_detection_result_in_report);
+
+            // Redraw timeline and indicator
+            if (m_report_position_display_area)
+            {
+                m_report_position_display_area->queue_draw();
+            }
+        }
+    }
+    else
+    {
+        std::cout << "No row selected!" << std::endl;
+    }
+}
+
+bool MainWindow::on_rt_monitoring_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+{
+    // Apply zoom and pan transformations
+    cr->translate(m_offset_x_rt_monitoring, m_offset_y_rt_monitoring);   // Apply panning offset
+    cr->scale(m_zoom_factor_rt_monitoring, m_zoom_factor_rt_monitoring); // Apply zoom
+
+    // Draw the image
+    if (m_image_pixbuf_rt_monitoring)
+    {
+        Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_rt_monitoring, 0, 0);
+        cr->paint();
+    }
+
+    // Draw the mask
+    if (m_mask_pixbuf_rt_monitoring)
+    {
+        Gdk::Cairo::set_source_pixbuf(cr, m_mask_pixbuf_rt_monitoring, 0, 0);
+        cr->paint();
+    }
+
+    return true;
+}
+
+bool MainWindow::on_rt_monitoring_display_area_scroll_event(GdkEventScroll *scroll_event)
+{
+    if (m_ctrl_pressed)
+    {
+        // Adjust alpha when Ctrl is pressed
+        if (scroll_event->direction == GDK_SCROLL_UP)
+        {
+            m_mask_alpha = std::min(m_mask_alpha + 0.1, 1.0); // Max alpha is 1.0
+        }
+        else if (scroll_event->direction == GDK_SCROLL_DOWN)
+        {
+            m_mask_alpha = std::max(m_mask_alpha - 0.1, 0.1); // Min alpha is 0.1
+        }
+
+        update_mask_alpha(m_mask_pixbuf_rt_monitoring, m_mask_alpha * 255);
+    }
+    else
+    {
+        const double zoom_step = 0.1;
+
+        if (scroll_event->direction == GDK_SCROLL_UP)
+        {
+            m_zoom_factor_rt_monitoring += zoom_step;
+        }
+        else if (scroll_event->direction == GDK_SCROLL_DOWN)
+        {
+            m_zoom_factor_rt_monitoring = std::max(zoom_step, m_zoom_factor_rt_monitoring - zoom_step);
+        }
+    }
+
+    // Trigger a redraw of the drawing area
+    m_rt_monitoring_drawing_area->queue_draw();
+
+    // Return true to indicate that the event has been handled
+    return true;
+}
+
+bool MainWindow::on_rt_monitoring_display_area_btn_press_event(GdkEventButton *button_event)
+{
+    if (button_event->button == 1)
+    {
+        // Start dragging
+        m_is_dragging_rt_monitoring = true;
+        m_drag_start_x_rt_monitoring = button_event->x;
+        m_drag_start_y_rt_monitoring = button_event->y;
+    }
+
+    // Return true to indicate that the event has been handled
+    return true;
+}
+
+bool MainWindow::on_rt_monitoring_display_area_btn_release_event(GdkEventButton *button_event)
+{
+    if (button_event->button == 1)
+    {
+        // Stop dragging
+        m_is_dragging_rt_monitoring = false;
+    }
+    
+    // Return true to indicate that the event has been handled
+    return true;
+}
+
+bool MainWindow::on_rt_monitoring_display_area_motion_notify_event(GdkEventMotion *motion_event)
+{
+    if (m_is_dragging_rt_monitoring)
+    {
+        // Calculate the distance moved
+        double deltaX = motion_event->x - m_drag_start_x_rt_monitoring;
+        double deltaY = motion_event->y - m_drag_start_y_rt_monitoring;
+
+        // Update the panning offset
+        m_offset_x_rt_monitoring += deltaX;
+        m_offset_y_rt_monitoring += deltaY;
+
+        // Update the start position for the next motion event
+        m_drag_start_x_rt_monitoring = motion_event->x;
+        m_drag_start_y_rt_monitoring = motion_event->y;
+    }
+
+    // Trigger a redraw of the drawing area
+    m_rt_monitoring_drawing_area->queue_draw();
 
     // Return true to indicate that the event has been handled
     return true;
@@ -913,7 +1232,7 @@ void MainWindow::on_detection_result_selected(Gtk::ListBoxRow* row)
         {
             std::string result_folder = row_box->get_tooltip_text();
             // std::cout << "Selected row: " << result_folder << std::endl;
-            load_detection_result(result_folder);
+            load_detection_result_in_explorer(result_folder);
         }
     }
     else
@@ -922,7 +1241,119 @@ void MainWindow::on_detection_result_selected(Gtk::ListBoxRow* row)
     }
 }
 
-void MainWindow::load_detection_result(std::string &detection_result_folder)
+// nlohmann::json parse_json(const std::filesystem::path& json_path) {
+//     if (!std::filesystem::exists(json_path)) {
+//         throw std::runtime_error("File not found: " + json_path.string());
+//     }
+
+//     std::ifstream json_file(json_path);
+//     if (!json_file.is_open()) {
+//         throw std::runtime_error("Failed to open the file.");
+//     }
+
+//     nlohmann::json json_data;
+//     json_file >> json_data;
+//     return json_data;
+// }
+
+// Glib::RefPtr<Gdk::Pixbuf> create_combined_pixbuf(
+//     const nlohmann::json& frames,
+//     int frame_width, 
+//     int frame_height, 
+//     int total_height) 
+// {
+//     auto pixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
+//     pixbuf->fill(0x00000000); // Initialize with black
+
+//     int current_y = 0;
+//     for (const auto& frame : frames) {
+//         auto path = frame["file_name"].get<std::string>();
+//         auto frame_pixbuf = Gdk::Pixbuf::create_from_file(path, frame_width, frame_height);
+//         frame_pixbuf->copy_area(0, 0, frame_width, frame_height, pixbuf, 0, current_y);
+//         current_y += frame_height;
+//     }
+//     return pixbuf;
+// }
+
+// Glib::RefPtr<Gdk::Pixbuf> create_mask_pixbuf(int width, int height) {
+//     auto pixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, width, height);
+//     pixbuf->fill(0x00000000); // Transparent black
+//     return pixbuf;
+// }
+
+// void add_patch_to_box(Gtk::Box* patches_box, 
+//                       int prediction_id, 
+//                       const Glib::RefPtr<Gdk::Pixbuf>& pixbuf, 
+//                       const std::function<void()>& on_focus_click, 
+//                       const std::function<void()>& on_delete_click) 
+// {
+//     auto item_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+//     item_box->set_spacing(5);
+
+//     auto label = Gtk::make_managed<Gtk::Label>("Patch ID: " + std::to_string(prediction_id));
+//     label->set_halign(Gtk::ALIGN_START);
+//     item_box->pack_start(*label, Gtk::PACK_SHRINK);
+
+//     auto thumbnail_pixbuf = pixbuf->scale_simple(80, 80, Gdk::INTERP_BILINEAR);
+//     auto thumbnail = Gtk::make_managed<Gtk::Image>(thumbnail_pixbuf);
+//     thumbnail->set_halign(Gtk::ALIGN_START);
+//     item_box->pack_start(*thumbnail, Gtk::PACK_SHRINK);
+
+//     auto action_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+//     action_box->set_spacing(10);
+
+//     auto view_button = Gtk::make_managed<Gtk::Button>();
+//     view_button->signal_clicked().connect(on_focus_click);
+//     set_button_icon(view_button, "/com/example/eagle_eye/focus.svg");
+//     action_box->pack_start(*view_button, Gtk::PACK_SHRINK);
+
+//     auto delete_button = Gtk::make_managed<Gtk::Button>();
+//     delete_button->signal_clicked().connect(on_delete_click);
+//     set_button_icon(delete_button, "/com/example/eagle_eye/delete.svg");
+//     action_box->pack_start(*delete_button, Gtk::PACK_SHRINK);
+
+//     item_box->pack_start(*action_box, Gtk::PACK_SHRINK);
+//     patches_box->pack_start(*item_box, Gtk::PACK_SHRINK);
+// }
+
+// void MainWindow::load_detection_result2(std::string& detection_result_folder) {
+//     try {
+//         auto json_path = std::filesystem::path(detection_result_folder) / "transaction_data.json";
+//         auto json_data = parse_json(json_path);
+
+//         int patch_size = json_data["patch_size"];
+//         int frame_width = json_data["frame_width"];
+//         int frame_height = json_data["frame_height"];
+//         int num_frames = json_data["num_frames"];
+//         int total_height = frame_height * num_frames;
+
+//         m_image_pixbuf_explorer = create_combined_pixbuf(
+//             json_data["frames"], frame_width, frame_height, total_height);
+
+//         m_mask_pixbuf_explorer = create_mask_pixbuf(frame_width, total_height);
+
+//         m_detection_patches_box->foreach([](Gtk::Widget& child) {
+//             m_detection_patches_box->remove(child);
+//         });
+
+//         for (const auto& prediction : json_data["predictions"]) {
+//             int prediction_id = prediction["prediction_id"];
+//             std::string filename = prediction["file_name"];
+//             auto prediction_pixbuf = Gdk::Pixbuf::create_from_file(filename);
+
+//             add_patch_to_box(
+//                 m_detection_patches_box,
+//                 prediction_id,
+//                 prediction_pixbuf,
+//                 [this, prediction_id]() { /* Focus callback */ },
+//                 [this, prediction_id]() { /* Delete callback */ });
+//         }
+//     } catch (const std::exception& e) {
+//         std::cerr << "Error: " << e.what() << std::endl;
+//     }
+// }
+
+void MainWindow::load_detection_result_in_report(std::string &detection_result_folder)
 {
     std::filesystem::path trans_json_path = std::filesystem::path(detection_result_folder) / "transaction_data.json";
     if (!std::filesystem::exists(trans_json_path))
@@ -967,9 +1398,9 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
     // Create the combined pixbuf for detection images.
     // Gdk::Pixbuf does not directly support a single-channel format, 
     // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
-    m_image_pixbuf_detection_result = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
-    // m_image_pixbuf_detection_result->fill(0xffffffbe); // For testing
-    m_image_pixbuf_detection_result->fill(0x00000000); // Fill with black
+    m_image_pixbuf_report = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
+    // m_image_pixbuf_explorer->fill(0xffffffbe); // For testing
+    m_image_pixbuf_report->fill(0x00000000); // Fill with black
 
     int current_y = 0;
     bool load_images_error = false;
@@ -992,7 +1423,7 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
             0, 
             frame_width, 
             frame_height, 
-            m_image_pixbuf_detection_result, 
+            m_image_pixbuf_report, 
             0, 
             current_y);
 
@@ -1007,14 +1438,14 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
     }
 
     // Create a transparent mask pixbuf of the same size as the image
-    m_mask_pixbuf_detection_result = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
-    // m_mask_pixbuf_detection_result->fill(0xffffffbe); // For testing
-    m_mask_pixbuf_detection_result->fill(0x00000000); // Initialize the mask to be fully transparent black
+    m_mask_pixbuf_report = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
+    // m_mask_pixbuf_explorer->fill(0xffffffbe); // For testing
+    m_mask_pixbuf_report->fill(0x00000000); // Initialize the mask to be fully transparent black
 
     // Clear patches box before adding
-    for (auto *child : m_detection_patches_box->get_children())
+    for (auto *child : m_report_patches_box->get_children())
     {
-        m_detection_patches_box->remove(*child);
+        m_report_patches_box->remove(*child);
     }
 
     // Load and position each prediction
@@ -1025,7 +1456,7 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
     }
 
     // Preserve the original frame pixbuf
-    auto frame_pixbuf_original = m_image_pixbuf_detection_result;
+    auto frame_pixbuf_original = m_image_pixbuf_report;
     // Extract transaction ID
     auto transaction_id = json_data["transaction_id"].get<std::string>();
     
@@ -1066,7 +1497,7 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
             0,
             patch_width,
             patch_height,
-            m_mask_pixbuf_detection_result,
+            m_mask_pixbuf_report,
             position_x,
             position_y
         );
@@ -1102,9 +1533,9 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
             try 
             {
                 // Remove the "highlighted" class from the currently highlighted label
-                if (m_current_selected_patch_lbl)
+                if (m_current_selected_patch_in_report_lbl)
                 {
-                    m_current_selected_patch_lbl->get_style_context()->remove_class("highlighted");
+                    m_current_selected_patch_in_report_lbl->get_style_context()->remove_class("highlighted");
                 }
 
                 // Highlight the new label
@@ -1112,13 +1543,13 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
                 style_context->add_class("highlighted");
 
                 // Update the currently highlighted label
-                m_current_selected_patch_lbl = label;
+                m_current_selected_patch_in_report_lbl = label;
 
                 // Create a Cairo surface based on the existing pixbuf
                 auto surface = Cairo::ImageSurface::create(
                     Cairo::FORMAT_ARGB32,
-                    m_image_pixbuf_detection_result->get_width(),
-                    m_image_pixbuf_detection_result->get_height());
+                    m_image_pixbuf_report->get_width(),
+                    m_image_pixbuf_report->get_height());
                 auto cr = Cairo::Context::create(surface);
 
                 // Clear existing drawings by re-rendering the original pixbuf
@@ -1142,7 +1573,376 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
                 cr->stroke();
 
                 // Update the pixbuf with the modified surface
-                m_image_pixbuf_detection_result = Gdk::Pixbuf::create(
+                m_image_pixbuf_report = Gdk::Pixbuf::create(
+                    surface, 0, 0,
+                    surface->get_width(),
+                    surface->get_height());
+
+                // Refresh the UI with the updated pixbuf
+                m_report_image_display_area->queue_draw();
+            }
+            catch (const Glib::Error& ex)
+            {
+                std::cerr << "Error drawing rectangle: " << ex.what() << std::endl;
+            }
+        });
+        set_button_icon(view_button, "/com/example/eagle_eye/focus.svg");
+        action_box->pack_start(*view_button, Gtk::PACK_SHRINK);
+
+        // Add "Delete" button
+        auto delete_button = Gtk::make_managed<Gtk::Button>();
+        delete_button->set_margin_top(5);
+        
+        // Load button icon
+        auto remark = prediction.value("remark", "TP");
+        if (remark == "FP") // Marked as False Positive, the available action is to revert it back to True Positive.
+        {
+            set_button_icon(delete_button, "/com/example/eagle_eye/confirm.svg");
+            update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 128);
+        }
+        else // 'remark' does not exist or was True Positive, the available action is to mark it as False Positive.
+        {
+            set_button_icon(delete_button, "/com/example/eagle_eye/delete.svg");
+            update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 255);
+        }
+
+        delete_button->signal_clicked().connect([this, delete_button, trans_json_path, transaction_id, prediction_id, thumbnail, thumbnail_pixbuf, frame_pixbuf_original, position_x, position_y, patch_width, patch_height]()
+        {
+            try
+            {
+                std::string filename = transaction_id + "_patch_" + std::to_string(prediction_id) + ".png";
+                auto remark = get_patch_remark(trans_json_path, prediction_id);
+
+                if (remark == "TP") // 'remark' does not exist or marked as True Positive, changing to False Positive
+                {
+                    bool is_images_dir_created = FileUtils::createSubdirectory(AppPaths::Dataset_Path.string(), "images");
+                    bool is_masks_dir_created = FileUtils::createSubdirectory(AppPaths::Dataset_Path.string(), "masks");
+                    
+                    if (!is_images_dir_created || !is_masks_dir_created)
+                    {
+                        throw std::runtime_error("Failed to create images or masks directory");
+                    }
+
+                    // Ensure the patch coordinates and dimensions are within bounds
+                    if (position_x >= 0 && position_y >= 0 &&
+                        position_x + patch_width <= frame_pixbuf_original->get_width() &&
+                        position_y + patch_height <= frame_pixbuf_original->get_height()) {
+                        
+                        // Create a subpixbuf for the patch
+                        auto patch_pixbuf = Gdk::Pixbuf::create_subpixbuf(frame_pixbuf_original, position_x, position_y, patch_width, patch_height);
+
+                        // Save the patch to a file
+                        if (patch_pixbuf)
+                        {
+                            patch_pixbuf->save((AppPaths::Dataset_Path / "images" / filename).string(), "png");
+                            
+                            // Create a black mask pixbuf
+                            auto mask_pixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, patch_width, patch_height);
+                            mask_pixbuf->fill(0x000000);
+                            
+                            // Save the mask to a file
+                            if (mask_pixbuf)
+                            {
+                                mask_pixbuf->save((AppPaths::Dataset_Path / "masks" / filename).string(), "png");
+                            }
+                        }
+
+                        // Mark the patch as FP and update transaction json file
+                        update_patch_remark(trans_json_path, prediction_id, "FP");
+                        set_button_icon(delete_button, "/com/example/eagle_eye/confirm.svg");
+                        update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 128);
+                    }
+                    else
+                    {
+                        std::cerr << "Patch coordinates are out of bounds!" << std::endl;
+                    }
+                }
+                else if (remark == "FP") // Was False Positive, changing to True Positive.
+                {
+                    // Mark the patch as TP and update transaction json file
+                    update_patch_remark(trans_json_path, prediction_id, "TP");
+
+                    // Delete image/mask pair from Dataset path
+                    auto imagePath = AppPaths::Dataset_Path / "images" / filename;
+                    if (std::filesystem::exists(imagePath))
+                    {
+                        // Delete the image
+                        std::filesystem::remove(imagePath);
+                        std::cout << "File deleted: " << imagePath << std::endl;
+                    }
+                    else
+                    {
+                        std::cerr << "File not found: " << imagePath << std::endl;
+                    }
+
+                    auto maskPath = AppPaths::Dataset_Path / "masks" / filename;
+                    if (std::filesystem::exists(maskPath))
+                    {
+                        // Delete the mask
+                        std::filesystem::remove(maskPath);
+                        std::cout << "File deleted: " << maskPath << std::endl;
+                    }
+                    else
+                    {
+                        std::cerr << "File not found: " << maskPath << std::endl;
+                    }
+
+                    set_button_icon(delete_button, "/com/example/eagle_eye/delete.svg");
+                    update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 255);
+                }
+            }
+            catch (const Glib::Exception& e)
+            {
+                std::cerr << "Error saving or deleting patch: " << e.what() << std::endl;
+            }
+        });
+        action_box->pack_start(*delete_button, Gtk::PACK_SHRINK);
+
+        // Add the button box to the item box
+        item_box->pack_start(*action_box, Gtk::PACK_SHRINK);
+
+        // Add the item box to the main box
+        m_report_patches_box->pack_start(*item_box, Gtk::PACK_SHRINK);
+    }
+
+    m_report_patches_box->show_all_children();
+
+    // Update mask pixel buf
+    if (m_mask_pixbuf_report)
+    {
+        update_mask_color(m_mask_pixbuf_report);
+        update_mask_alpha(m_mask_pixbuf_report, m_mask_alpha * 255);
+    }
+
+    // Queue the frame for display
+    if (m_image_pixbuf_report)
+    {
+        m_report_image_display_area->set_size_request(frame_width, total_height);
+        m_report_image_display_area->queue_draw();
+    }
+}
+
+void MainWindow::load_detection_result_in_explorer(std::string &detection_result_folder)
+{
+    std::filesystem::path trans_json_path = std::filesystem::path(detection_result_folder) / "transaction_data.json";
+    if (!std::filesystem::exists(trans_json_path))
+    {
+        std::cerr << "File not exists: transaction_data.json" << std::endl;
+        return;
+    }
+
+    // Read the content of the JSON file
+    std::ifstream json_file(trans_json_path);
+    if (!json_file.is_open())
+    {
+        std::cerr << "Failed to open the file." << std::endl;
+        return;
+    }
+
+    // Parse the JSON content
+    nlohmann::json json_data;
+    int patch_size;
+    int frame_width;
+    int frame_height;
+    int num_frames;
+    int total_height;
+
+    try
+    {
+        json_file >> json_data;
+        json_file.close();
+
+        patch_size = json_data["patch_size"].get<int>();
+        frame_width = json_data["frame_width"].get<int>();
+        frame_height = json_data["frame_height"].get<int>();
+        num_frames = json_data["num_frames"].get<int>();
+        total_height = frame_height * num_frames;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << e.what() << '\n';
+        return;
+    }
+
+    // Create the combined pixbuf for detection images.
+    // Gdk::Pixbuf does not directly support a single-channel format, 
+    // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
+    m_image_pixbuf_explorer = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
+    // m_image_pixbuf_explorer->fill(0xffffffbe); // For testing
+    m_image_pixbuf_explorer->fill(0x00000000); // Fill with black
+
+    int current_y = 0;
+    bool load_images_error = false;
+
+    // Load and position each image
+    for (const auto &frame : json_data["frames"])
+    {
+        const std::string& path = frame["file_name"];
+        auto pixbuf_image = Gdk::Pixbuf::create_from_file(path, frame_width, frame_height);
+        if (!pixbuf_image)
+        {
+            load_images_error = true;
+            std::cerr << "Failed to load image(s): " << path << std::endl;
+            break;
+        }
+
+        // Copy the current image into the combined pixbuf
+        pixbuf_image->copy_area(
+            0, 
+            0, 
+            frame_width, 
+            frame_height, 
+            m_image_pixbuf_explorer, 
+            0, 
+            current_y);
+
+        // Update the y-offset for the next image
+        current_y += frame_height;
+    }
+
+    if (load_images_error)
+    {
+        // TODO, show a popup
+        return;
+    }
+
+    // Create a transparent mask pixbuf of the same size as the image
+    m_mask_pixbuf_explorer = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
+    // m_mask_pixbuf_explorer->fill(0xffffffbe); // For testing
+    m_mask_pixbuf_explorer->fill(0x00000000); // Initialize the mask to be fully transparent black
+
+    // Clear patches box before adding
+    for (auto *child : m_detection_patches_box->get_children())
+    {
+        m_detection_patches_box->remove(*child);
+    }
+
+    // Load and position each prediction
+    int predictions_per_row = frame_width / patch_size;
+    if (frame_width % patch_size != 0)
+    {
+        predictions_per_row++; // Allow for an additional prediction if there's remaining space
+    }
+
+    // Preserve the original frame pixbuf
+    auto frame_pixbuf_original = m_image_pixbuf_explorer;
+    // Extract transaction ID
+    auto transaction_id = json_data["transaction_id"].get<std::string>();
+    
+    for (const auto &prediction : json_data["predictions"])
+    {
+        int prediction_id = prediction["prediction_id"].get<int>();
+        std::string filename = prediction["file_name"].get<std::string>();
+        
+        // Load the prediction image
+        auto prediction_pixbuf = Gdk::Pixbuf::create_from_file(filename);
+        if (!prediction_pixbuf)
+        {
+            std::cerr << "Failed to load prediction image" << std::endl;
+            continue;
+        }
+
+        // Calculate row and column based on the index
+        int row = prediction_id / predictions_per_row;
+        int col = prediction_id % predictions_per_row;
+
+        // Calculate position_x
+        int position_x = col * patch_size; // Standard position in the row
+
+        // Adjust position_x if this is the last column and it exceeds frame width
+        if (col == predictions_per_row - 1 && position_x + patch_size > frame_width)
+        {
+            position_x = frame_width - patch_size;
+        }
+
+        // Calculate position_y
+        int position_y = row * patch_size; // Each row is separated by the height of the patch
+
+        // Copy the prediction image into m_mask_pixbuf_toolkit at the specified position
+        int patch_width = prediction_pixbuf->get_width();
+        int patch_height = prediction_pixbuf->get_height();
+        prediction_pixbuf->Gdk::Pixbuf::copy_area(
+            0,
+            0,
+            patch_width,
+            patch_height,
+            m_mask_pixbuf_explorer,
+            position_x,
+            position_y
+        );
+
+        // Create a vertical box for each item
+        auto item_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
+        item_box->set_spacing(5); // Spacing between child elements
+
+        // Create and add the title label
+        auto label = Gtk::make_managed<Gtk::Label>("Patch ID: " + std::to_string(prediction_id));
+        label->set_halign(Gtk::ALIGN_START); // Align text to the left
+        item_box->pack_start(*label, Gtk::PACK_SHRINK);
+
+        // Create and add the thumbnail
+        const int thumbnail_width = 80;
+        const int thumbnail_height = 80;
+        auto thumbnail_pixbuf = prediction_pixbuf->scale_simple(
+            thumbnail_width, 
+            thumbnail_height, 
+            Gdk::INTERP_BILINEAR);
+        auto thumbnail = Gtk::make_managed<Gtk::Image>(thumbnail_pixbuf);
+        thumbnail->set_halign(Gtk::ALIGN_START);
+        item_box->pack_start(*thumbnail, Gtk::PACK_SHRINK);
+
+        // Create a horizontal box for buttons
+        auto action_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+        action_box->set_spacing(10); // Spacing between buttons
+
+        // Add "Focus" button
+        auto view_button = Gtk::make_managed<Gtk::Button>();
+        view_button->set_margin_top(5);
+        view_button->signal_clicked().connect([this, label, frame_pixbuf_original, position_x, position_y, patch_width, patch_height]() {
+            try 
+            {
+                // Remove the "highlighted" class from the currently highlighted label
+                if (m_current_selected_patch_in_explorer_lbl)
+                {
+                    m_current_selected_patch_in_explorer_lbl->get_style_context()->remove_class("highlighted");
+                }
+
+                // Highlight the new label
+                auto style_context = label->get_style_context();
+                style_context->add_class("highlighted");
+
+                // Update the currently highlighted label
+                m_current_selected_patch_in_explorer_lbl = label;
+
+                // Create a Cairo surface based on the existing pixbuf
+                auto surface = Cairo::ImageSurface::create(
+                    Cairo::FORMAT_ARGB32,
+                    m_image_pixbuf_explorer->get_width(),
+                    m_image_pixbuf_explorer->get_height());
+                auto cr = Cairo::Context::create(surface);
+
+                // Clear existing drawings by re-rendering the original pixbuf
+                Gdk::Cairo::set_source_pixbuf(cr, frame_pixbuf_original, 0, 0); // Use the original pixbuf
+                cr->paint();
+
+                // Set the stroke color (e.g., red)
+                cr->set_source_rgba(1.0, 0.0, 0.0, 1.0); // RGBA: red, fully opaque
+
+                // Set line width for the rectangle edges
+                cr->set_line_width(2.0);
+
+                // Draw the edges of the rectangle
+                cr->move_to(position_x, position_y); // Top-left corner
+                cr->line_to(position_x + patch_width, position_y); // Top edge
+                cr->line_to(position_x + patch_width, position_y + patch_height); // Right edge
+                cr->line_to(position_x, position_y + patch_height); // Bottom edge
+                cr->close_path(); // Close the rectangle (connect back to top-left)
+
+                // Stroke the rectangle edges
+                cr->stroke();
+
+                // Update the pixbuf with the modified surface
+                m_image_pixbuf_explorer = Gdk::Pixbuf::create(
                     surface, 0, 0,
                     surface->get_width(),
                     surface->get_height());
@@ -1277,14 +2077,14 @@ void MainWindow::load_detection_result(std::string &detection_result_folder)
     m_detection_patches_box->show_all_children();
 
     // Update mask pixel buf
-    if (m_mask_pixbuf_detection_result)
+    if (m_mask_pixbuf_explorer)
     {
-        update_mask_color(m_mask_pixbuf_detection_result);
-        update_mask_alpha(m_mask_pixbuf_detection_result, m_mask_alpha * 255);
+        update_mask_color(m_mask_pixbuf_explorer);
+        update_mask_alpha(m_mask_pixbuf_explorer, m_mask_alpha * 255);
     }
 
     // Queue the frame for display
-    if (m_image_pixbuf_detection_result)
+    if (m_image_pixbuf_explorer)
     {
         m_detection_results_display_area->set_size_request(frame_width, total_height);
         m_detection_results_display_area->queue_draw();
@@ -1423,16 +2223,16 @@ bool MainWindow::on_detection_results_display_area_draw(const Cairo::RefPtr<Cair
     cr->scale(m_zoom_factor_detection, m_zoom_factor_detection); // Apply zoom
 
     // Draw the images
-    if (m_image_pixbuf_detection_result)
+    if (m_image_pixbuf_explorer)
     {
-        Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_detection_result, 0, 0);
+        Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_explorer, 0, 0);
         cr->paint();
     }
 
     // Draw the masks
-    if (m_show_mask_detection_result && m_mask_pixbuf_detection_result)
+    if (m_show_mask_detection_result && m_mask_pixbuf_explorer)
     {
-        Gdk::Cairo::set_source_pixbuf(cr, m_mask_pixbuf_detection_result, 0, 0);
+        Gdk::Cairo::set_source_pixbuf(cr, m_mask_pixbuf_explorer, 0, 0);
         cr->paint();
     }
 
@@ -1632,18 +2432,6 @@ void MainWindow::load_detection_settings()
     if (m_detection_reports_path_lbl)
     {
         m_detection_reports_path_lbl->set_text(AppPaths::Detection_Reports_Path.string());
-    }
-}
-
-void MainWindow::on_create_report_clicked()
-{
-    // Create the ReportWindow from the Glade file
-    auto gladeFile = FileUtils::getGladeFilePath();
-    ReportWindow *reportWindow = ReportWindow::create(gladeFile);
-
-    if (reportWindow)
-    {
-        reportWindow->present(); // Show the window
     }
 }
 
@@ -3803,6 +4591,9 @@ void MainWindow::on_new_project_clicked()
                 {
                     if (create_project(project_name))
                     {
+                        // Reset m_report_start_time when a new project is created
+                        m_report_start_time = std::chrono::system_clock::time_point();
+
                         // Update main window title with a project name
                         set_window_title("Eagle Eye - " + project_name);
                         
@@ -3908,7 +4699,7 @@ void MainWindow::update_runtime_page(const std::string &mode)
     {
         if (m_runtime_stack)
         {
-            m_runtime_stack->set_visible_child("page_control_panel");
+            m_runtime_stack->set_visible_child("page_rt_control_panel");
         }
     }
     else if (mode == "open_project")
@@ -3934,7 +4725,7 @@ void MainWindow::update_runtime_page(const std::string &mode)
         }
         if (m_runtime_stack)
         {
-            m_runtime_stack->set_visible_child("page_control_panel");
+            m_runtime_stack->set_visible_child("page_rt_control_panel");
         }
     }
 }
@@ -4764,13 +5555,19 @@ void MainWindow::stop_capture(void *device_handle)
 
 void MainWindow::start_detection()
 {
-    if (m_main_detection_start_time_lbl)
+    // Set m_report_start_time if it hasn't been set yet
+    if (m_report_start_time == std::chrono::system_clock::time_point())
+    {
+        m_report_start_time = std::chrono::system_clock::now();
+    }
+
+    if (m_rt_monitoring_detection_start_time_lbl)
     {
         // Get the current time
         auto now = TimeUtils::get_current_time();
 
         // Show start time
-        m_main_detection_start_time_lbl->set_text(now);
+        m_rt_monitoring_detection_start_time_lbl->set_text(now);
 
         // Save start time to settings file
         nlohmann::json new_setting;
@@ -4778,9 +5575,9 @@ void MainWindow::start_detection()
         SettingsService::add_or_update_settings("detection", new_setting);
     }
 
-    if (m_main_num_anomalies_lbl)
+    if (m_rt_monitoring_num_anomalies_lbl)
     {
-        m_main_num_anomalies_lbl->set_text("0");
+        m_rt_monitoring_num_anomalies_lbl->set_text("0");
     }
 
     // Ensure there's no existing processing thread running
@@ -4867,13 +5664,13 @@ void MainWindow::start_detection()
 
     // Gdk::Pixbuf does not directly support a single-channel format, 
     // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
-    if (!m_image_pixbuf_main)
+    if (!m_image_pixbuf_rt_monitoring)
     {
-        m_image_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, frame_width, frame_height * 2);
+        m_image_pixbuf_rt_monitoring = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, frame_width, frame_height * 2);
     }
-    if (!m_mask_pixbuf_main)
+    if (!m_mask_pixbuf_rt_monitoring)
     {
-        m_mask_pixbuf_main = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, frame_height * 2);
+        m_mask_pixbuf_rt_monitoring = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, frame_height * 2);
     }
 
     size_t total_frame_rgb_size = 0;
@@ -5050,7 +5847,7 @@ void MainWindow::start_detection()
                                 0,
                                 frame_width,
                                 frame_height,
-                                this->m_image_pixbuf_main,
+                                this->m_image_pixbuf_rt_monitoring,
                                 0,
                                 current_y
                             );
@@ -5060,16 +5857,16 @@ void MainWindow::start_detection()
 
                     // Get the current size of the drawing area
                     int current_width = 0, current_height = 0;
-                    this->m_main_drawing_area->get_size_request(current_width, current_height);
+                    this->m_rt_monitoring_drawing_area->get_size_request(current_width, current_height);
 
                     // Check if resizing is necessary
                     if (current_width != frame_width || current_height != total_height)
                     {
-                        this->m_main_drawing_area->set_size_request(frame_width, total_height);
+                        this->m_rt_monitoring_drawing_area->set_size_request(frame_width, total_height);
                     }
                     
                     // Redraw the drawing area
-                    this->m_main_drawing_area->queue_draw();
+                    this->m_rt_monitoring_drawing_area->queue_draw();
 
                     m_images_dispatcher_running = false;
                 });
@@ -5265,15 +6062,15 @@ void MainWindow::start_detection()
                     {
                         m_masks_dispatcher_running = true;
                     
-                        m_mask_pixbuf_main->fill(0x00000000);
+                        m_mask_pixbuf_rt_monitoring->fill(0x00000000);
 
                         if (total_anomalies > 0)
                         {
                             // Update # of detected anomalies label
-                            if (m_main_num_anomalies_lbl)
+                            if (m_rt_monitoring_num_anomalies_lbl)
                             {
                                 m_session_anomaly_count += total_anomalies;
-                                m_main_num_anomalies_lbl->set_text(std::to_string(m_session_anomaly_count));
+                                m_rt_monitoring_num_anomalies_lbl->set_text(std::to_string(m_session_anomaly_count));
                             }
 
                             uint8_t* data_ptr = m_patch_rgba_data_buffer.data();
@@ -5312,13 +6109,13 @@ void MainWindow::start_detection()
                                 update_mask_color(prediction_pixbuf);
                                 update_mask_alpha(prediction_pixbuf, this->m_mask_alpha * 255);
 
-                                // Copy the prediction image into m_mask_pixbuf_main at the specified position
+                                // Copy the prediction image into m_mask_pixbuf_rt_monitoring at the specified position
                                 prediction_pixbuf->Gdk::Pixbuf::copy_area(
                                     0,
                                     0,
                                     prediction_pixbuf->get_width(),
                                     prediction_pixbuf->get_height(),
-                                    this->m_mask_pixbuf_main,
+                                    this->m_mask_pixbuf_rt_monitoring,
                                     position_x,
                                     position_y
                                 );
@@ -5329,7 +6126,7 @@ void MainWindow::start_detection()
                         }
                         
                         // Redraw the drawing area
-                        this->m_main_drawing_area->queue_draw();
+                        this->m_rt_monitoring_drawing_area->queue_draw();
 
                         m_masks_dispatcher_running = false;
                     });
@@ -5362,10 +6159,10 @@ void MainWindow::start_detection()
         }
         ::close(shm_fd_pred);
 
-        m_image_pixbuf_main->fill(0x000000); // Fill with black
-        m_mask_pixbuf_main->fill(0x00000000); // Fill with black
+        m_image_pixbuf_rt_monitoring->fill(0x000000); // Fill with black
+        m_mask_pixbuf_rt_monitoring->fill(0x00000000); // Fill with black
         // Redraw the drawing area
-        this->m_main_drawing_area->queue_draw();
+        this->m_rt_monitoring_drawing_area->queue_draw();
     });
 }
 
@@ -5384,14 +6181,14 @@ void MainWindow::stop_detection()
         m_processing_thread.join();  // Wait for previous thread to finish
     }
 
-    if (m_main_detection_start_time_lbl)
+    if (m_rt_monitoring_detection_start_time_lbl)
     {
-        m_main_detection_start_time_lbl->set_text("");
+        m_rt_monitoring_detection_start_time_lbl->set_text("");
     }
 
-    if (m_main_num_anomalies_lbl)
+    if (m_rt_monitoring_num_anomalies_lbl)
     {
-        m_main_num_anomalies_lbl->set_text("");
+        m_rt_monitoring_num_anomalies_lbl->set_text("");
     }
 
     if (m_images_dispatcher_connection.connected())
@@ -5715,7 +6512,7 @@ bool MainWindow::on_detection_display_area_scroll_event(GdkEventScroll *scroll_e
             m_mask_alpha = std::max(m_mask_alpha - 0.1, 0.1); // Min alpha is 0.1
         }
 
-        update_mask_alpha(m_mask_pixbuf_detection_result, m_mask_alpha * 255);
+        update_mask_alpha(m_mask_pixbuf_explorer, m_mask_alpha * 255);
     }
     else
     {

@@ -58,10 +58,10 @@ ReportWindow::ReportWindow(BaseObjectType *cobject, const Glib::RefPtr<Gtk::Buil
         m_report_image_display_area->signal_motion_notify_event().connect(sigc::mem_fun(*this, &ReportWindow::on_report_display_area_motion_notify_event));
     }
 
-    m_refGlade->get_widget("report_timeline_drawing_area", m_report_timeline_drawing_area);
-    if (m_report_timeline_drawing_area)
+    m_refGlade->get_widget("report_timeline_drawing_area", m_report_position_display_area);
+    if (m_report_position_display_area)
     {
-        m_report_timeline_drawing_area->signal_draw().connect(sigc::mem_fun(*this, &ReportWindow::on_report_timeline_draw));
+        m_report_position_display_area->signal_draw().connect(sigc::mem_fun(*this, &ReportWindow::on_report_position_draw));
     }
     
     m_refGlade->get_widget("detection_result_datetime_lbl", m_detection_result_datetime_lbl);
@@ -129,16 +129,16 @@ bool ReportWindow::on_report_display_area_draw(const Cairo::RefPtr<Cairo::Contex
     cr->scale(m_zoom_factor, m_zoom_factor); // Apply zoom
 
     // Draw the images
-    if (m_image_pixbuf_detection_result)
+    if (m_image_pixbuf_explorer)
     {
-        Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_detection_result, 0, 0);
+        Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_explorer, 0, 0);
         cr->paint();
     }
 
     // Draw the masks
-    if (m_show_mask_detection_result && m_mask_pixbuf_detection_result)
+    if (m_show_mask_detection_result && m_mask_pixbuf_explorer)
     {
-        Gdk::Cairo::set_source_pixbuf(cr, m_mask_pixbuf_detection_result, 0, 0);
+        Gdk::Cairo::set_source_pixbuf(cr, m_mask_pixbuf_explorer, 0, 0);
         cr->paint();
     }
 
@@ -159,7 +159,7 @@ bool ReportWindow::on_report_display_area_scroll_event(GdkEventScroll *scroll_ev
             m_mask_alpha = std::max(m_mask_alpha - 0.1, 0.1); // Min alpha is 0.1
         }
 
-        update_mask_alpha(m_mask_pixbuf_detection_result, m_mask_alpha * 255);
+        update_mask_alpha(m_mask_pixbuf_explorer, m_mask_alpha * 255);
     }
     else
     {
@@ -277,9 +277,9 @@ void ReportWindow::load_detection_result(std::string &detection_result_folder)
     // Create the combined pixbuf for detection images.
     // Gdk::Pixbuf does not directly support a single-channel format, 
     // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
-    m_image_pixbuf_detection_result = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
-    // m_image_pixbuf_detection_result->fill(0xffffffbe); // For testing
-    m_image_pixbuf_detection_result->fill(0x00000000); // Fill with black
+    m_image_pixbuf_explorer = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
+    // m_image_pixbuf_explorer->fill(0xffffffbe); // For testing
+    m_image_pixbuf_explorer->fill(0x00000000); // Fill with black
 
     int current_y = 0;
     bool load_images_error = false;
@@ -302,7 +302,7 @@ void ReportWindow::load_detection_result(std::string &detection_result_folder)
             0, 
             frame_width, 
             frame_height, 
-            m_image_pixbuf_detection_result, 
+            m_image_pixbuf_explorer, 
             0, 
             current_y);
 
@@ -317,9 +317,9 @@ void ReportWindow::load_detection_result(std::string &detection_result_folder)
     }
 
     // Create a transparent mask pixbuf of the same size as the image
-    m_mask_pixbuf_detection_result = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
-    // m_mask_pixbuf_detection_result->fill(0xffffffbe); // For testing
-    m_mask_pixbuf_detection_result->fill(0x00000000); // Initialize the mask to be fully transparent black
+    m_mask_pixbuf_explorer = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
+    // m_mask_pixbuf_explorer->fill(0xffffffbe); // For testing
+    m_mask_pixbuf_explorer->fill(0x00000000); // Initialize the mask to be fully transparent black
 
     // Load and position each prediction
     int predictions_per_row = frame_width / patch_size;
@@ -329,7 +329,7 @@ void ReportWindow::load_detection_result(std::string &detection_result_folder)
     }
 
     // Preserve the original frame pixbuf
-    auto frame_pixbuf_original = m_image_pixbuf_detection_result;
+    auto frame_pixbuf_original = m_image_pixbuf_explorer;
     // Extract transaction ID
     auto transaction_id = json_data["transaction_id"].get<std::string>();
     
@@ -370,32 +370,32 @@ void ReportWindow::load_detection_result(std::string &detection_result_folder)
             0,
             patch_width,
             patch_height,
-            m_mask_pixbuf_detection_result,
+            m_mask_pixbuf_explorer,
             position_x,
             position_y
         );
     }
 
     // Update mask pixel buf
-    if (m_mask_pixbuf_detection_result)
+    if (m_mask_pixbuf_explorer)
     {
-        update_mask_color(m_mask_pixbuf_detection_result);
-        update_mask_alpha(m_mask_pixbuf_detection_result, m_mask_alpha * 255);
+        update_mask_color(m_mask_pixbuf_explorer);
+        update_mask_alpha(m_mask_pixbuf_explorer, m_mask_alpha * 255);
     }
 
     // Queue the frame for display
-    if (m_image_pixbuf_detection_result)
+    if (m_image_pixbuf_explorer)
     {
         m_report_image_display_area->set_size_request(frame_width, total_height);
         m_report_image_display_area->queue_draw();
     }
 }
 
-bool ReportWindow::on_report_timeline_draw(const Cairo::RefPtr<Cairo::Context> &cr)
+bool ReportWindow::on_report_position_draw(const Cairo::RefPtr<Cairo::Context> &cr)
 {
     // Get the DrawingArea dimensions
-    int width = m_report_timeline_drawing_area->get_allocated_width();
-    int height = m_report_timeline_drawing_area->get_allocated_height();
+    int width = m_report_position_display_area->get_allocated_width();
+    int height = m_report_position_display_area->get_allocated_height();
 
     // Draw the timeline (horizontal line)
     cr->set_line_width(height);
@@ -564,9 +564,9 @@ void ReportWindow::on_report_time_range_selector_changed()
     }
 
     // Load timeline
-    if (m_report_timeline_drawing_area)
+    if (m_report_position_display_area)
     {
-        m_report_timeline_drawing_area->queue_draw();
+        m_report_position_display_area->queue_draw();
     }
 }
 
@@ -582,9 +582,9 @@ void ReportWindow::on_transaction_selected(Gtk::ListBoxRow* row)
             load_detection_result(m_selected_detection_result_in_report);
 
             // Redraw timeline and indicator
-            if (m_report_timeline_drawing_area)
+            if (m_report_position_display_area)
             {
-                m_report_timeline_drawing_area->queue_draw();
+                m_report_position_display_area->queue_draw();
             }
 
             // Update properties panel

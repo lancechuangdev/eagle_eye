@@ -38,9 +38,9 @@ protected:
     Gtk::Button *m_new_project_btn;
     Gtk::Label *m_runtime_no_project_lbl;
     Gtk::ButtonBox *m_runtime_nav_button_box;
-    Gtk::DrawingArea *m_main_drawing_area;
-    Gtk::Label *m_main_detection_start_time_lbl;
-    Gtk::Label *m_main_num_anomalies_lbl;
+    Gtk::DrawingArea *m_rt_monitoring_drawing_area;
+    Gtk::Label *m_rt_monitoring_detection_start_time_lbl;
+    Gtk::Label *m_rt_monitoring_num_anomalies_lbl;
     Gtk::Label *m_detection_camera_lbl;
     Gtk::Label *m_detection_rate_lbl;
     Gtk::Label *m_detection_digital_input_lbl;
@@ -50,7 +50,6 @@ protected:
     Gtk::Button *m_start_btn;
     Gtk::Button *m_stop_btn;
     Gtk::Button *m_snap_btn;
-    Gtk::Button *m_create_report_btn;
     Gtk::ComboBoxText *m_snap_source_cbox;
     Gtk::FileChooserButton *m_toolkit_image_picker_fcb;
     Gtk::Button *m_toolkit_detection_test_btn;
@@ -118,7 +117,7 @@ protected:
     Gtk::Button *m_save_detection_settings_btn;
     Gtk::ListBox *m_detection_results_listbox;
     Gtk::Box *m_detection_patches_box;
-    Gtk::Label* m_current_selected_patch_lbl;
+    Gtk::Label *m_current_selected_patch_in_explorer_lbl;
     Gtk::DrawingArea *m_detection_results_display_area;
     Gtk::ComboBoxText *m_recent_detection_results_selector_cbox;
     Gtk::Button *m_detection_results_refresh_btn;
@@ -131,7 +130,16 @@ protected:
     Gtk::Button *m_delete_detection_results_btn;
     Gtk::Entry *m_settings_moving_speed_entry;
     Gtk::Label *m_detection_reports_path_lbl;
-    
+    Gtk::Button *m_report_refresh_btn;
+    Gtk::Label *m_report_start_time_lbl;
+    Gtk::Label *m_report_last_refresh_time_lbl;
+    Gtk::ListBox *m_report_transactions_listbox;
+    Gtk::Switch *m_report_masking_switch;
+    Gtk::DrawingArea *m_report_image_display_area;
+    Gtk::Box *m_report_patches_box;
+    Gtk::Label* m_current_selected_patch_in_report_lbl;
+    Gtk::DrawingArea *m_report_position_display_area;
+
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
     void on_menu_toggled();
@@ -144,8 +152,16 @@ protected:
     void on_connect_clicked(const std::string& sn);
     void on_disconnect_clicked(const std::string& sn);
     void on_view_clicked(const std::string& sn);
-    void on_create_report_clicked();
-    bool on_main_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
+    void on_report_refresh_clicked();
+    void on_transaction_selected(Gtk::ListBoxRow* row);
+    bool on_report_position_draw(const Cairo::RefPtr<Cairo::Context> &cr);
+    bool on_report_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
+    bool on_report_display_area_scroll_event(GdkEventScroll *scroll_event);
+    bool on_report_display_area_btn_press_event(GdkEventButton *button_event);
+    bool on_report_display_area_btn_release_event(GdkEventButton *button_event);
+    bool on_report_display_area_motion_notify_event(GdkEventMotion *motion_event);
+    void on_report_enable_masking_changed();
+    bool on_rt_monitoring_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_toolkit_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_settings_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_exposure_time_entry_focus_out(GdkEventFocus* event);
@@ -183,10 +199,10 @@ protected:
     bool on_key_release_event(GdkEventKey *key_event) override;
 
     // Mouse events
-    bool on_main_display_area_btn_press_event(GdkEventButton *button_event);
-    bool on_main_display_area_btn_release_event(GdkEventButton *button_event);
-    bool on_main_display_area_motion_notify_event(GdkEventMotion *motion_event);
-    bool on_main_display_area_scroll_event(GdkEventScroll *scroll_event);
+    bool on_rt_monitoring_display_area_btn_press_event(GdkEventButton *button_event);
+    bool on_rt_monitoring_display_area_btn_release_event(GdkEventButton *button_event);
+    bool on_rt_monitoring_display_area_motion_notify_event(GdkEventMotion *motion_event);
+    bool on_rt_monitoring_display_area_scroll_event(GdkEventScroll *scroll_event);
     bool on_detection_display_area_btn_press_event(GdkEventButton *button_event);
     bool on_detection_display_area_btn_release_event(GdkEventButton *button_event);
     bool on_detection_display_area_motion_notify_event(GdkEventMotion *motion_event);
@@ -246,19 +262,28 @@ private:
     bool m_ws_response_ready = false; // Condition to wait on
     size_t m_session_anomaly_count;
 
-    Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_main;
-    Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_main;
+    Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_rt_monitoring;
+    Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_rt_monitoring;
+    Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_report;
+    Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_report;
     Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_toolkit;
     Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_toolkit;
     double m_mask_alpha = 0.5;
     bool m_ctrl_pressed = false; // Flag to check if Ctrl key is pressed
 
-    bool m_is_dragging_main = false; // Track whether the user is dragging on main page
-    double m_drag_start_x_main = 0.0; // Mouse drag start X on main page
-    double m_drag_start_y_main = 0.0; // Mouse drag start Y on main page
-    double m_offset_x_main = 0.0;    // Horizontal pan offset on main page
-    double m_offset_y_main = 0.0;    // Vertical pan offset on main page
-    double m_zoom_factor_main = 1.0; // Zoom factor (1.0 = no zoom) on main page
+    bool m_is_dragging_rt_monitoring = false; // Track whether the user is dragging on rt monitoring page
+    double m_drag_start_x_rt_monitoring = 0.0; // Mouse drag start X on rt monitoring page
+    double m_drag_start_y_rt_monitoring = 0.0; // Mouse drag start Y on rt monitoring page
+    double m_offset_x_rt_monitoring = 0.0;    // Horizontal pan offset on rt monitoring page
+    double m_offset_y_rt_monitoring = 0.0;    // Vertical pan offset on rt monitoring page
+    double m_zoom_factor_rt_monitoring = 1.0; // Zoom factor (1.0 = no zoom) on rt monitoring page
+
+    bool m_is_dragging_report = false; // Track whether the user is dragging on report page
+    double m_drag_start_x_report = 0.0; // Mouse drag start X on report page
+    double m_drag_start_y_report = 0.0; // Mouse drag start Y on report page
+    double m_offset_x_report = 0.0;    // Horizontal pan offset on report page
+    double m_offset_y_report = 0.0;    // Vertical pan offset on report page
+    double m_zoom_factor_report = 1.0; // Zoom factor (1.0 = no zoom) on report page
 
     bool m_is_dragging_toolkit = false; // Track whether the user is dragging on toolkit page
     double m_drag_start_x_toolkit = 0.0; // Mouse drag start X on toolkit page
@@ -275,8 +300,8 @@ private:
     double m_offset_y_settings = 0.0;    // Vertical pan offset on settings page
     double m_zoom_factor_settings = 1.0; // Zoom factor (1.0 = no zoom) on settings page
 
-    Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_detection_result;
-    Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_detection_result;
+    Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_explorer;
+    Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_explorer;
     bool m_show_mask_detection_result;
     bool m_is_dragging_detection = false; // Track whether the user is dragging on detection results page
     double m_drag_start_x_detection = 0.0; // Mouse drag start X on detection results page
@@ -287,6 +312,11 @@ private:
 
     Glib::RefPtr<Gio::FileMonitor> m_detection_results_monitor;
     std::chrono::steady_clock::time_point m_last_load_time;
+    std::chrono::system_clock::time_point m_report_start_time;
+    std::chrono::system_clock::time_point m_report_last_refresh_time;
+    std::vector<std::filesystem::path> m_detection_results_in_report;
+    std::string m_selected_detection_result_in_report;
+    bool m_show_mask_in_report;
     std::shared_ptr<Logger> m_logger;
     Glib::Dispatcher m_main_images_dispatcher;
     Glib::Dispatcher m_main_masks_dispatcher;
@@ -326,7 +356,8 @@ private:
     std::string run_command(const std::string& command);
     void load_detection_settings();
     void load_detection_results();
-    void load_detection_result(std::string &detection_result_folder);
+    void load_detection_result_in_explorer(std::string &detection_result_folder);
+    void load_detection_result_in_report(std::string &detection_result_folder);
     void setup_directory_monitor(const std::string &directory_path);
     void on_directory_changed(const Glib::RefPtr<Gio::File> &file, const Glib::RefPtr<Gio::File> &other_file, Gio::FileMonitorEvent event_type);
     double calc_detection_results_memory_usage_in_gb(size_t max_per_day, size_t days_to_retain);
