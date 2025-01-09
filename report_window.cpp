@@ -417,7 +417,7 @@ bool ReportWindow::on_report_position_draw(const Cairo::RefPtr<Cairo::Context> &
     auto session_duration = end_tp - start_tp;
 
     // Draw detection results
-    for (const auto &result_folder : m_detection_results_in_report)
+    for (const auto &result_folder : m_sorted_detection_results_in_report)
     {
         auto creation_time = FileUtils::get_creation_time(result_folder.string());
         if (creation_time.has_value())
@@ -526,7 +526,7 @@ void ReportWindow::on_report_time_range_selector_changed()
     auto end_tp = TimeUtils::parse_time(end_time);
 
     // Load transactions list
-    m_detection_results_in_report = FileUtils::get_folders_by_time(AppPaths::Detection_Results_Path, start_tp, end_tp);
+    m_sorted_detection_results_in_report = FileUtils::get_folders_by_time(AppPaths::Detection_Results_Path, start_tp, end_tp);
 
     // Clear the resutls before loading
     for (auto *child : m_report_transactions_listbox->get_children())
@@ -535,7 +535,7 @@ void ReportWindow::on_report_time_range_selector_changed()
     }
 
     // Populating the detection results list box with rows
-    for (const auto &result_folder : m_detection_results_in_report)
+    for (const auto &result_folder : m_sorted_detection_results_in_report)
     {
         std::cout << result_folder << std::endl;
 
@@ -699,7 +699,7 @@ void ReportWindow::create_csv_file(const std::string &file_name)
     std::chrono::system_clock::time_point previous_time_point;
     bool is_first_transaction = true;
 
-    for (const auto &result_folder : m_detection_results_in_report)
+    for (const auto &result_folder : m_sorted_detection_results_in_report)
     {
         std::filesystem::path trans_json_path = result_folder / "transaction_data.json";
         if (std::filesystem::exists(trans_json_path))

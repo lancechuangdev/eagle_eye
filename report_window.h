@@ -45,7 +45,7 @@ protected:
 private:
     Glib::RefPtr<Gtk::Builder> m_refGlade;
     bool m_show_mask_detection_result = false;
-    std::vector<std::filesystem::path> m_detection_results_in_report;
+    std::vector<std::filesystem::path> m_sorted_detection_results_in_report;
     std::string m_selected_detection_result_in_report;
     bool m_ctrl_pressed = false; // Flag to check if Ctrl key is pressed
     double m_mask_alpha = 0.5;

@@ -541,8 +541,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_detection_results_refresh_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_detection_results_refresh_clicked));
     }
 
-    m_builder->get_widget("last_detection_results_refresh_time", m_last_detection_results_refresh_time_lbl);
-
     m_builder->get_widget("detection_results_masking_switch", m_detection_results_masking_switch);
     if (m_detection_results_masking_switch)
     {
@@ -552,9 +550,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         // Connect to the signal_changed() of the PropertyProxy
         active_property.signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_enable_masking_changed));
     }
-
-    // Set the default time to one second before the app starts
-    m_last_load_time = std::chrono::steady_clock::now() - std::chrono::seconds(1);
 
     m_builder->get_widget("detection_results_path_lbl", m_detection_results_path_lbl);
 
@@ -650,42 +645,20 @@ void MainWindow::on_runtime_tab_clicked()
 
 void MainWindow::on_report_refresh_clicked()
 {
-    std::string formatted_time;
-
-    // Set report strat time
-    if (m_report_start_time_lbl)
-    {
-        if (m_report_start_time == std::chrono::system_clock::time_point())
-        {
-            // Reset the start time label for a new project
-            m_report_start_time_lbl->set_text("N/A");
-        }
-        else
-        {
-            formatted_time = TimeUtils::get_formatted_time(m_report_start_time);
-            m_report_start_time_lbl->set_text(formatted_time);
-        }
-    }
-
     // Set report last refresh time
     m_report_last_refresh_time = std::chrono::system_clock::now();
-    formatted_time = TimeUtils::get_formatted_time(m_report_last_refresh_time);
-    if (m_report_last_refresh_time_lbl)
-    {
-        m_report_last_refresh_time_lbl->set_text(formatted_time);
-    }
 
     // Load transactions list
-    m_detection_results_in_report = FileUtils::get_folders_by_time(AppPaths::Project_Detection_Results_Path(m_curr_project_name), m_report_start_time, m_report_last_refresh_time);
+    m_sorted_detection_results_in_report = FileUtils::get_folders_by_time(AppPaths::Project_Detection_Results_Path(m_curr_project_name), m_report_start_time, m_report_last_refresh_time);
 
-    // Clear the resutls before loading
+    // Clear the results before loading
     for (auto *child : m_report_transactions_listbox->get_children())
     {
         m_report_transactions_listbox->remove(*child);
     }
 
     // Populating the detection results list box with rows
-    for (const auto &result_folder : m_detection_results_in_report)
+    for (const auto &result_folder : m_sorted_detection_results_in_report)
     {
         std::cout << result_folder << std::endl;
 
@@ -713,7 +686,7 @@ void MainWindow::on_report_refresh_clicked()
         m_report_transactions_listbox->select_row(*most_recent_result);
     }
 
-    // Load timeline
+    // Load position track
     if (m_report_position_display_area)
     {
         m_report_position_display_area->queue_draw();
@@ -840,6 +813,93 @@ bool MainWindow::on_report_display_area_motion_notify_event(GdkEventMotion *moti
     return true;
 }
 
+std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> MainWindow::track_position()
+{
+    std::map<std::pair<std::chrono::system_clock::time_point, std::chrono::system_clock::time_point>, 
+             std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>>> session_time_points_with_positions;
+
+    for (const auto &transaction_folder : m_sorted_detection_results_in_report)
+    {
+        auto json_data = FileUtils::get_json(transaction_folder);
+        if (!json_data.has_value())
+        {
+            continue;
+        }
+
+        const auto &json = json_data.value();
+        if (!json.contains("transaction_id"))
+        {
+            continue;
+        }
+
+        auto transaction_id = json["transaction_id"];
+        auto transaction_tp = FileUtils::get_transaction_time(transaction_folder);
+        
+        if (!transaction_tp.has_value())
+        {
+            continue;
+        }
+
+        auto transaction_tp_value = transaction_tp.value();
+        // Find the corresponding session
+        for (const auto &session : m_session_times)
+        {
+            const auto &start = session.first;
+            const auto &end = session.second;
+
+            // Check if 'transaction_tp' falls into the session
+            if (transaction_tp_value >= start && transaction_tp_value < end)
+            {
+                // Assign the time point to the session
+                session_time_points_with_positions[session].emplace_back(transaction_id, transaction_tp_value, 0.0);
+                break; // Stop searching once the session is found
+            }
+        }
+    }
+
+    double position = 0.0; // Initialize the position globally (shared across all sessions)
+    double speed = 1.0; // unit speed
+
+    for (auto &entry : session_time_points_with_positions)
+    {
+        auto &session = entry.first; // Key: {start_time, end_time}
+        auto &transactions = entry.second; // Value: list of {transaction_id, time_point, position}
+
+        // Access session start and end times
+        const auto &start_time = session.first;
+
+        // Iterate through transactions in the session
+        for (auto &transaction : transactions)
+        {
+            auto &transaction_id = std::get<0>(transaction);
+            const auto &time_point = std::get<1>(transaction);
+            auto &current_position = std::get<2>(transaction);
+
+            // Calculate elapsed time in seconds
+            auto elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(time_point - start_time).count();
+
+            // Update position
+            position += speed * elapsed_time;
+
+            // Store the updated position in the transaction
+            current_position = position;
+        }
+    }
+
+    std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> transactions_with_positions;
+    
+    // Flatten all transactions into the result vector
+    for (const auto &[session, transactions] : session_time_points_with_positions)
+    {
+        for (const auto &[transaction_id, time_point, current_position] : transactions)
+        {
+            transactions_with_positions.emplace_back(transaction_id, time_point, current_position);
+        }
+    }
+
+    return transactions_with_positions;
+}
+
 bool MainWindow::on_report_position_draw(const Cairo::RefPtr<Cairo::Context> &cr)
 {
     // Get the DrawingArea dimensions
@@ -853,47 +913,47 @@ bool MainWindow::on_report_position_draw(const Cairo::RefPtr<Cairo::Context> &cr
     cr->line_to(width, height / 2);
     cr->stroke();
 
-    auto session_duration = m_report_last_refresh_time - m_report_start_time;
+    auto transactions_with_positions = track_position();
 
-    // Draw detection results
-    for (const auto &result_folder : m_detection_results_in_report)
+    if (transactions_with_positions.empty())
     {
-        auto creation_time = FileUtils::get_creation_time(result_folder.string());
-        if (creation_time.has_value())
-        {
-            auto x = (*creation_time - m_report_start_time) * width / session_duration;
-            auto creation_time_time_t = std::chrono::system_clock::to_time_t(*creation_time);
-
-            // Draw the vertical line
-            cr->set_line_width(2.0);
-            cr->set_source_rgb(1.0, 0.5, 0.0); // Amber
-            cr->move_to(x, 0);
-            cr->line_to(x, height);
-            cr->stroke();
-        }
-        else
-        {
-            std::cerr << "Error: Creation time is not available for this folder." << std::endl;
-        }
+        std::cout << "No transactions available." << std::endl;
+        return true;
     }
+    
+    const auto &last_transaction = transactions_with_positions.back();
+    const auto &position = std::get<2>(last_transaction);
+    auto total_distance = position;
 
-    // Highlight selected result
-    auto creation_time = FileUtils::get_creation_time(m_selected_detection_result_in_report);
-    if (creation_time.has_value())
+    // Draw transactions on position track
+    for (const auto &transaction : transactions_with_positions)
     {
-        // Draw a triangle at the top of the selected event line
-        auto x = (*creation_time - m_report_start_time) * width / session_duration;
-        const double triangle_size = 10.0; // Size of the triangle
+        const auto &transaction_id = std::get<0>(transaction);
+        const auto &time_point = std::get<1>(transaction);
+        const auto &position = std::get<2>(transaction);
+
+        auto x = position * width / total_distance;
+
+        std::cout << "position: " << position << ", width: " << width << ", total distance: " << total_distance << std::endl;
+
+        // Draw the vertical line
+        cr->set_line_width(2.0);
         cr->set_source_rgb(1.0, 0.5, 0.0); // Amber
-        cr->move_to(x, 15);           // Top point of the triangle
-        cr->line_to(x - triangle_size, 0); // Bottom-left point
-        cr->line_to(x + triangle_size, 0); // Bottom-right point
-        cr->close_path();
-        cr->fill();
-    }
-    else
-    {
-        std::cerr << "Error: Creation time is not available for this folder." << std::endl;
+        cr->move_to(x, 0);
+        cr->line_to(x, height);
+        cr->stroke();
+
+        // Highlight selected result
+        if (m_selected_transaction_id == transaction_id)
+        {
+            const double triangle_size = 10.0; // Size of the triangle
+            cr->set_source_rgb(1.0, 0.5, 0.0); // Amber
+            cr->move_to(x, 15);                // Top point of the triangle
+            cr->line_to(x - triangle_size, 0); // Bottom-left point
+            cr->line_to(x + triangle_size, 0); // Bottom-right point
+            cr->close_path();
+            cr->fill();
+        }
     }
 
     return true;
@@ -906,14 +966,18 @@ void MainWindow::on_transaction_selected(Gtk::ListBoxRow* row)
         auto row_box = dynamic_cast<Gtk::Box*>(row->get_child());
         if (row_box)
         {
-            m_selected_detection_result_in_report = row_box->get_tooltip_text();
-            // std::cout << "Selected row: " << m_selected_detection_result_in_report << std::endl;
-            load_detection_result_in_report(m_selected_detection_result_in_report);
-
-            // Redraw timeline and indicator
-            if (m_report_position_display_area)
+            auto trans_label = dynamic_cast<Gtk::Label *>(row_box->get_children()[0]);
+            if (trans_label)
             {
-                m_report_position_display_area->queue_draw();
+                m_selected_transaction_id = trans_label->get_text();
+                std::string selected_transaction_path = row_box->get_tooltip_text();
+                load_detection_result_in_report(selected_transaction_path);
+
+                // Redraw position track and indicator
+                if (m_report_position_display_area)
+                {
+                    m_report_position_display_area->queue_draw();
+                }
             }
         }
     }
@@ -1092,41 +1156,6 @@ void MainWindow::on_delete_detection_results_clicked()
     }
 }
 
-void MainWindow::setup_directory_monitor(const std::string &directory_path)
-{
-    auto directory = Gio::File::create_for_path(directory_path);
-
-    // Create a file monitor
-    m_detection_results_monitor = directory->monitor_directory();
-
-    // Connect the signal
-    m_detection_results_monitor->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_directory_changed));
-}
-
-void MainWindow::on_directory_changed(
-    const Glib::RefPtr<Gio::File> &file,
-    const Glib::RefPtr<Gio::File> &other_file,
-    Gio::FileMonitorEvent event_type)
-{
-    // React to the change
-    if (event_type == Gio::FILE_MONITOR_EVENT_CREATED ||
-        event_type == Gio::FILE_MONITOR_EVENT_CHANGED)
-    {
-        auto now = std::chrono::steady_clock::now();
-        // Throttling mechanism
-        // if (std::chrono::duration_cast<std::chrono::seconds>(now - m_last_load_time).count() > 1)
-        // {
-        //     m_last_load_time = now;
-        //     load_detection_results();
-        // }
-
-        // Wait a bit for the detection results ready for loading
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        m_last_load_time = now;
-        load_detection_results();
-    }
-}
-
 void MainWindow::on_recent_detection_results_selector_changed()
 {
     load_detection_results();
@@ -1134,7 +1163,6 @@ void MainWindow::on_recent_detection_results_selector_changed()
 
 void MainWindow::on_detection_results_refresh_clicked()
 {
-    m_last_load_time = std::chrono::steady_clock::now();
     load_detection_results();
 }
 
@@ -1144,19 +1172,6 @@ void MainWindow::load_detection_results()
     for (auto *child : m_detection_results_listbox->get_children())
     {
         m_detection_results_listbox->remove(*child);
-    }
-
-    if (m_last_detection_results_refresh_time_lbl)
-    {
-        // Convert m_last_load_time to a time_t (assuming steady_clock is close to system_clock)
-        auto now_c = std::chrono::system_clock::to_time_t(
-            std::chrono::system_clock::now() + (m_last_load_time - std::chrono::steady_clock::now()));
-
-        // Format time as a string
-        std::ostringstream time_stream;
-        time_stream << std::put_time(std::localtime(&now_c), "%Y-%m-%d %H:%M:%S");
-
-        m_last_detection_results_refresh_time_lbl->set_text(time_stream.str());
     }
 
     if (m_recent_detection_results_selector_cbox)
@@ -1190,7 +1205,7 @@ void MainWindow::load_detection_results()
         auto end_tp = TimeUtils::parse_time(end_time);
 
         // Load transactions list
-        auto recent_results_folders = FileUtils::get_folders_by_time(AppPaths::Detection_Results_Path, start_tp, end_tp);
+        auto recent_results_folders = FileUtils::get_folders_by_time(AppPaths::Project_Detection_Results_Path(m_curr_project_name), start_tp, end_tp);
         
         // Populating the detection results list box with rows
         for (const auto &result_folder : recent_results_folders)
@@ -1395,11 +1410,12 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
         return;
     }
 
+    m_image_pixbuf_report.reset();
+
     // Create the combined pixbuf for detection images.
     // Gdk::Pixbuf does not directly support a single-channel format, 
     // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
     m_image_pixbuf_report = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
-    // m_image_pixbuf_explorer->fill(0xffffffbe); // For testing
     m_image_pixbuf_report->fill(0x00000000); // Fill with black
 
     int current_y = 0;
@@ -1436,6 +1452,8 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
         // TODO, show a popup
         return;
     }
+
+    m_mask_pixbuf_report.reset();
 
     // Create a transparent mask pixbuf of the same size as the image
     m_mask_pixbuf_report = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
@@ -4890,11 +4908,6 @@ void MainWindow::on_start_clicked()
     for (const std::string sn : connected_serial_numbers)
     {
         void *device_handle = m_connected_device_handles[sn];
-
-        auto currentTimeInMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-        std::cerr << "Begin capture for device: " << sn << " at " << currentTimeInMs << std::endl;
-        m_logger->log("Begin capture for device: " + sn);
-
         start_capture(device_handle, capture_interval_ms);
     }
 
@@ -5555,6 +5568,10 @@ void MainWindow::stop_capture(void *device_handle)
 
 void MainWindow::start_detection()
 {
+    auto now = std::chrono::system_clock::now();
+    // Add a new session with the current time as the start and a placeholder for the end time
+    m_session_times.emplace_back(now, std::chrono::system_clock::time_point::max());
+
     // Set m_report_start_time if it hasn't been set yet
     if (m_report_start_time == std::chrono::system_clock::time_point())
     {
@@ -6168,12 +6185,25 @@ void MainWindow::start_detection()
 
 void MainWindow::stop_detection()
 {
+    auto now = std::chrono::system_clock::now();
+    if (!m_session_times.empty() &&
+        m_session_times.back().second == std::chrono::system_clock::time_point::max())
+    {
+        // Update the end time of the last session
+        m_session_times.back().second = now;
+    }
+    else
+    {
+        // Handle cases where no active session exists
+        std::cerr << "No active session to stop." << std::endl;
+    }
+
     // Get the current time
-    auto now = TimeUtils::get_current_time();
+    auto now_formatted = TimeUtils::get_current_time();
 
     // Save stop time to settings file
     nlohmann::json new_setting;
-    new_setting["last_session_end_time"] = now;
+    new_setting["last_session_end_time"] = now_formatted;
     SettingsService::add_or_update_settings("detection", new_setting);
 
     if (m_processing_thread.joinable())
@@ -6201,8 +6231,8 @@ void MainWindow::stop_detection()
         m_masks_dispatcher_connection.disconnect();
     }
 
-    RetentionManager retention_manager;
-    retention_manager.enforce_daily_limit();
+    // RetentionManager retention_manager;
+    // retention_manager.enforce_daily_limit();
 }
 
 void MainWindow::send_ws_message(std::string message)

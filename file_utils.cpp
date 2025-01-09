@@ -1,5 +1,6 @@
 #include <sys/syscall.h> // For syscall() and SYS_statx
 #include <fcntl.h>      // For AT_FDCWD and AT_NO_AUTOMOUNT
+#include <fstream>  // For std::ifstream
 #include "file_utils.h"
 
 std::string FileUtils::getGladeFilePath()
@@ -155,8 +156,8 @@ std::vector<std::filesystem::path> FileUtils::get_folders_by_time(const std::fil
 
         std::sort(directories.begin(), directories.end(), [](const std::filesystem::directory_entry &a, const std::filesystem::directory_entry &b)
         {
-            auto creation_time_a = FileUtils::get_creation_time(a.path().string());
-            auto creation_time_b = FileUtils::get_creation_time(b.path().string());
+            auto creation_time_a = FileUtils::get_transaction_time(a.path().string());
+            auto creation_time_b = FileUtils::get_transaction_time(b.path().string());
 
             // If creation time is unavailable, treat it as later than any valid time
             if (!creation_time_a) return false;
@@ -168,7 +169,7 @@ std::vector<std::filesystem::path> FileUtils::get_folders_by_time(const std::fil
         // Iterate through sorted directories and filter by creation time
         for (const auto &entry : directories)
         {
-            auto creation_time = FileUtils::get_creation_time(entry.path().string());
+            auto creation_time = FileUtils::get_transaction_time(entry.path().string());
 
             if (!creation_time)
             {
@@ -267,6 +268,85 @@ std::optional<std::chrono::system_clock::time_point> FileUtils::get_creation_tim
     else
     {
         std::cerr << "Creation time not available or syscall failed on: " << folderPath << strerror(errno) << std::endl;
+        return std::nullopt;
+    }
+}
+
+std::optional<nlohmann::json> FileUtils::get_json(const std::string &folderPath)
+{
+    std::filesystem::path trans_json_path = std::filesystem::path(folderPath) / "transaction_data.json";
+    if (!std::filesystem::exists(trans_json_path))
+    {
+        std::cerr << "File not exists: transaction_data.json" << std::endl;
+        return std::nullopt;
+    }
+
+    // Read the content of the JSON file
+    std::ifstream json_file(trans_json_path);
+    if (!json_file.is_open())
+    {
+        std::cerr << "Failed to open the file." << std::endl;
+        return std::nullopt;
+    }
+
+    try
+    {
+        nlohmann::json json_data;
+        json_file >> json_data;
+        json_file.close();
+
+        return json_data;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << e.what() << '\n';
+        return std::nullopt;
+    }    
+}
+
+std::optional<std::chrono::system_clock::time_point> FileUtils::get_transaction_time(const std::string &folderPath)
+{
+    try
+    {
+        auto json_data = FileUtils::get_json(folderPath);
+        if (!json_data.has_value())
+        {
+            throw std::runtime_error("Failed to get json from the folder path");
+        }
+
+        const auto &json = json_data.value();
+        if (!json.contains("transaction_datetime"))
+        {
+            throw std::runtime_error("Failed to get 'transaction_datetime' from json");
+        }
+        std::string datetime_str = json["transaction_datetime"];
+
+        // Step 1: Parse the date and time part into a std::tm structure
+        std::tm tm = {};
+        std::istringstream ss(datetime_str.substr(0, 19)); // Exclude milliseconds for now
+        ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+
+        if (ss.fail()) {
+            throw std::runtime_error("Failed to parse datetime string");
+        }
+
+        // Step 2: Convert std::tm to std::time_t
+        std::time_t time_t_value = std::mktime(&tm);
+
+        // Step 3: Convert std::time_t to std::chrono::system_clock::time_point
+        std::chrono::system_clock::time_point tp = std::chrono::system_clock::from_time_t(time_t_value);
+
+        // Step 4: Add fractional seconds (e.g., milliseconds)
+        if (datetime_str.size() > 19) {
+            auto milliseconds = std::stoi(datetime_str.substr(20));
+            tp += std::chrono::milliseconds(milliseconds);
+        }
+
+        return tp;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << e.what() << '\n';
         return std::nullopt;
     }
 }

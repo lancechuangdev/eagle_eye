@@ -49,10 +49,10 @@ int main(int argc, char **argv)
     builder->get_widget_derived("main_window", wnd, logger);
 
     // Apply Retention Policy
-    RetentionManager retention_manager;
-    retention_manager.archive();
-    retention_manager.enforce_archive_retention();
-    retention_manager.enforce_daily_limit();
+    // RetentionManager retention_manager;
+    // retention_manager.archive();
+    // retention_manager.enforce_archive_retention();
+    // retention_manager.enforce_daily_limit();
 
     // Shows the window and returns when it is closed.
     nRet = app->run(*wnd);

@@ -121,7 +121,6 @@ protected:
     Gtk::DrawingArea *m_detection_results_display_area;
     Gtk::ComboBoxText *m_recent_detection_results_selector_cbox;
     Gtk::Button *m_detection_results_refresh_btn;
-    Gtk::Label *m_last_detection_results_refresh_time_lbl;
     Gtk::Switch *m_detection_results_masking_switch;
     Gtk::Label *m_detection_results_path_lbl;
     Gtk::SpinButton *m_max_per_day_sb;
@@ -261,6 +260,7 @@ private:
     std::string m_trans_id;
     bool m_ws_response_ready = false; // Condition to wait on
     size_t m_session_anomaly_count;
+    std::vector<std::pair<std::chrono::system_clock::time_point, std::chrono::system_clock::time_point>> m_session_times;
 
     Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_rt_monitoring;
     Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_rt_monitoring;
@@ -311,11 +311,10 @@ private:
     double m_zoom_factor_detection = 1.0; // Zoom factor (1.0 = no zoom) on detection results page
 
     Glib::RefPtr<Gio::FileMonitor> m_detection_results_monitor;
-    std::chrono::steady_clock::time_point m_last_load_time;
     std::chrono::system_clock::time_point m_report_start_time;
     std::chrono::system_clock::time_point m_report_last_refresh_time;
-    std::vector<std::filesystem::path> m_detection_results_in_report;
-    std::string m_selected_detection_result_in_report;
+    std::vector<std::filesystem::path> m_sorted_detection_results_in_report;
+    std::string m_selected_transaction_id;
     bool m_show_mask_in_report;
     std::shared_ptr<Logger> m_logger;
     Glib::Dispatcher m_main_images_dispatcher;
@@ -358,13 +357,12 @@ private:
     void load_detection_results();
     void load_detection_result_in_explorer(std::string &detection_result_folder);
     void load_detection_result_in_report(std::string &detection_result_folder);
-    void setup_directory_monitor(const std::string &directory_path);
-    void on_directory_changed(const Glib::RefPtr<Gio::File> &file, const Glib::RefPtr<Gio::File> &other_file, Gio::FileMonitorEvent event_type);
     double calc_detection_results_memory_usage_in_gb(size_t max_per_day, size_t days_to_retain);
     void update_detection_results_memory_usage_label(size_t max_per_day, size_t days_to_retain);
     std::string get_patch_remark(const std::string &transaction_json_path, int prediction_id);
     void update_patch_thumbnail_alpha(Glib::RefPtr<Gdk::Pixbuf> thumbnail_pixbuf, Gtk::Image *thumbnail, int alpha_value);
     void update_patch_remark(const std::string &transaction_json_path, int prediction_id, const std::string &remark);
+    std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> track_position();
 };
 
 #endif

@@ -121,4 +121,3 @@ std::string TimeUtils::get_time_interval(std::chrono::system_clock::time_point c
 
     return duration_str;
 }
-
