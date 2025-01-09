@@ -265,6 +265,7 @@ private:
     Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_rt_monitoring;
     Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_rt_monitoring;
     Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_report;
+    Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_report_original;
     Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_report;
     Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_toolkit;
     Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_toolkit;
@@ -301,6 +302,7 @@ private:
     double m_zoom_factor_settings = 1.0; // Zoom factor (1.0 = no zoom) on settings page
 
     Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_explorer;
+    Glib::RefPtr<Gdk::Pixbuf> m_image_pixbuf_explorer_original;
     Glib::RefPtr<Gdk::Pixbuf> m_mask_pixbuf_explorer;
     bool m_show_mask_detection_result;
     bool m_is_dragging_detection = false; // Track whether the user is dragging on detection results page

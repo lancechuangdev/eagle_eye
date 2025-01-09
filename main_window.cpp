@@ -1410,11 +1410,10 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
         return;
     }
 
-    m_image_pixbuf_report.reset();
-
     // Create the combined pixbuf for detection images.
     // Gdk::Pixbuf does not directly support a single-channel format, 
     // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
+    m_image_pixbuf_report.reset();
     m_image_pixbuf_report = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
     m_image_pixbuf_report->fill(0x00000000); // Fill with black
 
@@ -1443,6 +1442,8 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
             0, 
             current_y);
 
+        pixbuf_image.reset();
+
         // Update the y-offset for the next image
         current_y += frame_height;
     }
@@ -1453,9 +1454,8 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
         return;
     }
 
-    m_mask_pixbuf_report.reset();
-
     // Create a transparent mask pixbuf of the same size as the image
+    m_mask_pixbuf_report.reset();
     m_mask_pixbuf_report = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
     // m_mask_pixbuf_explorer->fill(0xffffffbe); // For testing
     m_mask_pixbuf_report->fill(0x00000000); // Initialize the mask to be fully transparent black
@@ -1474,7 +1474,8 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
     }
 
     // Preserve the original frame pixbuf
-    auto frame_pixbuf_original = m_image_pixbuf_report;
+    m_image_pixbuf_report_original.reset();
+    m_image_pixbuf_report_original = m_image_pixbuf_report->copy();
     // Extract transaction ID
     auto transaction_id = json_data["transaction_id"].get<std::string>();
     
@@ -1540,6 +1541,8 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
         thumbnail->set_halign(Gtk::ALIGN_START);
         item_box->pack_start(*thumbnail, Gtk::PACK_SHRINK);
 
+        prediction_pixbuf.reset();
+
         // Create a horizontal box for buttons
         auto action_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
         action_box->set_spacing(10); // Spacing between buttons
@@ -1547,7 +1550,7 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
         // Add "Focus" button
         auto view_button = Gtk::make_managed<Gtk::Button>();
         view_button->set_margin_top(5);
-        view_button->signal_clicked().connect([this, label, frame_pixbuf_original, position_x, position_y, patch_width, patch_height]() {
+        view_button->signal_clicked().connect([this, label, position_x, position_y, patch_width, patch_height]() {
             try 
             {
                 // Remove the "highlighted" class from the currently highlighted label
@@ -1571,7 +1574,7 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
                 auto cr = Cairo::Context::create(surface);
 
                 // Clear existing drawings by re-rendering the original pixbuf
-                Gdk::Cairo::set_source_pixbuf(cr, frame_pixbuf_original, 0, 0); // Use the original pixbuf
+                Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_report_original, 0, 0); // Use the original pixbuf
                 cr->paint();
 
                 // Set the stroke color (e.g., red)
@@ -1624,7 +1627,7 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
             update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 255);
         }
 
-        delete_button->signal_clicked().connect([this, delete_button, trans_json_path, transaction_id, prediction_id, thumbnail, thumbnail_pixbuf, frame_pixbuf_original, position_x, position_y, patch_width, patch_height]()
+        delete_button->signal_clicked().connect([this, delete_button, trans_json_path, transaction_id, prediction_id, thumbnail, thumbnail_pixbuf, position_x, position_y, patch_width, patch_height]()
         {
             try
             {
@@ -1643,11 +1646,11 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
 
                     // Ensure the patch coordinates and dimensions are within bounds
                     if (position_x >= 0 && position_y >= 0 &&
-                        position_x + patch_width <= frame_pixbuf_original->get_width() &&
-                        position_y + patch_height <= frame_pixbuf_original->get_height()) {
+                        position_x + patch_width <= m_image_pixbuf_report_original->get_width() &&
+                        position_y + patch_height <= m_image_pixbuf_report_original->get_height()) {
                         
                         // Create a subpixbuf for the patch
-                        auto patch_pixbuf = Gdk::Pixbuf::create_subpixbuf(frame_pixbuf_original, position_x, position_y, patch_width, patch_height);
+                        auto patch_pixbuf = Gdk::Pixbuf::create_subpixbuf(m_image_pixbuf_report_original, position_x, position_y, patch_width, patch_height);
 
                         // Save the patch to a file
                         if (patch_pixbuf)
@@ -1785,8 +1788,8 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
     // Create the combined pixbuf for detection images.
     // Gdk::Pixbuf does not directly support a single-channel format, 
     // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
+    m_image_pixbuf_explorer.reset();
     m_image_pixbuf_explorer = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
-    // m_image_pixbuf_explorer->fill(0xffffffbe); // For testing
     m_image_pixbuf_explorer->fill(0x00000000); // Fill with black
 
     int current_y = 0;
@@ -1814,6 +1817,8 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
             0, 
             current_y);
 
+        pixbuf_image.reset();
+
         // Update the y-offset for the next image
         current_y += frame_height;
     }
@@ -1825,6 +1830,7 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
     }
 
     // Create a transparent mask pixbuf of the same size as the image
+    m_mask_pixbuf_explorer.reset();
     m_mask_pixbuf_explorer = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
     // m_mask_pixbuf_explorer->fill(0xffffffbe); // For testing
     m_mask_pixbuf_explorer->fill(0x00000000); // Initialize the mask to be fully transparent black
@@ -1843,7 +1849,8 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
     }
 
     // Preserve the original frame pixbuf
-    auto frame_pixbuf_original = m_image_pixbuf_explorer;
+    m_image_pixbuf_explorer_original.reset();
+    m_image_pixbuf_explorer_original = m_image_pixbuf_explorer->copy();
     // Extract transaction ID
     auto transaction_id = json_data["transaction_id"].get<std::string>();
     
@@ -1909,6 +1916,8 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
         thumbnail->set_halign(Gtk::ALIGN_START);
         item_box->pack_start(*thumbnail, Gtk::PACK_SHRINK);
 
+        prediction_pixbuf.reset();
+
         // Create a horizontal box for buttons
         auto action_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
         action_box->set_spacing(10); // Spacing between buttons
@@ -1916,7 +1925,7 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
         // Add "Focus" button
         auto view_button = Gtk::make_managed<Gtk::Button>();
         view_button->set_margin_top(5);
-        view_button->signal_clicked().connect([this, label, frame_pixbuf_original, position_x, position_y, patch_width, patch_height]() {
+        view_button->signal_clicked().connect([this, label, position_x, position_y, patch_width, patch_height]() {
             try 
             {
                 // Remove the "highlighted" class from the currently highlighted label
@@ -1940,7 +1949,7 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
                 auto cr = Cairo::Context::create(surface);
 
                 // Clear existing drawings by re-rendering the original pixbuf
-                Gdk::Cairo::set_source_pixbuf(cr, frame_pixbuf_original, 0, 0); // Use the original pixbuf
+                Gdk::Cairo::set_source_pixbuf(cr, m_image_pixbuf_explorer_original, 0, 0); // Use the original pixbuf
                 cr->paint();
 
                 // Set the stroke color (e.g., red)
@@ -1993,7 +2002,7 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
             update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 255);
         }
 
-        delete_button->signal_clicked().connect([this, delete_button, trans_json_path, transaction_id, prediction_id, thumbnail, thumbnail_pixbuf, frame_pixbuf_original, position_x, position_y, patch_width, patch_height]()
+        delete_button->signal_clicked().connect([this, delete_button, trans_json_path, transaction_id, prediction_id, thumbnail, thumbnail_pixbuf, position_x, position_y, patch_width, patch_height]()
         {
             try
             {
@@ -2012,11 +2021,11 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
 
                     // Ensure the patch coordinates and dimensions are within bounds
                     if (position_x >= 0 && position_y >= 0 &&
-                        position_x + patch_width <= frame_pixbuf_original->get_width() &&
-                        position_y + patch_height <= frame_pixbuf_original->get_height()) {
+                        position_x + patch_width <= m_image_pixbuf_explorer_original->get_width() &&
+                        position_y + patch_height <= m_image_pixbuf_explorer_original->get_height()) {
                         
                         // Create a subpixbuf for the patch
-                        auto patch_pixbuf = Gdk::Pixbuf::create_subpixbuf(frame_pixbuf_original, position_x, position_y, patch_width, patch_height);
+                        auto patch_pixbuf = Gdk::Pixbuf::create_subpixbuf(m_image_pixbuf_explorer_original, position_x, position_y, patch_width, patch_height);
 
                         // Save the patch to a file
                         if (patch_pixbuf)
