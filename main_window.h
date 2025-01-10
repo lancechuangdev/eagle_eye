@@ -122,11 +122,6 @@ protected:
     Gtk::ComboBoxText *m_recent_detection_results_selector_cbox;
     Gtk::Button *m_detection_results_refresh_btn;
     Gtk::Switch *m_detection_results_masking_switch;
-    Gtk::Label *m_detection_results_path_lbl;
-    Gtk::SpinButton *m_max_per_day_sb;
-    Gtk::SpinButton *m_days_to_retain_sb;
-    Gtk::Label *m_detection_results_memory_usage_lbl;
-    Gtk::Button *m_delete_detection_results_btn;
     Gtk::Entry *m_moving_speed_entry;
     Gtk::Button *m_save_report_btn;
     Gtk::Button *m_report_refresh_btn;
@@ -190,7 +185,6 @@ protected:
     void on_detection_results_refresh_clicked();
     void on_recent_detection_results_selector_changed();
     void on_enable_masking_changed();
-    void on_delete_detection_results_clicked();
     void on_detection_digital_input_selection_changed();
     void on_detection_digital_output_selection_changed();
 
@@ -358,8 +352,6 @@ private:
     void load_detection_results();
     void load_detection_result_in_explorer(std::string &detection_result_folder);
     void load_detection_result_in_report(std::string &detection_result_folder);
-    double calc_detection_results_memory_usage_in_gb(size_t max_per_day, size_t days_to_retain);
-    void update_detection_results_memory_usage_label(size_t max_per_day, size_t days_to_retain);
     std::string get_patch_remark(const std::string &transaction_json_path, int prediction_id);
     void update_patch_thumbnail_alpha(Glib::RefPtr<Gdk::Pixbuf> thumbnail_pixbuf, Gtk::Image *thumbnail, int alpha_value);
     void update_patch_remark(const std::string &transaction_json_path, int prediction_id, const std::string &remark);

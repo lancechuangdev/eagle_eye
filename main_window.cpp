@@ -3,7 +3,6 @@
 #include "settings_service.h"
 #include "retention_manager.h"
 #include "constants.h"
-#include "report_window.h"
 #include "time_utils.h"
 
 MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &refBuilder, std::shared_ptr<Logger> logger)
@@ -557,36 +556,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
         // Connect to the signal_changed() of the PropertyProxy
         active_property.signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_enable_masking_changed));
-    }
-
-    m_builder->get_widget("detection_results_path_lbl", m_detection_results_path_lbl);
-
-    m_builder->get_widget("max_per_day_sb", m_max_per_day_sb);
-    if (m_max_per_day_sb)
-    {
-        m_max_per_day_sb->signal_value_changed().connect([this]() {
-            auto max_per_day = m_max_per_day_sb->get_value_as_int();
-            auto days_to_retain = m_days_to_retain_sb->get_value_as_int();
-            update_detection_results_memory_usage_label(max_per_day, days_to_retain);
-        });
-    }
-
-    m_builder->get_widget("days_to_retain_sb", m_days_to_retain_sb);
-    if (m_days_to_retain_sb)
-    {
-        m_days_to_retain_sb->signal_value_changed().connect([this]() {
-            auto max_per_day = m_max_per_day_sb->get_value_as_int();
-            auto days_to_retain = m_days_to_retain_sb->get_value_as_int();
-            update_detection_results_memory_usage_label(max_per_day, days_to_retain);
-        });
-    }
-
-    m_builder->get_widget("results_memory_usage_lbl", m_detection_results_memory_usage_lbl);
-
-    m_builder->get_widget("delete_results_btn", m_delete_detection_results_btn);
-    if (m_delete_detection_results_btn)
-    {
-        m_delete_detection_results_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_delete_detection_results_clicked));
     }
 
     m_builder->get_widget("digital_io_type_cbox", m_digital_io_type_cbox);
@@ -1249,25 +1218,6 @@ void MainWindow::on_detection_digital_output_selection_changed()
     {
         m_settings_detection_digital_output_line_number_lbl->set_text(digital_output_line_number);
     }       
-}
-
-void MainWindow::on_delete_detection_results_clicked()
-{
-    Gtk::MessageDialog dialog(*this, "Are you sure you want to delete all files?",
-                              false, Gtk::MESSAGE_WARNING, Gtk::BUTTONS_YES_NO);
-    dialog.set_secondary_text("This action cannot be undone.");
-
-    // Show the dialog and get user response
-    int response = dialog.run();
-
-    if (response == Gtk::RESPONSE_YES)
-    {
-        FileUtils::delete_all_in_directory(AppPaths::Detection_Results_Path);
-    }
-    else
-    {
-        std::cout << "Deletion canceled by the user." << std::endl;
-    }
 }
 
 void MainWindow::on_recent_detection_results_selector_changed()
@@ -2538,42 +2488,6 @@ void MainWindow::load_detection_settings()
     {
         m_anomaly_size_threshold_scale->set_value(pixel_threshold);
     }
-    if (m_detection_results_path_lbl)
-    {
-        m_detection_results_path_lbl->set_text(AppPaths::Detection_Results_Path.string());
-    }
-    if (m_max_per_day_sb)
-    {
-        m_max_per_day_sb->set_value(max_per_day);
-    }
-    if (m_days_to_retain_sb)
-    {
-        m_days_to_retain_sb->set_value(days_to_retain);
-    }
-    update_detection_results_memory_usage_label(max_per_day, days_to_retain);
-}
-
-void MainWindow::update_detection_results_memory_usage_label(size_t max_per_day, size_t days_to_retain)
-{
-    if (m_detection_results_memory_usage_lbl)
-    {
-        auto memory_usage_gb = calc_detection_results_memory_usage_in_gb(max_per_day, days_to_retain);
-
-        // Format the memory usage with 2 decimal places
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(2) << memory_usage_gb << " GB";
-
-        // Set the formatted string to the label
-        m_detection_results_memory_usage_lbl->set_text(oss.str());
-    }
-}
-
-double MainWindow::calc_detection_results_memory_usage_in_gb(size_t max_per_day, size_t days_to_retain)
-{
-    constexpr size_t file_size_kb = 400;      // Size of one file in KB
-    constexpr double kb_to_gb = 1.0 / 1048576.0; // Conversion factor from KB to GB
-    size_t total_kb = max_per_day * days_to_retain * file_size_kb; // Total memory in KB
-    return total_kb * kb_to_gb;
 }
 
 void MainWindow::on_cancel_detection_settings_clicked()
@@ -2617,16 +2531,6 @@ void MainWindow::on_save_detection_settings_clicked()
     {
         auto pixel_threshold = m_anomaly_size_threshold_scale->get_value();
         new_settings["pixel_threshold"] = pixel_threshold;
-    }
-    if (m_max_per_day_sb)
-    {
-        auto max_per_day = m_max_per_day_sb->get_value_as_int();
-        new_settings["max_per_day"] = max_per_day;
-    }
-    if (m_days_to_retain_sb)
-    {
-        auto days_to_retain = m_days_to_retain_sb->get_value_as_int();
-        new_settings["days_to_retain"] = days_to_retain;
     }
 
     // Save detection settings

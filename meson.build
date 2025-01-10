@@ -30,7 +30,7 @@ resource_target = gnome.compile_resources(
 )
 
 executable('ee', 
-    [resource_target, 'main.cpp', 'main_window.cpp', 'app_paths.cpp', 'frame_queue.cpp', 'file_utils.cpp', 'time_utils.cpp', 'logger.cpp', 'web_socket_client.cpp', 'retention_manager.cpp', 'settings_service.cpp', 'report_window.cpp'],
+    [resource_target, 'main.cpp', 'main_window.cpp', 'app_paths.cpp', 'frame_queue.cpp', 'file_utils.cpp', 'time_utils.cpp', 'logger.cpp', 'web_socket_client.cpp', 'retention_manager.cpp', 'settings_service.cpp'],
     install: true,
     install_dir: join_paths(get_option('prefix'), 'bin', 'eagle_eye'),
     dependencies: [gtkmm_dep, boost_dep, openssl_dep, json_dep],
