@@ -127,8 +127,8 @@ protected:
     Gtk::SpinButton *m_days_to_retain_sb;
     Gtk::Label *m_detection_results_memory_usage_lbl;
     Gtk::Button *m_delete_detection_results_btn;
-    Gtk::Entry *m_settings_moving_speed_entry;
-    Gtk::Label *m_detection_reports_path_lbl;
+    Gtk::Entry *m_moving_speed_entry;
+    Gtk::Button *m_save_report_btn;
     Gtk::Button *m_report_refresh_btn;
     Gtk::Label *m_report_start_time_lbl;
     Gtk::Label *m_report_last_refresh_time_lbl;
@@ -160,6 +160,7 @@ protected:
     bool on_report_display_area_btn_release_event(GdkEventButton *button_event);
     bool on_report_display_area_motion_notify_event(GdkEventMotion *motion_event);
     void on_report_enable_masking_changed();
+    void on_save_report_clicked();
     bool on_rt_monitoring_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_toolkit_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_settings_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
@@ -313,8 +314,6 @@ private:
     double m_zoom_factor_detection = 1.0; // Zoom factor (1.0 = no zoom) on detection results page
 
     Glib::RefPtr<Gio::FileMonitor> m_detection_results_monitor;
-    std::chrono::system_clock::time_point m_report_start_time;
-    std::chrono::system_clock::time_point m_report_last_refresh_time;
     std::vector<std::filesystem::path> m_sorted_detection_results_in_report;
     std::string m_selected_transaction_id;
     bool m_show_mask_in_report;
@@ -364,7 +363,8 @@ private:
     std::string get_patch_remark(const std::string &transaction_json_path, int prediction_id);
     void update_patch_thumbnail_alpha(Glib::RefPtr<Gdk::Pixbuf> thumbnail_pixbuf, Gtk::Image *thumbnail, int alpha_value);
     void update_patch_remark(const std::string &transaction_json_path, int prediction_id, const std::string &remark);
-    std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> track_position();
+    std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> track_position(double speed);
+    void create_csv_file(const std::string &file_name);
 };
 
 #endif

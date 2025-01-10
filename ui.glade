@@ -570,7 +570,7 @@
               </packing>
             </child>
             <child>
-              <object class="GtkEntry" id="moving_speed_entry">
+              <object class="GtkEntry" id="moving_speed_entry2">
                 <property name="visible">True</property>
                 <property name="can-focus">True</property>
                 <property name="input-purpose">number</property>
@@ -609,7 +609,7 @@
             <property name="can-focus">False</property>
             <property name="spacing">10</property>
             <child>
-              <object class="GtkButton" id="save_report_btn">
+              <object class="GtkButton" id="save_report_btn2">
                 <property name="label" translatable="yes">Save Report</property>
                 <property name="visible">True</property>
                 <property name="can-focus">True</property>
@@ -1612,7 +1612,7 @@
                               </packing>
                             </child>
                             <child>
-                              <object class="GtkEntry" id="moving_speed_entry1">
+                              <object class="GtkEntry" id="moving_speed_entry">
                                 <property name="visible">True</property>
                                 <property name="can-focus">True</property>
                                 <property name="input-purpose">number</property>
@@ -1630,7 +1630,7 @@
                           </packing>
                         </child>
                         <child>
-                          <object class="GtkButton" id="save_report_btn1">
+                          <object class="GtkButton" id="save_report_btn">
                             <property name="label" translatable="yes">Save Report</property>
                             <property name="visible">True</property>
                             <property name="can-focus">True</property>
@@ -4315,112 +4315,6 @@ When the configured limits are exceeded, older results will be automatically rep
                                   </packing>
                                 </child>
                                 <child>
-                                  <object class="GtkLabel">
-                                    <property name="visible">True</property>
-                                    <property name="can-focus">False</property>
-                                    <property name="halign">start</property>
-                                    <property name="label" translatable="yes">Anomaly Detection Reports</property>
-                                    <style>
-                                      <class name="header_label"/>
-                                    </style>
-                                  </object>
-                                  <packing>
-                                    <property name="expand">False</property>
-                                    <property name="fill">True</property>
-                                    <property name="position">15</property>
-                                  </packing>
-                                </child>
-                                <child>
-                                  <object class="GtkLabel">
-                                    <property name="visible">True</property>
-                                    <property name="can-focus">False</property>
-                                    <property name="halign">start</property>
-                                    <property name="margin-bottom">5</property>
-                                    <property name="label" translatable="yes">Configure detection report settings. 
-The moving speed is used to calculate anomaly positions.</property>
-                                    <property name="wrap">True</property>
-                                  </object>
-                                  <packing>
-                                    <property name="expand">False</property>
-                                    <property name="fill">True</property>
-                                    <property name="position">16</property>
-                                  </packing>
-                                </child>
-                                <child>
-                                  <!-- n-columns=2 n-rows=2 -->
-                                  <object class="GtkGrid">
-                                    <property name="visible">True</property>
-                                    <property name="can-focus">False</property>
-                                    <property name="halign">start</property>
-                                    <property name="row-spacing">5</property>
-                                    <property name="column-spacing">10</property>
-                                    <child>
-                                      <object class="GtkLabel">
-                                        <property name="visible">True</property>
-                                        <property name="can-focus">False</property>
-                                        <property name="halign">end</property>
-                                        <property name="label" translatable="yes">Moving Speed (mm/s):</property>
-                                      </object>
-                                      <packing>
-                                        <property name="left-attach">0</property>
-                                        <property name="top-attach">0</property>
-                                      </packing>
-                                    </child>
-                                    <child>
-                                      <object class="GtkEntry" id="settings_moving_speed_entry">
-                                        <property name="visible">True</property>
-                                        <property name="can-focus">True</property>
-                                      </object>
-                                      <packing>
-                                        <property name="left-attach">1</property>
-                                        <property name="top-attach">0</property>
-                                      </packing>
-                                    </child>
-                                    <child>
-                                      <object class="GtkLabel">
-                                        <property name="visible">True</property>
-                                        <property name="can-focus">False</property>
-                                        <property name="halign">end</property>
-                                        <property name="label" translatable="yes">Report Files Path:</property>
-                                      </object>
-                                      <packing>
-                                        <property name="left-attach">0</property>
-                                        <property name="top-attach">1</property>
-                                      </packing>
-                                    </child>
-                                    <child>
-                                      <object class="GtkLabel" id="detection_reports_path_lbl">
-                                        <property name="visible">True</property>
-                                        <property name="can-focus">False</property>
-                                        <property name="halign">start</property>
-                                        <property name="label" translatable="yes">&lt;File Path Placeholder&gt;</property>
-                                      </object>
-                                      <packing>
-                                        <property name="left-attach">1</property>
-                                        <property name="top-attach">1</property>
-                                      </packing>
-                                    </child>
-                                  </object>
-                                  <packing>
-                                    <property name="expand">False</property>
-                                    <property name="fill">True</property>
-                                    <property name="position">17</property>
-                                  </packing>
-                                </child>
-                                <child>
-                                  <object class="GtkSeparator">
-                                    <property name="visible">True</property>
-                                    <property name="can-focus">False</property>
-                                    <property name="margin-top">5</property>
-                                    <property name="margin-bottom">5</property>
-                                  </object>
-                                  <packing>
-                                    <property name="expand">False</property>
-                                    <property name="fill">True</property>
-                                    <property name="position">18</property>
-                                  </packing>
-                                </child>
-                                <child>
                                   <object class="GtkBox">
                                     <property name="visible">True</property>
                                     <property name="can-focus">False</property>
@@ -4494,11 +4388,8 @@ The moving speed is used to calculate anomaly positions.</property>
                                   <packing>
                                     <property name="expand">False</property>
                                     <property name="fill">True</property>
-                                    <property name="position">19</property>
+                                    <property name="position">15</property>
                                   </packing>
-                                </child>
-                                <child>
-                                  <placeholder/>
                                 </child>
                               </object>
                             </child>

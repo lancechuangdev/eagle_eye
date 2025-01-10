@@ -180,6 +180,14 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_report_position_display_area->signal_draw().connect(sigc::mem_fun(*this, &MainWindow::on_report_position_draw));
     }
 
+    m_builder->get_widget("moving_speed_entry", m_moving_speed_entry);
+
+    m_builder->get_widget("save_report_btn", m_save_report_btn);
+    if (m_save_report_btn)
+    {
+        m_save_report_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_save_report_clicked));
+    }
+
     m_builder->get_widget("snap_source_cbox", m_snap_source_cbox);
 
     m_builder->get_widget("snap_btn", m_snap_btn);
@@ -581,10 +589,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_delete_detection_results_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_delete_detection_results_clicked));
     }
 
-    m_builder->get_widget("settings_moving_speed_entry", m_settings_moving_speed_entry);
-
-    m_builder->get_widget("detection_reports_path_lbl", m_detection_reports_path_lbl);
-
     m_builder->get_widget("digital_io_type_cbox", m_digital_io_type_cbox);
     if (m_digital_io_type_cbox)
     {
@@ -645,11 +649,8 @@ void MainWindow::on_runtime_tab_clicked()
 
 void MainWindow::on_report_refresh_clicked()
 {
-    // Set report last refresh time
-    m_report_last_refresh_time = std::chrono::system_clock::now();
-
     // Load transactions list
-    m_sorted_detection_results_in_report = FileUtils::get_folders_by_time(AppPaths::Project_Detection_Results_Path(m_curr_project_name), m_report_start_time, m_report_last_refresh_time);
+    m_sorted_detection_results_in_report = FileUtils::get_folders_by_time(AppPaths::Project_Detection_Results_Path(m_curr_project_name), std::chrono::system_clock::time_point::min(), std::chrono::system_clock::now());
 
     // Clear the results before loading
     for (auto *child : m_report_transactions_listbox->get_children())
@@ -813,7 +814,7 @@ bool MainWindow::on_report_display_area_motion_notify_event(GdkEventMotion *moti
     return true;
 }
 
-std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> MainWindow::track_position()
+std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> MainWindow::track_position(double speed)
 {
     std::map<std::pair<std::chrono::system_clock::time_point, std::chrono::system_clock::time_point>, 
              std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>>> session_time_points_with_positions;
@@ -858,7 +859,6 @@ std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, doubl
     }
 
     double position = 0.0; // Initialize the position globally (shared across all sessions)
-    double speed = 1.0; // unit speed
 
     for (auto &entry : session_time_points_with_positions)
     {
@@ -875,15 +875,16 @@ std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, doubl
             const auto &time_point = std::get<1>(transaction);
             auto &current_position = std::get<2>(transaction);
 
-            // Calculate elapsed time in seconds
-            auto elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(time_point - start_time).count();
+            // Calculate precise elapsed time in milliseconds
+            auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(time_point - start_time).count();
 
             // Update position
-            position += speed * elapsed_time;
-
-            // Store the updated position in the transaction
-            current_position = position;
+            current_position = position + speed * elapsed_time / 1000.0;
         }
+
+        // Update global position
+        auto last_transaction = transactions.back(); 
+        position = std::get<2>(last_transaction);
     }
 
     std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> transactions_with_positions;
@@ -913,7 +914,7 @@ bool MainWindow::on_report_position_draw(const Cairo::RefPtr<Cairo::Context> &cr
     cr->line_to(width, height / 2);
     cr->stroke();
 
-    auto transactions_with_positions = track_position();
+    auto transactions_with_positions = track_position(1.0); // unit speed
 
     if (transactions_with_positions.empty())
     {
@@ -957,6 +958,119 @@ bool MainWindow::on_report_position_draw(const Cairo::RefPtr<Cairo::Context> &cr
     }
 
     return true;
+}
+
+void MainWindow::on_save_report_clicked()
+{
+    // Create a FileChooserDialog in Save mode
+    Gtk::FileChooserDialog dialog("Save Report", Gtk::FileChooserAction::FILE_CHOOSER_ACTION_SAVE);
+
+    // Set the initial folder
+    dialog.set_current_folder(AppPaths::Project_Path(m_curr_project_name));
+
+    // Add a filter to show only CSV files
+    auto csv_filter = Gtk::FileFilter::create();
+    csv_filter->set_name("CSV files");
+    csv_filter->add_pattern("*.csv");
+    dialog.add_filter(csv_filter);
+
+    // Add buttons for user actions
+    dialog.add_button("_Cancel", Gtk::ResponseType::RESPONSE_REJECT);
+    dialog.add_button("_Save", Gtk::ResponseType::RESPONSE_ACCEPT);
+
+    // Set default filename
+    dialog.set_current_name("detection_report.csv");
+
+    // Enable overwrite confirmation
+    dialog.set_do_overwrite_confirmation(true);
+
+    // Show the dialog and wait for user response
+    int result = dialog.run();
+
+    switch (result)
+    {
+        case Gtk::ResponseType::RESPONSE_ACCEPT:
+        {
+            // Get the selected file path
+            std::string file_path = dialog.get_filename();
+            std::cout << "File selected to save: " << file_path << std::endl;
+
+            // Save the file
+            create_csv_file(file_path);
+            break;
+        }
+        case Gtk::ResponseType::RESPONSE_REJECT:
+            std::cout << "Save operation canceled." << std::endl;
+            break;
+
+        default:
+            std::cout << "Unexpected response." << std::endl;
+            break;
+    }
+}
+
+void MainWindow::create_csv_file(const std::string &file_name)
+{
+    // Open the file for writing
+    std::ofstream csv_file(file_name);
+
+    if (!csv_file.is_open())
+    {
+        std::cerr << "Failed to open file: " << file_name << std::endl;
+        return;
+    }
+
+    // Write the moving speed in the first row
+    double moving_speed;
+    try
+    {
+        moving_speed = std::stod(m_moving_speed_entry->get_text());
+        csv_file << "Moving Speed (mm/s):," << moving_speed << "\n";
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << e.what() << '\n';
+        return;
+    }
+
+    // Write the headers
+    csv_file << "Transaction ID,Date Time (yyyy-mm-dd hh:mm:ss.000), Position (mm)\n";
+
+    if (m_session_times.empty())
+    {
+        std::cerr << "No active session to create report." << std::endl;
+        return;
+    }
+
+    auto start_time = m_session_times.front().first;
+    auto end_time = m_session_times.back().second;
+    auto transactions_with_positions = track_position(moving_speed);
+
+    // Write the first row
+    csv_file << "N/A" << ','
+             << '=' << '"' << TimeUtils::get_formatted_time(start_time) << '"' << ','
+             << 0 << '\n';
+
+    // Write transactions
+    for (const auto &transaction : transactions_with_positions)
+    {
+        const auto &transaction_id = std::get<0>(transaction);
+        const auto &time_point = std::get<1>(transaction);
+        const auto &position = std::get<2>(transaction);
+
+        csv_file << transaction_id << ','
+             << '=' << '"' << TimeUtils::get_formatted_time(time_point) << '"' << ','
+             << position << '\n';
+    }
+
+    // Write the last row
+    csv_file << "N/A" << ','
+             << '=' << '"' << TimeUtils::get_formatted_time(start_time) << '"' << ','
+             << "N/A" << '\n';
+
+    // Close the file
+    csv_file.close();
+    std::cout << "CSV file created successfully: " << file_name << std::endl;
 }
 
 void MainWindow::on_transaction_selected(Gtk::ListBoxRow* row)
@@ -2437,29 +2551,6 @@ void MainWindow::load_detection_settings()
         m_days_to_retain_sb->set_value(days_to_retain);
     }
     update_detection_results_memory_usage_label(max_per_day, days_to_retain);
-    
-    // Load report settings
-    auto moving_speed = 0.0;
-    auto report_settings = SettingsService::get_settings("report");
-
-    if (!report_settings.empty())
-    {
-        if (report_settings.contains("moving_speed"))
-        {
-            moving_speed = report_settings["moving_speed"];
-        }
-    }
-
-    if (m_settings_moving_speed_entry)
-    {
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(1) << moving_speed; // Set precision to 1 decimal place
-        m_settings_moving_speed_entry->set_text(oss.str());
-    }
-    if (m_detection_reports_path_lbl)
-    {
-        m_detection_reports_path_lbl->set_text(AppPaths::Detection_Reports_Path.string());
-    }
 }
 
 void MainWindow::update_detection_results_memory_usage_label(size_t max_per_day, size_t days_to_retain)
@@ -2540,25 +2631,6 @@ void MainWindow::on_save_detection_settings_clicked()
 
     // Save detection settings
     SettingsService::add_or_update_settings("detection", new_settings);
-
-    nlohmann::json report_settings;
-
-    if (m_settings_moving_speed_entry)
-    {
-        try 
-        {
-            // Convert string to float and store in JSON
-            auto moving_speed = std::stof(m_settings_moving_speed_entry->get_text());
-            report_settings["moving_speed"] = moving_speed;
-        } 
-        catch (const std::exception& e) 
-        {
-            std::cerr << "Error converting moving_speed to float: " << e.what() << std::endl;
-        }
-    }
-
-    // Save report settings
-    SettingsService::add_or_update_settings("report", report_settings);
 }
 
 void MainWindow::on_digital_io_type_changed()
@@ -4618,8 +4690,8 @@ void MainWindow::on_new_project_clicked()
                 {
                     if (create_project(project_name))
                     {
-                        // Reset m_report_start_time when a new project is created
-                        m_report_start_time = std::chrono::system_clock::time_point();
+                        // Reset session times when a new project is created
+                        m_session_times.clear();
 
                         // Update main window title with a project name
                         set_window_title("Eagle Eye - " + project_name);
@@ -4660,7 +4732,7 @@ bool MainWindow::create_project(const std::string &project_name)
     try
     {
         // Create the directory path
-        std::filesystem::path project_folder = std::filesystem::path(AppPaths::Detection_Projects_Path) / project_name;
+        std::filesystem::path project_folder = std::filesystem::path(AppPaths::Projects_Path) / project_name;
         std::filesystem::create_directories(project_folder);
 
         // Create the JSON object with project name
@@ -5580,12 +5652,6 @@ void MainWindow::start_detection()
     auto now = std::chrono::system_clock::now();
     // Add a new session with the current time as the start and a placeholder for the end time
     m_session_times.emplace_back(now, std::chrono::system_clock::time_point::max());
-
-    // Set m_report_start_time if it hasn't been set yet
-    if (m_report_start_time == std::chrono::system_clock::time_point())
-    {
-        m_report_start_time = std::chrono::system_clock::now();
-    }
 
     if (m_rt_monitoring_detection_start_time_lbl)
     {
