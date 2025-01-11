@@ -1269,7 +1269,34 @@ void MainWindow::load_detection_results()
         auto end_tp = TimeUtils::parse_time(end_time);
 
         // Load transactions list
-        auto recent_results_folders = FileUtils::get_folders_by_time(AppPaths::Project_Detection_Results_Path(m_curr_project_name), start_tp, end_tp);
+        std::vector<std::filesystem::path> recent_results_folders;
+
+        try
+        {
+            if (std::filesystem::exists(AppPaths::Projects_Path) && std::filesystem::is_directory(AppPaths::Projects_Path))
+            {
+                for (const auto& entry : std::filesystem::directory_iterator(AppPaths::Projects_Path))
+                {
+                    // Check if the entry is a directory
+                    if (std::filesystem::is_directory(entry.status()))
+                    {
+                        auto project_name = entry.path().filename().string();
+                        auto results = FileUtils::get_folders_by_time(AppPaths::Project_Detection_Results_Path(project_name), start_tp, end_tp);
+                        
+                        // Add the results to recent_results_folders
+                        recent_results_folders.insert(recent_results_folders.end(), results.begin(), results.end());
+                    }
+                }
+            }
+            else
+            {
+                std::cerr << "Projects_Path does not exist or is not a directory." << std::endl;
+            }
+        }
+        catch (const std::filesystem::filesystem_error& e)
+        {
+            std::cerr << "Filesystem error: " << e.what() << std::endl;
+        }
         
         // Populating the detection results list box with rows
         for (const auto &result_folder : recent_results_folders)
@@ -5034,7 +5061,7 @@ void MainWindow::on_snap_clicked()
     // Start detection
     auto patch_size = 256;
     std::string shm_name = "/ee_shared_memory";
-    size_t buffer = 2448 * 2048 * 2;
+    size_t buffer = 2448 * 2048 * MAX_FRAME_BATCH_SIZE;
 
     // Open shared memory object
     std::cout << "Open shared memory object" << std::endl;
@@ -5094,9 +5121,13 @@ void MainWindow::on_snap_clicked()
             pixel_threshold = detection_settings["pixel_threshold"];
         }
 
+        // Get current Datetime
+        std::string datetime = TimeUtils::get_current_time();
+
         // Build JSON transaction data
         nlohmann::json json_data;
         json_data["transaction_id"] = m_trans_id;
+        json_data["transaction_datetime"] = datetime;
         json_data["confidence_threshold"] = confidence_threshold;
         json_data["pixel_threshold"] = pixel_threshold;
         json_data["frame_width"] = frame_width;
@@ -5228,9 +5259,13 @@ void MainWindow::on_toolkit_test_clicked()
             pixel_threshold = detection_settings["detection_settings"];
         }
 
+        // Get current Datetime
+        std::string datetime = TimeUtils::get_current_time();
+
         // Build JSON transaction data
         nlohmann::json json_data;
         json_data["transaction_id"] = m_trans_id;
+        json_data["transaction_datetime"] = datetime;
         json_data["confidence_threshold"] = confidence_threshold;
         json_data["pixel_threshold"] = pixel_threshold;
         json_data["frame_width"] = frame_width;
@@ -5279,7 +5314,7 @@ void MainWindow::on_toolkit_test_clicked()
 
 void MainWindow::update_snap_masks(std::string trans_id)
 {
-    std::filesystem::path trans_json = AppPaths::Detection_Results_Path / trans_id / "transaction_data.json";
+    std::filesystem::path trans_json = AppPaths::Project_Detection_Results_Path(TEMP_PROJECT_NAME) / trans_id / "transaction_data.json";
     if (!std::filesystem::exists(trans_json))
     {
         std::cerr << "File not exists: transaction_data.json" << std::endl;
