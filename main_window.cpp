@@ -71,6 +71,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_new_project_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_new_project_clicked));
     }
 
+    m_builder->get_widget("open_project_btn", m_open_project_btn);
+    if (m_open_project_btn)
+    {
+        m_open_project_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_open_project_clicked));
+    }
+
     m_builder->get_widget("runtime_no_project_lbl", m_runtime_no_project_lbl);
 
     m_builder->get_widget("runtime_nav_button_box", m_runtime_nav_button_box);
@@ -790,7 +796,8 @@ std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, doubl
 
     for (const auto &transaction_folder : m_sorted_detection_results_in_report)
     {
-        auto json_data = FileUtils::get_json(transaction_folder);
+        auto trans_file_path = std::filesystem::path(transaction_folder) / "transaction_data.json";
+        auto json_data = FileUtils::get_json(trans_file_path.string());
         if (!json_data.has_value())
         {
             continue;
@@ -4663,7 +4670,7 @@ bool MainWindow::create_project(const std::string &project_name)
     try
     {
         // Create the directory path
-        std::filesystem::path project_folder = std::filesystem::path(AppPaths::Projects_Path) / project_name;
+        std::filesystem::path project_folder = AppPaths::Project_Path(project_name);
         std::filesystem::create_directories(project_folder);
 
         // Create the JSON object with project name
@@ -4692,6 +4699,87 @@ bool MainWindow::create_project(const std::string &project_name)
         std::cerr << "Error creating project: " << e.what() << std::endl;
         return false;
     }
+}
+
+void MainWindow::on_open_project_clicked()
+{
+    // Create a FileChooserDialog in Open mode
+    Gtk::FileChooserDialog dialog("Open Project", Gtk::FileChooserAction::FILE_CHOOSER_ACTION_OPEN);
+
+    // Set the initial folder
+    dialog.set_current_folder(AppPaths::Projects_Path);
+
+    // Add a filter to show only CSV files
+    auto ds_filter = Gtk::FileFilter::create();
+    ds_filter->set_name("project files");
+    ds_filter->add_pattern("*.dscanproj");
+    dialog.add_filter(ds_filter);
+
+    // Add buttons for user actions
+    dialog.add_button("_Cancel", Gtk::ResponseType::RESPONSE_REJECT);
+    dialog.add_button("_Open", Gtk::ResponseType::RESPONSE_ACCEPT);
+
+    // Show the dialog and wait for user response
+    int result = dialog.run();
+
+    switch (result)
+    {
+        case Gtk::ResponseType::RESPONSE_ACCEPT:
+        {
+            // Get the selected file path
+            std::string file_path = dialog.get_filename();
+            std::cout << "File selected to open: " << file_path << std::endl;
+
+            // Get project name from *.dscanproj file and update current project member
+            auto json_data = FileUtils::get_json(file_path);
+            if (json_data.has_value())
+            {
+                const auto &json = json_data.value();
+                if (json.contains("project_name"))
+                {
+                    m_curr_project_name = json["project_name"];
+
+                    // Update main window title with a project name
+                    set_window_title("Eagle Eye - " + m_curr_project_name);
+
+                    // Update runtime page
+                    update_runtime_page("open_project");
+
+                    // Navigate to runtime page
+                    m_runtime_btn->set_active(true);
+
+                    // Reconstruct session times when opening a project
+                    m_session_times.clear();  
+                    auto project_json_optional = FileUtils::get_json(file_path);
+                    if (project_json_optional.has_value())
+                    {
+                        auto &project_json = project_json_optional.value();
+                        if (project_json.contains("session_times")) 
+                        {
+                            for (const auto& session : project_json["session_times"]) {
+                                auto start_time = TimeUtils::parse_time(session["start_time"]);
+                                auto end_time = (session["end_time"] == "max")
+                                                    ? std::chrono::system_clock::time_point::max()
+                                                    : TimeUtils::parse_time(session["end_time"]);
+
+                                m_session_times.emplace_back(start_time, end_time);
+                            }
+                        }
+                    }
+
+                    // Update recent projects list (ToDo) 
+                }
+            }
+            break;
+        }
+        case Gtk::ResponseType::RESPONSE_REJECT:
+            std::cout << "Save operation canceled." << std::endl;
+            break;
+
+        default:
+            std::cout << "Unexpected response." << std::endl;
+            break;
+    } 
 }
 
 void MainWindow::update_runtime_page(const std::string &mode)
@@ -4725,26 +4813,11 @@ void MainWindow::update_runtime_page(const std::string &mode)
     }
 
     // Populate the runtime page base on the given mode
-    if (mode == "create_project")
+    if (mode == "create_project" || mode == "open_project")
     {
         if (m_runtime_stack)
         {
             m_runtime_stack->set_visible_child("page_rt_control_panel");
-        }
-    }
-    else if (mode == "open_project")
-    {
-        if (m_runtime_control_panel_rbtn)
-        {
-            m_runtime_control_panel_rbtn->set_visible(false);
-        }
-        if (m_runtime_monitoring_rbtn)
-        {
-            m_runtime_monitoring_rbtn->set_visible(false);
-        }
-        if (m_runtime_stack)
-        {
-            m_runtime_stack->set_visible_child("page_rt_report");
         }
     }
     else if (mode == "quick_start")
@@ -5592,6 +5665,44 @@ void MainWindow::start_detection()
     // Add a new session with the current time as the start and a placeholder for the end time
     m_session_times.emplace_back(now, std::chrono::system_clock::time_point::max());
 
+    // Add or update 'session_times' in json poject file
+    auto project_file_path = AppPaths::Project_Path(m_curr_project_name) / (m_curr_project_name + ".dscanproj");
+    auto project_json_optional = FileUtils::get_json(project_file_path.string());
+    if (project_json_optional.has_value())
+    {
+        auto &project_json = project_json_optional.value();
+        auto session_times_json = nlohmann::json::array();
+        for (const auto& session : m_session_times) {
+            auto start_time = TimeUtils::get_formatted_time(session.first);
+            auto end_time = session.second == std::chrono::system_clock::time_point::max()
+                            ? "max" // Represent "max" as a string
+                            : TimeUtils::get_formatted_time(session.second);
+
+            session_times_json.push_back({
+                {"start_time", start_time},
+                {"end_time", end_time}
+            });
+        }
+
+        if (!project_json.contains("session_times")) 
+        {
+            project_json["session_times"] = nlohmann::json::object();
+        }
+        project_json["session_times"] = session_times_json;
+
+        // Write JSON to the file
+        std::ofstream ofs(project_file_path);
+        if (!ofs.is_open())
+        {
+            std::cerr << "Failed to open file: " << project_file_path << std::endl;
+        }
+        else
+        {
+            ofs << project_json.dump(4); // Pretty-print with 4 spaces
+            ofs.close();
+        }
+    }
+
     if (m_rt_monitoring_detection_start_time_lbl)
     {
         // Get the current time
@@ -6205,6 +6316,43 @@ void MainWindow::stop_detection()
     {
         // Update the end time of the last session
         m_session_times.back().second = now;
+
+        // Update 'session_times' in json poject file
+        auto project_file_path = AppPaths::Project_Path(m_curr_project_name) / (m_curr_project_name + ".dscanproj");
+        auto project_json_optional = FileUtils::get_json(project_file_path.string());
+        if (project_json_optional.has_value())
+        {
+            auto &project_json = project_json_optional.value();
+            auto session_times_json = nlohmann::json::array();
+            for (const auto& session : m_session_times) {
+                auto start_time = TimeUtils::get_formatted_time(session.first);
+                auto end_time = session.second == std::chrono::system_clock::time_point::max()
+                                ? "max" // Represent "max" as a string
+                                : TimeUtils::get_formatted_time(session.second);
+
+                session_times_json.push_back({
+                    {"start_time", start_time},
+                    {"end_time", end_time}
+                });
+            }
+
+            if (project_json.contains("session_times")) 
+            {
+                project_json["session_times"] = session_times_json;
+            }
+
+            // Write JSON to the file
+            std::ofstream ofs(project_file_path);
+            if (!ofs.is_open())
+            {
+                std::cerr << "Failed to open file: " << project_file_path << std::endl;
+            }
+            else
+            {
+                ofs << project_json.dump(4); // Pretty-print with 4 spaces
+                ofs.close();
+            }
+        }
     }
     else
     {

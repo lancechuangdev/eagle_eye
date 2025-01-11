@@ -272,9 +272,9 @@ std::optional<std::chrono::system_clock::time_point> FileUtils::get_creation_tim
     }
 }
 
-std::optional<nlohmann::json> FileUtils::get_json(const std::string &folderPath)
+std::optional<nlohmann::json> FileUtils::get_json(const std::string &file_path)
 {
-    std::filesystem::path trans_json_path = std::filesystem::path(folderPath) / "transaction_data.json";
+    std::filesystem::path trans_json_path = std::filesystem::path(file_path);
     if (!std::filesystem::exists(trans_json_path))
     {
         std::cerr << "File not exists: transaction_data.json" << std::endl;
@@ -308,7 +308,8 @@ std::optional<std::chrono::system_clock::time_point> FileUtils::get_transaction_
 {
     try
     {
-        auto json_data = FileUtils::get_json(folderPath);
+        auto trans_file_path = std::filesystem::path(folderPath) / "transaction_data.json";
+        auto json_data = FileUtils::get_json(trans_file_path.string());
         if (!json_data.has_value())
         {
             throw std::runtime_error("Failed to get json from the folder path");

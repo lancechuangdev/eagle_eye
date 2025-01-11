@@ -36,6 +36,7 @@ protected:
     Gtk::RadioButton *m_runtime_report_rbtn;
     Gtk::Stack *m_runtime_stack;
     Gtk::Button *m_new_project_btn;
+    Gtk::Button *m_open_project_btn;
     Gtk::Label *m_runtime_no_project_lbl;
     Gtk::ButtonBox *m_runtime_nav_button_box;
     Gtk::DrawingArea *m_rt_monitoring_drawing_area;
@@ -139,6 +140,7 @@ protected:
     void on_menu_toggled();
     void on_runtime_tab_clicked();
     void on_new_project_clicked();
+    void on_open_project_clicked();
     void on_start_clicked();
     void on_stop_clicked();
     void on_snap_clicked();
