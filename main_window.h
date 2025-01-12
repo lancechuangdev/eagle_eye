@@ -37,6 +37,7 @@ protected:
     Gtk::Stack *m_runtime_stack;
     Gtk::Button *m_new_project_btn;
     Gtk::Button *m_open_project_btn;
+    Gtk::Button *m_quick_start_btn; // start without project
     Gtk::Label *m_runtime_no_project_lbl;
     Gtk::ButtonBox *m_runtime_nav_button_box;
     Gtk::DrawingArea *m_rt_monitoring_drawing_area;
@@ -126,8 +127,6 @@ protected:
     Gtk::Entry *m_moving_speed_entry;
     Gtk::Button *m_save_report_btn;
     Gtk::Button *m_report_refresh_btn;
-    Gtk::Label *m_report_start_time_lbl;
-    Gtk::Label *m_report_last_refresh_time_lbl;
     Gtk::ListBox *m_report_transactions_listbox;
     Gtk::Switch *m_report_masking_switch;
     Gtk::DrawingArea *m_report_image_display_area;
@@ -141,6 +140,7 @@ protected:
     void on_runtime_tab_clicked();
     void on_new_project_clicked();
     void on_open_project_clicked();
+    void on_quick_start_clicked();
     void on_start_clicked();
     void on_stop_clicked();
     void on_snap_clicked();

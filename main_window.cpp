@@ -29,7 +29,7 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     signal_delete_event().connect(sigc::mem_fun(*this, &MainWindow::on_window_delete));
 
     // Set the window title
-    set_window_title("Eagle Eye");
+    set_window_title(APP_NAME);
 
     m_builder->get_widget("startup_rbtn", m_startup_btn);
     if (m_startup_btn)
@@ -75,6 +75,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     if (m_open_project_btn)
     {
         m_open_project_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_open_project_clicked));
+    }
+
+    m_builder->get_widget("quick_start_btn", m_quick_start_btn);
+    if (m_quick_start_btn)
+    {
+        m_quick_start_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_quick_start_clicked));
     }
 
     m_builder->get_widget("runtime_no_project_lbl", m_runtime_no_project_lbl);
@@ -140,10 +146,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     {
         m_report_refresh_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_report_refresh_clicked));
     }
-
-    m_builder->get_widget("report_last_refresh_time_lbl", m_report_last_refresh_time_lbl);
-
-    m_builder->get_widget("report_start_time_lbl", m_report_start_time_lbl);
 
     m_builder->get_widget("report_transactions_listbox", m_report_transactions_listbox);
     if (m_report_transactions_listbox)
@@ -4630,9 +4632,29 @@ void MainWindow::on_new_project_clicked()
                     {
                         // Reset session times when a new project is created
                         m_session_times.clear();
+                        
+                        // Clear transactions list
+                        for (auto *child : m_report_transactions_listbox->get_children())
+                        {
+                            m_report_transactions_listbox->remove(*child);
+                        }
+
+                        // Clear display area on report page
+                        m_image_pixbuf_report.reset();
+                        m_mask_pixbuf_report.reset();
+                        m_report_image_display_area->queue_draw();
+                        
+                        // Clear patches box before adding
+                        for (auto *child : m_report_patches_box->get_children())
+                        {
+                            m_report_patches_box->remove(*child);
+                        }
+                        
+                        // Clear position track by redrawing
+                        m_report_position_display_area->queue_draw();
 
                         // Update main window title with a project name
-                        set_window_title("Eagle Eye - " + project_name);
+                        set_window_title(APP_NAME + " - " + project_name);
                         
                         // Update runtime page
                         update_runtime_page("create_project");
@@ -4740,7 +4762,7 @@ void MainWindow::on_open_project_clicked()
                     m_curr_project_name = json["project_name"];
 
                     // Update main window title with a project name
-                    set_window_title("Eagle Eye - " + m_curr_project_name);
+                    set_window_title(APP_NAME + " - " + m_curr_project_name);
 
                     // Update runtime page
                     update_runtime_page("open_project");
@@ -4782,6 +4804,41 @@ void MainWindow::on_open_project_clicked()
     } 
 }
 
+void MainWindow::on_quick_start_clicked()
+{
+    // Reset session times when a new project is created
+    m_session_times.clear();
+
+    // Clear transactions list
+    for (auto *child : m_report_transactions_listbox->get_children())
+    {
+        m_report_transactions_listbox->remove(*child);
+    }
+
+    // Clear display area on report page
+    m_image_pixbuf_report.reset();
+    m_mask_pixbuf_report.reset();
+    m_report_image_display_area->queue_draw();
+
+    // Clear patches box before adding
+    for (auto *child : m_report_patches_box->get_children())
+    {
+        m_report_patches_box->remove(*child);
+    }
+
+    // Clear position track by redrawing
+    m_report_position_display_area->queue_draw();
+
+    // Update main window title with a project name
+    set_window_title(APP_NAME);
+
+    // Update runtime page
+    update_runtime_page("quick_start");
+
+    // Navigate to runtime page
+    m_runtime_btn->set_active(true);  
+}
+
 void MainWindow::update_runtime_page(const std::string &mode)
 {
     // Hide the no project text
@@ -4815,9 +4872,9 @@ void MainWindow::update_runtime_page(const std::string &mode)
     // Populate the runtime page base on the given mode
     if (mode == "create_project" || mode == "open_project")
     {
-        if (m_runtime_stack)
+        if (m_runtime_control_panel_rbtn)
         {
-            m_runtime_stack->set_visible_child("page_rt_control_panel");
+            m_runtime_control_panel_rbtn->set_active(true);
         }
     }
     else if (mode == "quick_start")
@@ -4826,9 +4883,9 @@ void MainWindow::update_runtime_page(const std::string &mode)
         {
             m_runtime_report_rbtn->set_visible(false);
         }
-        if (m_runtime_stack)
+        if (m_runtime_control_panel_rbtn)
         {
-            m_runtime_stack->set_visible_child("page_rt_control_panel");
+            m_runtime_control_panel_rbtn->set_active(true);
         }
     }
 }

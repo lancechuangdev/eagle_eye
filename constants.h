@@ -4,6 +4,9 @@
 // #include <cstddef> // For size_t
 #include <string>
 
+// App-related constants
+const std::string APP_NAME = "Eagle Eye";
+
 // Batch-related constants
 const int MAX_FRAME_BATCH_SIZE = 2;
 const int MAX_PATCHES_PER_BATCH = 100; // The max number of anomaly patches that detection model generates per batch.
