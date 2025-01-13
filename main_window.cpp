@@ -83,6 +83,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_quick_start_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_quick_start_clicked));
     }
 
+    m_builder->get_widget("recent_projects_listbox", m_recent_projects_listbox);
+    if (m_recent_projects_listbox)
+    {
+        m_recent_projects_listbox->signal_row_selected().connect(sigc::mem_fun(*this, &MainWindow::on_recent_project_selected));
+    }
+
     m_builder->get_widget("runtime_no_project_lbl", m_runtime_no_project_lbl);
 
     m_builder->get_widget("runtime_nav_button_box", m_runtime_nav_button_box);
@@ -1227,6 +1233,121 @@ void MainWindow::on_detection_digital_output_selection_changed()
     {
         m_settings_detection_digital_output_line_number_lbl->set_text(digital_output_line_number);
     }       
+}
+
+void MainWindow::load_recent_projects()
+{
+    // Clear the recent projects before loading
+    for (auto *child : m_recent_projects_listbox->get_children())
+    {
+        m_recent_projects_listbox->remove(*child);
+    }
+
+    std::vector<std::pair<std::string, std::chrono::system_clock::time_point>> projects_with_times;
+    try
+    {
+        if (std::filesystem::exists(AppPaths::Projects_Path) && std::filesystem::is_directory(AppPaths::Projects_Path))
+        {
+            for (const auto& entry : std::filesystem::directory_iterator(AppPaths::Projects_Path))
+            {
+                // Check if the entry is a directory
+                if (std::filesystem::is_directory(entry.status()))
+                {
+                    auto project_dir = entry.path();
+                    for (const auto& file_entry : std::filesystem::directory_iterator(project_dir))
+                    {
+                        auto file_path = file_entry.path();
+                        if (file_path.extension() == ".dscanproj")
+                        {
+                            std::string project_name;
+                            auto last_modified_time = std::chrono::system_clock::time_point::min();
+                            auto project_json_optional = FileUtils::get_json(file_path.string());
+                            if (project_json_optional.has_value())
+                            {
+                                auto &project_json = project_json_optional.value();
+                                if (project_json.contains("project_name"))
+                                {
+                                    project_name = project_json["project_name"];
+                                }
+                                if (project_json.contains("last_modified_time"))
+                                {
+                                    auto last_modified_time_str = project_json["last_modified_time"];
+                                    last_modified_time = TimeUtils::parse_time(last_modified_time_str);
+                                }
+                                projects_with_times.emplace_back(project_name, last_modified_time);
+                            }
+                        }
+                    }
+                    
+                }
+            }
+
+            // Sort projects by last_modified_time in descending order
+            std::sort(projects_with_times.begin(), projects_with_times.end(),
+                      [](const auto& a, const auto& b) {
+                          return a.second > b.second; // Descending order
+                      });
+
+            // Get the top five last modified projects
+            if (projects_with_times.size() > 5) 
+            {
+                projects_with_times.resize(5);
+            }
+
+            // Populating the recent projects list box with rows
+            for (const auto &entry : projects_with_times)
+            {
+                const auto project_name = entry.first;
+                auto row_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+                auto project_label = Gtk::make_managed<Gtk::Label>(project_name);
+                row_box->set_tooltip_text(AppPaths::Project_Path(project_name).string());
+                row_box->pack_start(*project_label, Gtk::PACK_SHRINK);
+                // Create a Gtk::ListBoxRow to wrap the box
+                auto listbox_row = Gtk::make_managed<Gtk::ListBoxRow>();
+                listbox_row->add(*row_box);
+                // Set margin around the row
+                listbox_row->set_margin_top(5);      // Space above the row
+                listbox_row->set_margin_start(5);   // Space to the left of the row
+                listbox_row->set_margin_end(5);     // Space to the right of the row
+                // Add a custom CSS class to the row
+                auto row_context = listbox_row->get_style_context();
+                row_context->add_class("clickable-row");
+                // Add the Gtk::ListBoxRow to the list box
+                m_recent_projects_listbox->append(*listbox_row);
+
+                // Show all the newly added widgets
+                listbox_row->show_all();
+            }
+
+            // Add more... button
+            auto row_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+            auto more_label = Gtk::make_managed<Gtk::Label>("more...");
+            row_box->pack_start(*more_label, Gtk::PACK_SHRINK);
+            // Create a Gtk::ListBoxRow to wrap the box
+            auto listbox_row = Gtk::make_managed<Gtk::ListBoxRow>();
+            listbox_row->add(*row_box);
+            // Set margin around the row
+            listbox_row->set_margin_top(5);      // Space above the row
+            listbox_row->set_margin_start(5);   // Space to the left of the row
+            listbox_row->set_margin_end(5);     // Space to the right of the row
+            // Add a custom CSS class to the row
+            auto row_context = listbox_row->get_style_context();
+            row_context->add_class("clickable-row");
+            // Add the Gtk::ListBoxRow to the list box
+            m_recent_projects_listbox->append(*listbox_row);
+
+            // Show all the newly added widgets
+            listbox_row->show_all();
+        }
+        else
+        {
+            std::cerr << "Projects_Path does not exist or is not a directory." << std::endl;
+        }
+    }
+    catch (const std::filesystem::filesystem_error& e)
+    {
+        std::cerr << "Filesystem error: " << e.what() << std::endl;
+    }
 }
 
 void MainWindow::on_recent_detection_results_selector_changed()
@@ -4210,6 +4331,7 @@ void MainWindow::on_window_shown()
         m_logger->log("No camera found.");
     }
 
+    load_recent_projects();
     load_detection_results();
     load_detection_settings();
     clear_camera_settings();
@@ -4603,6 +4725,12 @@ void MainWindow::on_settings_toggled()
 
 void MainWindow::on_new_project_clicked()
 {
+    if (!m_connected_device_handles.empty())
+    {
+        show_camera_connect_warning(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
+        return;
+    }
+
     // Load the dialog from Glade
     Gtk::Dialog* dialog = nullptr;
     m_builder->get_widget("new_project_dialog", dialog);
@@ -4662,7 +4790,8 @@ void MainWindow::on_new_project_clicked()
                         // Navigate to runtime page
                         m_runtime_btn->set_active(true);
                         
-                        // Update recent projects list (ToDo)
+                        // Update recent projects list
+                        load_recent_projects();
                     }
                 }
                 else
@@ -4695,10 +4824,12 @@ bool MainWindow::create_project(const std::string &project_name)
         std::filesystem::path project_folder = AppPaths::Project_Path(project_name);
         std::filesystem::create_directories(project_folder);
 
-        // Create the JSON object with project name
+        // Create the JSON object with project name and last modified time
         nlohmann::json project_json;
         project_json["project_name"] = project_name;
-
+        auto now = std::chrono::system_clock::now();
+        project_json["last_modified_time"] = TimeUtils::get_formatted_time(now);
+        
         // Generate the project file path
         std::filesystem::path project_file = project_folder / (project_name + ".dscanproj");
 
@@ -4725,6 +4856,12 @@ bool MainWindow::create_project(const std::string &project_name)
 
 void MainWindow::on_open_project_clicked()
 {
+    if (!m_connected_device_handles.empty())
+    {
+        show_camera_connect_warning(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
+        return;
+    }
+
     // Create a FileChooserDialog in Open mode
     Gtk::FileChooserDialog dialog("Open Project", Gtk::FileChooserAction::FILE_CHOOSER_ACTION_OPEN);
 
@@ -4751,47 +4888,7 @@ void MainWindow::on_open_project_clicked()
             // Get the selected file path
             std::string file_path = dialog.get_filename();
             std::cout << "File selected to open: " << file_path << std::endl;
-
-            // Get project name from *.dscanproj file and update current project member
-            auto json_data = FileUtils::get_json(file_path);
-            if (json_data.has_value())
-            {
-                const auto &json = json_data.value();
-                if (json.contains("project_name"))
-                {
-                    m_curr_project_name = json["project_name"];
-
-                    // Update main window title with a project name
-                    set_window_title(APP_NAME + " - " + m_curr_project_name);
-
-                    // Update runtime page
-                    update_runtime_page("open_project");
-
-                    // Navigate to runtime page
-                    m_runtime_btn->set_active(true);
-
-                    // Reconstruct session times when opening a project
-                    m_session_times.clear();  
-                    auto project_json_optional = FileUtils::get_json(file_path);
-                    if (project_json_optional.has_value())
-                    {
-                        auto &project_json = project_json_optional.value();
-                        if (project_json.contains("session_times")) 
-                        {
-                            for (const auto& session : project_json["session_times"]) {
-                                auto start_time = TimeUtils::parse_time(session["start_time"]);
-                                auto end_time = (session["end_time"] == "max")
-                                                    ? std::chrono::system_clock::time_point::max()
-                                                    : TimeUtils::parse_time(session["end_time"]);
-
-                                m_session_times.emplace_back(start_time, end_time);
-                            }
-                        }
-                    }
-
-                    // Update recent projects list (ToDo) 
-                }
-            }
+            open_project(file_path);
             break;
         }
         case Gtk::ResponseType::RESPONSE_REJECT:
@@ -4804,8 +4901,89 @@ void MainWindow::on_open_project_clicked()
     } 
 }
 
+void MainWindow::open_project(const std::string &project_file_path)
+{
+    // Get project name from *.dscanproj file and update current project member
+    auto project_json_optional = FileUtils::get_json(project_file_path);
+    if (project_json_optional.has_value())
+    {
+        auto &project_json = project_json_optional.value();
+        if (project_json.contains("project_name"))
+        {
+            m_curr_project_name = project_json["project_name"];
+
+            // Update main window title with a project name
+            set_window_title(APP_NAME + " - " + m_curr_project_name);
+
+            // Clear transactions list
+            for (auto *child : m_report_transactions_listbox->get_children())
+            {
+                m_report_transactions_listbox->remove(*child);
+            }
+
+            // Clear display area on report page
+            m_image_pixbuf_report.reset();
+            m_mask_pixbuf_report.reset();
+            m_report_image_display_area->queue_draw();
+            
+            // Clear patches box before adding
+            for (auto *child : m_report_patches_box->get_children())
+            {
+                m_report_patches_box->remove(*child);
+            }
+            
+            // Clear position track by redrawing
+            m_report_position_display_area->queue_draw();
+
+            // Update runtime page
+            update_runtime_page("open_project");
+
+            // Navigate to runtime page
+            m_runtime_btn->set_active(true);
+
+            // Reconstruct session times when opening a project
+            m_session_times.clear();  
+            if (project_json.contains("session_times")) 
+            {
+                for (const auto& session : project_json["session_times"])
+                {
+                    auto start_time = TimeUtils::parse_time(session["start_time"]);
+                    auto end_time = (session["end_time"] == "max")
+                                    ? std::chrono::system_clock::time_point::max()
+                                    : TimeUtils::parse_time(session["end_time"]);
+
+                    m_session_times.emplace_back(start_time, end_time);
+                }
+            }
+        }
+
+        auto now = std::chrono::system_clock::now();
+        project_json["last_modified_time"] = TimeUtils::get_formatted_time(now);
+        // Write JSON to the file
+        std::ofstream ofs(project_file_path);
+        if (ofs.is_open())
+        {
+            ofs << project_json.dump(4); // Pretty-print with 4 spaces
+            ofs.close();
+        }
+        else
+        {
+            std::cerr << "Failed to open file: " << project_file_path << std::endl;
+        }
+
+        // Update recent projects list
+        load_recent_projects();
+    }
+}
+
 void MainWindow::on_quick_start_clicked()
 {
+    if (!m_connected_device_handles.empty())
+    {
+        show_camera_connect_warning(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
+        return;
+    }
+
     // Reset session times when a new project is created
     m_session_times.clear();
 
@@ -4887,6 +5065,44 @@ void MainWindow::update_runtime_page(const std::string &mode)
         {
             m_runtime_control_panel_rbtn->set_active(true);
         }
+    }
+}
+
+void MainWindow::on_recent_project_selected(Gtk::ListBoxRow* row)
+{
+    if (!m_connected_device_handles.empty())
+    {
+        show_camera_connect_warning(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
+        return;
+    }
+
+    if (row)
+    {
+        auto row_box = dynamic_cast<Gtk::Box*>(row->get_child());
+        if (row_box)
+        {
+            std::string project_path_str = row_box->get_tooltip_text();
+
+            auto project_label = dynamic_cast<Gtk::Label *>(row_box->get_children()[0]);
+            if (project_label)
+            {
+                std::string project_name = project_label->get_text();
+                if (project_name == "more...")
+                {
+                    on_open_project_clicked();
+                }
+                else
+                {
+                    std::filesystem::path project_path(project_path_str);
+                    auto project_file_path = project_path / (project_name + ".dscanproj");
+                    open_project(project_file_path.string());         
+                }
+            }
+        }
+    }
+    else
+    {
+        std::cout << "No row selected!" << std::endl;
     }
 }
 
@@ -5767,11 +5983,6 @@ void MainWindow::start_detection()
 
         // Show start time
         m_rt_monitoring_detection_start_time_lbl->set_text(now);
-
-        // Save start time to settings file
-        nlohmann::json new_setting;
-        new_setting["last_session_start_time"] = now;
-        SettingsService::add_or_update_settings("detection", new_setting);
     }
 
     if (m_rt_monitoring_num_anomalies_lbl)

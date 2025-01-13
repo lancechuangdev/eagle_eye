@@ -38,6 +38,7 @@ protected:
     Gtk::Button *m_new_project_btn;
     Gtk::Button *m_open_project_btn;
     Gtk::Button *m_quick_start_btn; // start without project
+    Gtk::ListBox *m_recent_projects_listbox;
     Gtk::Label *m_runtime_no_project_lbl;
     Gtk::ButtonBox *m_runtime_nav_button_box;
     Gtk::DrawingArea *m_rt_monitoring_drawing_area;
@@ -141,6 +142,7 @@ protected:
     void on_new_project_clicked();
     void on_open_project_clicked();
     void on_quick_start_clicked();
+    void on_recent_project_selected(Gtk::ListBoxRow* row);
     void on_start_clicked();
     void on_stop_clicked();
     void on_snap_clicked();
@@ -326,6 +328,7 @@ private:
 
     void set_window_title(const std::string &title);
     bool create_project(const std::string &project_name);
+    void open_project(const std::string &project_file_path);
     void update_runtime_page(const std::string &mode);
     void discover_cameras();
     bool connect_camera(const std::string& sn);
@@ -350,6 +353,7 @@ private:
     void clear_camera_settings();
     void snap_and_display(void *device_handle);
     std::string run_command(const std::string& command);
+    void load_recent_projects();
     void load_detection_settings();
     void load_detection_results();
     void load_detection_result_in_explorer(std::string &detection_result_folder);

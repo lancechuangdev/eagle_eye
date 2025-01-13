@@ -32,3 +32,16 @@
     background-color: #305cde;
     color: white;
 }
+
+.transparent-background {
+    background-color: transparent;
+}
+
+.clickable-row {
+    color: blue;
+    padding: 5px;
+}
+
+.clickable-row:selected {
+    background-color: transparent;
+}

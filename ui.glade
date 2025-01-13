@@ -508,25 +508,17 @@
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkLabel">
+                  <object class="GtkListBox" id="recent_projects_listbox">
                     <property name="visible">True</property>
                     <property name="can-focus">False</property>
-                    <property name="label" translatable="yes">eagle_eye</property>
+                    <style>
+                      <class name="transparent-background"/>
+                    </style>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
                     <property name="top-attach">6</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkLabel">
-                    <property name="visible">True</property>
-                    <property name="can-focus">False</property>
-                    <property name="label" translatable="yes">~/Documents/Projects</property>
-                  </object>
-                  <packing>
-                    <property name="left-attach">1</property>
-                    <property name="top-attach">6</property>
+                    <property name="width">2</property>
                   </packing>
                 </child>
               </object>

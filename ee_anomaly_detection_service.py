@@ -174,7 +174,7 @@ def message_received(client, server, message):
     print_with_ts("Receiving a message from Client(%d): %s" % (client['id'], message))
     data = json.loads(message)
     frames_array = data.get('frames', [])
-    project_name = data.get('project_name', 'ad-hoc')
+    project_name = data.get('project_name', 'ad-hoc') or 'ad-hoc'
     transaction_id = data.get('transaction_id', 0)
     transaction_datetime = data.get('transaction_datetime', '')
     confidence_threshold = data.get('confidence_threshold', 0.8)
