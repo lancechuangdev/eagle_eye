@@ -9,7 +9,7 @@ int main(int argc, char **argv)
     std::shared_ptr<Logger> logger = std::make_shared<Logger>(AppPaths::Log_File_Path.string());
     logger->log("app started");
 
-    auto app = Gtk::Application::create(argc, argv, "com.example.eagle-eye");
+    auto app = Gtk::Application::create(argc, argv, "com.example.eagle_eye");
     auto builder = Gtk::Builder::create();
 
     try
@@ -53,7 +53,7 @@ int main(int argc, char **argv)
     // retention_manager.archive();
     // retention_manager.enforce_archive_retention();
     // retention_manager.enforce_daily_limit();
-
+    
     // Shows the window and returns when it is closed.
     nRet = app->run(*wnd);
 

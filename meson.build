@@ -42,8 +42,20 @@ executable('ee',
     ]
 )
 
-# Install data files
+# Install application data files
 install_data(
     ['ui.glade', 'style.css', 'ds.keras', 'ee_anomaly_detection_service.py'],
     install_dir: join_paths(get_option('prefix'), 'share', 'eagle_eye')
+)
+
+# Install app icon to the system icons directory
+install_data(
+    'com.example.eagle_eye.png',
+    install_dir: '/usr/share/icons/hicolor/512x512/apps',
+)
+
+# Install .desktop file to system-wide applications directory
+install_data(
+    'eagle_eye.desktop',
+    install_dir: '/usr/share/applications'
 )
