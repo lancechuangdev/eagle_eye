@@ -2,7 +2,8 @@
 Name=Eagle Eye
 Comment=A Fabric Anomaly Detection Application
 Exec=/usr/local/bin/eagle_eye/ee
-Icon=com.example.eagle_eye
+Icon=/usr/share/icons/hicolor/512x512/apps/com.example.eagle_eye.png
 Terminal=false
 Type=Application
 Categories=Application
+StartupWMClass=com.example.eagle_eye

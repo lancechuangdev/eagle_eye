@@ -50,8 +50,10 @@ protected:
     Gtk::Label *m_detection_digital_input_line_number_lbl;
     Gtk::Label *m_detection_digital_output_lbl;
     Gtk::Label *m_detection_digital_output_line_number_lbl;
+    Gtk::Button *m_warm_up_btn;
     Gtk::Button *m_start_btn;
     Gtk::Button *m_stop_btn;
+    Gtk::Label *m_system_warm_up_lbl;
     Gtk::Button *m_snap_btn;
     Gtk::ComboBoxText *m_snap_source_cbox;
     Gtk::FileChooserButton *m_toolkit_image_picker_fcb;
@@ -143,6 +145,7 @@ protected:
     void on_open_project_clicked();
     void on_quick_start_clicked();
     void on_recent_project_selected(Gtk::ListBoxRow* row);
+    void on_warm_up_clicked();
     void on_start_clicked();
     void on_stop_clicked();
     void on_snap_clicked();
@@ -363,6 +366,7 @@ private:
     void update_patch_remark(const std::string &transaction_json_path, int prediction_id, const std::string &remark);
     std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> track_position(double speed);
     void create_csv_file(const std::string &file_name);
+    void warm_up_gpu(int num_iterations);
 };
 
 #endif

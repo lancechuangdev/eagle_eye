@@ -115,6 +115,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("detection_rate_lbl", m_detection_rate_lbl);
 
+    m_builder->get_widget("warm_up_btn", m_warm_up_btn);
+    if (m_warm_up_btn)
+    {
+        m_warm_up_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_warm_up_clicked));
+    }
+
     m_builder->get_widget("start_btn", m_start_btn);
     if (m_start_btn)
     {
@@ -126,6 +132,8 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     {
         m_stop_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_stop_clicked));
     }    
+
+    m_builder->get_widget("system_warm_up_lbl", m_system_warm_up_lbl);
 
     m_builder->get_widget("rt_monitoring_detection_start_time_lbl", m_rt_monitoring_detection_start_time_lbl);
 
@@ -2532,16 +2540,6 @@ void MainWindow::load_detection_settings()
         if (detection_settings.contains("pixel_threshold"))
         {
             pixel_threshold = detection_settings["pixel_threshold"];
-        }
-
-        if (detection_settings.contains("max_per_day"))
-        {
-            max_per_day = detection_settings["max_per_day"];
-        }
-
-        if (detection_settings.contains("days_to_retain"))
-        {
-            days_to_retain = detection_settings["days_to_retain"];
         }
     }
 
@@ -5106,6 +5104,27 @@ void MainWindow::on_recent_project_selected(Gtk::ListBoxRow* row)
     }
 }
 
+void MainWindow::on_warm_up_clicked()
+{
+    // Disable the button to prevent multiple clicks
+    m_warm_up_btn->set_sensitive(false);
+
+    // Launch warm-up in a separate thread
+    std::thread([this]() {
+        warm_up_gpu(5); // Warm up GPU
+
+        // Once done, re-enable the button in the UI thread
+        Glib::signal_idle().connect([this]() {
+            m_warm_up_btn->set_sensitive(true);
+            if (m_system_warm_up_lbl)
+            {
+                m_system_warm_up_lbl->set_text("The system has already been warmed up and is ready for operation.");
+            }
+            return false; // Disconnect idle handler
+        });
+    }).detach(); // Detach the thread to allow it to run independently
+}
+
 void MainWindow::on_start_clicked()
 {
     m_is_running = true;
@@ -5495,13 +5514,20 @@ void MainWindow::on_snap_clicked()
 
         // Extract values from the JSON object
         std::string res_trans_id = response_json["transaction_id"];
-        std::string status = response_json["status"];
-        int total_anomalies = response_json["total_anomalies"];
-        
-        if (res_trans_id == m_trans_id && status == "complete" && total_anomalies > 0)
+        if (res_trans_id != m_trans_id)
         {
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            update_snap_masks(res_trans_id);
+            std::cout << "Transaction ID mismatch" << std::endl;
+        }
+        else
+        {
+            std::string status = response_json["status"];
+            int total_anomalies = response_json["total_anomalies"];
+            
+            if (status == "complete" && total_anomalies > 0)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                update_snap_masks(res_trans_id);
+            }
         }
     }
 
@@ -5601,8 +5627,14 @@ void MainWindow::on_toolkit_test_clicked()
         auto detection_settings = SettingsService::get_settings("detection");
         if (!detection_settings.empty())
         {
-            confidence_threshold = detection_settings["detection_settings"];
-            pixel_threshold = detection_settings["detection_settings"];
+            if (detection_settings.contains("confidence_threshold"))
+            {
+                confidence_threshold = detection_settings["confidence_threshold"];
+            }
+            if (detection_settings.contains("pixel_threshold"))
+            {
+                pixel_threshold = detection_settings["pixel_threshold"];
+            }
         }
 
         // Get current Datetime
@@ -5633,13 +5665,20 @@ void MainWindow::on_toolkit_test_clicked()
 
         // Extract values from the JSON object
         std::string res_trans_id = response_json["transaction_id"];
-        std::string status = response_json["status"];
-        int total_anomalies = response_json["total_anomalies"];
-        
-        if (res_trans_id == m_trans_id && status == "complete" && total_anomalies > 0)
+        if (res_trans_id != m_trans_id)
         {
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            update_snap_masks(res_trans_id);
+            std::cout << "Transaction ID mismatch" << std::endl;
+        }
+        else
+        {
+            std::string status = response_json["status"];
+            int total_anomalies = response_json["total_anomalies"];
+            
+            if (status == "complete" && total_anomalies > 0)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                update_snap_masks(res_trans_id);
+            }
         }
     }
 
@@ -7038,4 +7077,133 @@ bool MainWindow::on_detection_display_area_motion_notify_event(GdkEventMotion *m
     m_detection_results_display_area->queue_draw();
 
     return true;
+}
+
+void MainWindow::warm_up_gpu(int num_iterations)
+{
+    // Define the image dimensions and channels
+    int frame_width = 2448;
+    int frame_height = 2048;
+    int channels = 1;
+
+    for (int i = 0; i < num_iterations; i++)
+    {
+        // Open shared memory object
+        auto patch_size = PATCH_SIZE;
+        std::string shm_name = SHM_NAME_FRAMES;
+        size_t buffer = frame_width * frame_height * MAX_FRAME_BATCH_SIZE;
+
+        int shm_fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0666);
+        if (shm_fd == -1)
+        {
+            std::cerr << "Failed to open shared memory object." << std::endl;
+            continue;
+        }
+
+        // Resize shared memory object to the initial data size
+        if (ftruncate(shm_fd, buffer) == -1)
+        {
+            std::cerr << "Failed to resize shared memory object." << std::endl;
+            ::close(shm_fd);
+            continue;
+        }
+
+        // Map shared memory into address space
+        void *shm_ptr = mmap(0, buffer, PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        if (shm_ptr == MAP_FAILED)
+        {
+            std::cerr << "Failed to map shared memory." << std::endl;
+            ::close(shm_fd);
+            continue;
+        }
+
+        // Generate image data for warm up
+        std::vector<uint8_t> image_data;
+        // Resize the vector to hold the pixel data (black)
+        image_data.resize(frame_width * frame_height * channels);
+
+        // Copy the frame data into the calculated memory location
+        auto frame_size = frame_width * frame_height;
+        void* frame_ptr = static_cast<uint8_t*>(shm_ptr);
+        std::memcpy(frame_ptr, image_data.data(), frame_size);
+
+        // Save the frame metadata
+        std::vector<FrameOffsetInfo> frame_offsets;
+        frame_offsets.push_back({ 0, frame_size, "N/A" });
+        
+        if (!frame_offsets.empty())
+        {
+            // Send the command to the ws server
+            m_trans_id = generate_transaction_id();
+
+            // Get confidence threshold and pixel threshold from settings file
+            double confidence_threshold = 0.5;
+            double pixel_threshold = 0.03;
+
+            auto detection_settings = SettingsService::get_settings("detection");
+            if (!detection_settings.empty())
+            {
+                if (detection_settings.contains("confidence_threshold"))
+                {
+                    confidence_threshold = detection_settings["confidence_threshold"];
+                }
+                if (detection_settings.contains("pixel_threshold"))
+                {
+                    pixel_threshold = detection_settings["pixel_threshold"];
+                }
+            }
+
+            // Get current Datetime
+            std::string datetime = TimeUtils::get_current_time();
+
+            // Build JSON transaction data
+            nlohmann::json json_data;
+            json_data["transaction_id"] = m_trans_id;
+            json_data["transaction_datetime"] = datetime;
+            json_data["confidence_threshold"] = confidence_threshold;
+            json_data["pixel_threshold"] = pixel_threshold;
+            json_data["frame_width"] = frame_width;
+            json_data["frame_height"] = frame_height;
+            for (const auto& info : frame_offsets)
+            {
+                json_data["frames"].push_back({
+                    {"offset", info.offset},
+                    {"frame_size", info.frame_size},
+                    {"serial_number", info.serial_number}
+                });
+            }
+
+            std::string frame_info_string = json_data.dump(); // Convert JSON to string
+            send_ws_message(frame_info_string);
+
+            // Parse the JSON response
+            nlohmann::json response_json = nlohmann::json::parse(m_ws_response);
+
+            // Extract values from the JSON object
+            std::string res_trans_id = response_json["transaction_id"];
+            if (res_trans_id != m_trans_id)
+            {
+                std::cout << "Transaction ID mismatch" << std::endl;
+            }
+            else
+            {
+                std::string status = response_json["status"];            
+                if (status == "complete")
+                {
+                    std::cout << "Warming up gpu with transaction: " << res_trans_id << std::endl;
+                }
+            }
+        }
+
+        // Clean up
+        std::cout << "Clean up shared memory object" << std::endl; 
+        if (munmap(shm_ptr, buffer) == -1) // Unmap the shared memory
+        {
+            std::cerr << "Failed to unmap shared memory." << std::endl;
+        }
+        ::close(shm_fd);
+
+        // Add a delay before next iteration
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
 }
