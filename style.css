@@ -12,6 +12,15 @@
     font-weight: bold;
 }
 
+.gray-text {
+    color: gray;
+}
+
+.warning-text {
+    color: #ffbf00;
+    font-weight: bold;
+}
+
 .green-indicator {
     background-color: green;
     border-radius: 8px;

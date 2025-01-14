@@ -652,10 +652,21 @@ void MainWindow::on_report_refresh_clicked()
     // Populating the detection results list box with rows
     for (const auto &result_folder : m_sorted_detection_results_in_report)
     {
-        std::cout << result_folder << std::endl;
+        // std::cout << result_folder << std::endl;
 
         auto row_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-        auto trans_label = Gtk::make_managed<Gtk::Label>(result_folder.filename().string());
+        auto trans_id = result_folder.filename().string();
+        auto trans_file_path = result_folder / "transaction_data.json";
+
+        auto trans_label = Gtk::make_managed<Gtk::Label>(trans_id);
+        if (is_transaction_valid(trans_file_path.string()))
+        {
+            trans_label->get_style_context()->remove_class("gray-text");
+        }
+        else
+        {
+            trans_label->get_style_context()->add_class("gray-text");
+        }
         row_box->set_tooltip_text(result_folder.string());
         row_box->pack_start(*trans_label, Gtk::PACK_SHRINK);
         // Create a Gtk::ListBoxRow to wrap the box
@@ -805,6 +816,55 @@ bool MainWindow::on_report_display_area_motion_notify_event(GdkEventMotion *moti
     return true;
 }
 
+bool MainWindow::is_transaction_valid(const std::string &transaction_path)
+{
+    // Attempt to load the JSON data from the file
+    auto json_data_optional = FileUtils::get_json(transaction_path);
+    if (!json_data_optional.has_value())
+    {
+        std::cerr << "Failed to load JSON data from path: " << transaction_path << std::endl;
+        return false; // Return false if the JSON could not be loaded
+    }
+
+    const auto &json_data = json_data_optional.value();
+
+    // Check if the JSON contains the "predictions" field
+    if (json_data.contains("predictions"))
+    {
+        const auto &predictions = json_data["predictions"];
+        
+        // Ensure the "predictions" field is an array
+        if (predictions.is_array())
+        {
+            // Check each prediction
+            for (const auto &prediction : predictions)
+            {
+                if (prediction.contains("remark") && prediction["remark"] == "FP")
+                {
+                    // Skip false positives
+                    continue;
+                }
+                else
+                {
+                    // If any prediction is not "FP", return true
+                    return true;
+                }
+            }
+        }
+        else
+        {
+            std::cerr << "The 'predictions' field is not an array in the JSON." << std::endl;
+        }
+    }
+    else
+    {
+        std::cerr << "The 'predictions' field is missing in the JSON data." << std::endl;
+    }
+
+    // If all predictions are "FP" or no valid predictions were found, return false
+    return false;
+}
+
 std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> MainWindow::track_position(double speed)
 {
     std::map<std::pair<std::chrono::system_clock::time_point, std::chrono::system_clock::time_point>, 
@@ -813,6 +873,12 @@ std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, doubl
     for (const auto &transaction_folder : m_sorted_detection_results_in_report)
     {
         auto trans_file_path = std::filesystem::path(transaction_folder) / "transaction_data.json";
+        
+        if (!is_transaction_valid(trans_file_path.string()))
+        {
+            continue;
+        }
+
         auto json_data = FileUtils::get_json(trans_file_path.string());
         if (!json_data.has_value())
         {
@@ -5118,6 +5184,8 @@ void MainWindow::on_warm_up_clicked()
             m_warm_up_btn->set_sensitive(true);
             if (m_system_warm_up_lbl)
             {
+                m_system_warm_up_lbl->get_style_context()->remove_class("warning-text");
+                m_system_warm_up_lbl->get_style_context()->add_class("green-text");
                 m_system_warm_up_lbl->set_text("The system has already been warmed up and is ready for operation.");
             }
             return false; // Disconnect idle handler
@@ -5129,168 +5197,174 @@ void MainWindow::on_start_clicked()
 {
     m_is_running = true;
 
+    // Disable the button to prevent multiple clicks
     m_start_btn->set_sensitive(false);
-    m_start_btn->set_label("Starting...");
 
-    double capture_interval_ms = 0.0;
-    if (m_detection_rate_lbl)
-    {
-        double capture_rate = std::stod(m_detection_rate_lbl->get_text().raw());
-        capture_interval_ms = 1000.0 / capture_rate; // Calculate the capture interval (in milliseconds) based on capture rate (FPS)
-    }
-
-    std::vector<std::string> serial_numbers;
-    
-    if (m_select_detection_camera_cbox)
-    {
-        auto selected_detection_source = m_select_detection_camera_cbox->get_active_text();
-        if (selected_detection_source == "All Cameras")
+    // Launch detection in a separate thread
+    std::thread([this]() {
+        double capture_interval_ms = 0.0;
+        if (m_detection_rate_lbl)
         {
-            auto model = m_select_detection_camera_cbox->get_model();
-            if (model)
-            {
-                for (auto& row : model->children())
-                {
-                    Glib::ustring sn;
-                    row.get_value(0, sn); // 0 is the column index for ComboBoxText items
-                    
-                    if (sn == "All Cameras")
-                    {
-                        continue;
-                    }
+            double capture_rate = std::stod(m_detection_rate_lbl->get_text().raw());
+            capture_interval_ms = 1000.0 / capture_rate; // Calculate the capture interval (in milliseconds) based on capture rate (FPS)
+        }
 
-                    serial_numbers.push_back(sn);
+        std::vector<std::string> serial_numbers;
+        
+        if (m_select_detection_camera_cbox)
+        {
+            auto selected_detection_source = m_select_detection_camera_cbox->get_active_text();
+            if (selected_detection_source == "All Cameras")
+            {
+                auto model = m_select_detection_camera_cbox->get_model();
+                if (model)
+                {
+                    for (auto& row : model->children())
+                    {
+                        Glib::ustring sn;
+                        row.get_value(0, sn); // 0 is the column index for ComboBoxText items
+                        
+                        if (sn == "All Cameras")
+                        {
+                            continue;
+                        }
+
+                        serial_numbers.push_back(sn);
+                    }
                 }
             }
-        }
-        else
-        {
-            serial_numbers.push_back(selected_detection_source);
-        }
-    }
-
-    size_t num_connected = 0;
-    size_t num_configured = 0;
-    size_t total_cams = serial_numbers.size();
-    std::vector<std::string> connected_serial_numbers;
-
-    for (const std::string sn : serial_numbers)
-    {
-        if (!connect_camera(sn))
-        {
-            std::cerr << "Failed to connect to the camera: " << sn << std::endl;
-            m_logger->log("Failed to connect to the camera: " + sn, Logger::ERROR);
-            break;
-        }
-        else
-        {
-            connected_serial_numbers.push_back(sn);
-            num_connected++;
-        }
-    }
-
-    if (num_connected != total_cams)
-    {
-        for (const std::string sn : connected_serial_numbers)
-        {
-            if (!disconnect_camera(sn))
+            else
             {
-                std::cerr << "Failed to disconnect camera: " << sn << std::endl;
+                serial_numbers.push_back(selected_detection_source);
             }
         }
-        m_is_running = false;
-        m_start_btn->set_sensitive(true);
-        m_start_btn->set_label("Start");
-        return;
-    }
 
-    for (const std::string sn : connected_serial_numbers)
-    {
-        if (!configure_camera(sn))
-        {
-            std::cout << "Failed to configure the camera: " << sn << std::endl;
-            m_logger->log("Failed to configure the camera: " + sn, Logger::ERROR);
-            break;
-        }
-        else
-        {
-            num_configured++;
-        }
-    }
+        size_t num_connected = 0;
+        size_t num_configured = 0;
+        size_t total_cams = serial_numbers.size();
+        std::vector<std::string> connected_serial_numbers;
 
-    if (num_configured != total_cams)
-    {
-        for (const std::string sn : connected_serial_numbers)
+        for (const std::string sn : serial_numbers)
         {
-            if (!disconnect_camera(sn))
+            if (!connect_camera(sn))
             {
-                std::cerr << "Failed to disconnect camera: " << sn << std::endl;
+                std::cerr << "Failed to connect to the camera: " << sn << std::endl;
+                m_logger->log("Failed to connect to the camera: " + sn, Logger::ERROR);
+                break;
+            }
+            else
+            {
+                connected_serial_numbers.push_back(sn);
+                num_connected++;
             }
         }
-        m_is_running = false;
-        m_start_btn->set_sensitive(true);
-        m_start_btn->set_label("Start");
-        return;
-    }
 
-    size_t num_registed = 0;
-    for (const std::string sn : connected_serial_numbers)
-    {
-        void *device_handle = m_connected_device_handles[sn];
-        // Register image callback
-        auto image_capture_callback = [](unsigned char *pData, MV_FRAME_OUT_INFO_EX *pFrameInfo, void *pUser)
+        if (num_connected != total_cams)
         {
-            // if (pFrameInfo)
-            // {
-            //     std::cout << "GetOneFrame, nDevTimeStampHigh: " << pFrameInfo->nDevTimeStampHigh
-            //             << ", nDevTimeStampLow: " << pFrameInfo->nDevTimeStampLow
-            //             << ", nHostTimeStamp: " << pFrameInfo->nHostTimeStamp
-            //             << std::endl;
-            // }
-            CaptureCallbackData* cb_data = static_cast<CaptureCallbackData*>(pUser);
-            MainWindow *ptr = static_cast<MainWindow*>(cb_data->main_window_ptr);
-            std::string sn = cb_data->serial_number;
-            ptr->m_frame_queue.enqueue(FrameData(pData, pFrameInfo, sn));
-        };
-
-        auto cb_data = new CaptureCallbackData(this, sn);
-        int nRet = MV_CC_RegisterImageCallBackEx(device_handle, image_capture_callback, cb_data);
-        if (nRet != MV_OK)
-        {
-            std::cerr << "MV_CC_RegisterImageCallBackEx fail. Error code: " << nRet << std::endl;
-            m_logger->log("Error on MV_CC_RegisterImageCallBackEx: " + std::to_string(nRet), Logger::ERROR);
-            delete cb_data; // Free memory if registration fails
-            break;
+            for (const std::string sn : connected_serial_numbers)
+            {
+                if (!disconnect_camera(sn))
+                {
+                    std::cerr << "Failed to disconnect camera: " << sn << std::endl;
+                }
+            }
+            m_is_running = false;
+            return;
         }
-        num_registed++;
-    }
 
-    if (num_registed != total_cams)
-    {
         for (const std::string sn : connected_serial_numbers)
         {
-            if (!disconnect_camera(sn))
+            if (!configure_camera(sn))
             {
-                std::cerr << "Failed to disconnect camera: " << sn << std::endl;
+                std::cout << "Failed to configure the camera: " << sn << std::endl;
+                m_logger->log("Failed to configure the camera: " + sn, Logger::ERROR);
+                break;
+            }
+            else
+            {
+                num_configured++;
             }
         }
-        m_is_running = false;
-        m_start_btn->set_sensitive(true);
-        m_start_btn->set_label("Start");
-        return;
-    }
 
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (num_configured != total_cams)
+        {
+            for (const std::string sn : connected_serial_numbers)
+            {
+                if (!disconnect_camera(sn))
+                {
+                    std::cerr << "Failed to disconnect camera: " << sn << std::endl;
+                }
+            }
+            m_is_running = false;
+            return;
+        }
 
-    for (const std::string sn : connected_serial_numbers)
-    {
-        void *device_handle = m_connected_device_handles[sn];
-        start_capture(device_handle, capture_interval_ms);
-    }
+        size_t num_registed = 0;
+        for (const std::string sn : connected_serial_numbers)
+        {
+            void *device_handle = m_connected_device_handles[sn];
+            // Register image callback
+            auto image_capture_callback = [](unsigned char *pData, MV_FRAME_OUT_INFO_EX *pFrameInfo, void *pUser)
+            {
+                // if (pFrameInfo)
+                // {
+                //     std::cout << "GetOneFrame, nDevTimeStampHigh: " << pFrameInfo->nDevTimeStampHigh
+                //             << ", nDevTimeStampLow: " << pFrameInfo->nDevTimeStampLow
+                //             << ", nHostTimeStamp: " << pFrameInfo->nHostTimeStamp
+                //             << std::endl;
+                // }
+                CaptureCallbackData* cb_data = static_cast<CaptureCallbackData*>(pUser);
+                MainWindow *ptr = static_cast<MainWindow*>(cb_data->main_window_ptr);
+                std::string sn = cb_data->serial_number;
+                ptr->m_frame_queue.enqueue(FrameData(pData, pFrameInfo, sn));
+            };
 
-    start_detection();
+            auto cb_data = new CaptureCallbackData(this, sn);
+            int nRet = MV_CC_RegisterImageCallBackEx(device_handle, image_capture_callback, cb_data);
+            if (nRet != MV_OK)
+            {
+                std::cerr << "MV_CC_RegisterImageCallBackEx fail. Error code: " << nRet << std::endl;
+                m_logger->log("Error on MV_CC_RegisterImageCallBackEx: " + std::to_string(nRet), Logger::ERROR);
+                delete cb_data; // Free memory if registration fails
+                break;
+            }
+            num_registed++;
+        }
 
-    m_start_btn->set_label("Start");
+        if (num_registed != total_cams)
+        {
+            for (const std::string sn : connected_serial_numbers)
+            {
+                if (!disconnect_camera(sn))
+                {
+                    std::cerr << "Failed to disconnect camera: " << sn << std::endl;
+                }
+            }
+            m_is_running = false;
+            return;
+        }
+
+        // std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        for (const std::string sn : connected_serial_numbers)
+        {
+            void *device_handle = m_connected_device_handles[sn];
+            start_capture(device_handle, capture_interval_ms);
+        }
+
+        start_detection();
+
+        // Once done, update the button in the UI thread
+        Glib::signal_idle().connect([this]() {
+            if (!m_is_running)
+            {
+                m_start_btn->set_sensitive(true);
+            }
+            m_start_btn->set_label("Start");
+
+            return false; // Disconnect idle handler
+        });
+    }).detach(); // Detach the thread to allow it to run independently
 }
 
 void MainWindow::on_stop_clicked()

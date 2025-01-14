@@ -365,6 +365,7 @@ private:
     void update_patch_thumbnail_alpha(Glib::RefPtr<Gdk::Pixbuf> thumbnail_pixbuf, Gtk::Image *thumbnail, int alpha_value);
     void update_patch_remark(const std::string &transaction_json_path, int prediction_id, const std::string &remark);
     std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> track_position(double speed);
+    bool is_transaction_valid(const std::string &transaction_path);
     void create_csv_file(const std::string &file_name);
     void warm_up_gpu(int num_iterations);
 };

@@ -838,8 +838,9 @@
                             <property name="visible">True</property>
                             <property name="can-focus">False</property>
                             <property name="halign">start</property>
+                            <property name="label" translatable="yes">The system has not been warmed up yet.</property>
                             <style>
-                              <class name="green-text"/>
+                              <class name="warning-text"/>
                             </style>
                           </object>
                           <packing>
