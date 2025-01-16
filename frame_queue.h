@@ -25,6 +25,9 @@ public:
     // Check if the queue is full
     bool isFull() const;
 
+    // Get the frame queue size
+    size_t get_size() const;
+
 private:
     // Circular buffer to store FrameData
     std::vector<FrameData> buffer;

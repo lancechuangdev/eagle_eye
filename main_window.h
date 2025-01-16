@@ -45,7 +45,6 @@ protected:
     Gtk::Label *m_rt_monitoring_detection_start_time_lbl;
     Gtk::Label *m_rt_monitoring_num_anomalies_lbl;
     Gtk::Label *m_detection_camera_lbl;
-    Gtk::Label *m_detection_rate_lbl;
     Gtk::Label *m_detection_digital_input_lbl;
     Gtk::Label *m_detection_digital_input_line_number_lbl;
     Gtk::Label *m_detection_digital_output_lbl;
@@ -111,7 +110,6 @@ protected:
     Gtk::RadioButton *m_anomaly_detection_settings_rbtn;
     Gtk::RadioButton *m_camera_settings_rbtn;
     Gtk::ComboBoxText *m_select_detection_camera_cbox;
-    Gtk::SpinButton *m_detection_rate_sb;
     Gtk::ComboBoxText *m_select_detection_digital_input_cbox;
     Gtk::Label *m_settings_detection_digital_input_line_number_lbl;
     Gtk::ComboBoxText *m_select_detection_digital_output_cbox;
@@ -340,7 +338,7 @@ private:
     void update_cam_grid();
     void show_camera_connect_warning(Gtk::Window& parent, std::string message);
     void *create_or_get_device_handle_by_serial_number(std::string sn);
-    void start_capture(void *device_handle, double capture_interval_ms);
+    void start_capture(void *device_handle);
     void start_detection();
     void stop_capture(void *device_handle);
     void stop_detection();

@@ -60,3 +60,8 @@ bool FrameQueue::isFull() const {
     std::lock_guard<std::mutex> lock(mtx);  // Lock for thread safety
     return size == capacity;
 }
+
+size_t FrameQueue::get_size() const {
+    std::lock_guard<std::mutex> lock(mtx);  // Lock for thread safety
+    return size;
+}

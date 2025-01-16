@@ -7,8 +7,11 @@
 // App-related constants
 const std::string APP_NAME = "Eagle Eye";
 
+// Capture-related constants
+const double CAPTURE_RATE = 30.0;
+
 // Batch-related constants
-const int MAX_FRAME_BATCH_SIZE = 2;
+const int FRAME_BATCH_SIZE = 2;
 const int MAX_PATCHES_PER_BATCH = 100; // The max number of anomaly patches that detection model generates per batch.
 
 // RGB-related constants

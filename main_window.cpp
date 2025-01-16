@@ -113,8 +113,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("detection_camera_lbl", m_detection_camera_lbl);
 
-    m_builder->get_widget("detection_rate_lbl", m_detection_rate_lbl);
-
     m_builder->get_widget("warm_up_btn", m_warm_up_btn);
     if (m_warm_up_btn)
     {
@@ -481,8 +479,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     }
 
     m_builder->get_widget("select_detection_camera_cbox", m_select_detection_camera_cbox);
-
-    m_builder->get_widget("detection_rate_sb", m_detection_rate_sb);
     
     m_builder->get_widget("select_detection_digital_input_cbox", m_select_detection_digital_input_cbox);
     if (m_select_detection_digital_input_cbox)
@@ -2661,14 +2657,6 @@ void MainWindow::load_detection_settings()
     {
         m_select_detection_camera_cbox->set_active_text(detection_camera);
     }
-    if (m_detection_rate_lbl)
-    {
-        m_detection_rate_lbl->set_text(std::to_string(detection_rate));
-    }
-    if (m_detection_rate_sb)
-    {
-        m_detection_rate_sb->set_value(detection_rate);
-    }
     if (m_detection_digital_input_lbl)
     {
         m_detection_digital_input_lbl->set_text(digital_input);
@@ -2726,12 +2714,6 @@ void MainWindow::on_save_detection_settings_clicked()
         auto detection_camera = m_select_detection_camera_cbox->get_active_text();
         m_detection_camera_lbl->set_text(detection_camera);
         new_settings["detection_camera"] = detection_camera;
-    }
-    if (m_detection_rate_sb)
-    {
-        auto detection_rate = m_detection_rate_sb->get_value_as_int();
-        new_settings["detection_rate"] = detection_rate;
-        m_detection_rate_lbl->set_text(std::to_string(detection_rate));
     }
     if (m_select_detection_digital_input_cbox)
     {
@@ -5202,13 +5184,6 @@ void MainWindow::on_start_clicked()
 
     // Launch detection in a separate thread
     std::thread([this]() {
-        double capture_interval_ms = 0.0;
-        if (m_detection_rate_lbl)
-        {
-            double capture_rate = std::stod(m_detection_rate_lbl->get_text().raw());
-            capture_interval_ms = 1000.0 / capture_rate; // Calculate the capture interval (in milliseconds) based on capture rate (FPS)
-        }
-
         std::vector<std::string> serial_numbers;
         
         if (m_select_detection_camera_cbox)
@@ -5344,12 +5319,10 @@ void MainWindow::on_start_clicked()
             return;
         }
 
-        // std::this_thread::sleep_for(std::chrono::seconds(1));
-
         for (const std::string sn : connected_serial_numbers)
         {
             void *device_handle = m_connected_device_handles[sn];
-            start_capture(device_handle, capture_interval_ms);
+            start_capture(device_handle);
         }
 
         start_detection();
@@ -5500,7 +5473,7 @@ void MainWindow::on_snap_clicked()
     // Start detection
     auto patch_size = 256;
     std::string shm_name = "/ee_shared_memory";
-    size_t buffer = 2448 * 2048 * MAX_FRAME_BATCH_SIZE;
+    size_t buffer = 2448 * 2048 * FRAME_BATCH_SIZE;
 
     // Open shared memory object
     std::cout << "Open shared memory object" << std::endl;
@@ -5639,7 +5612,7 @@ void MainWindow::on_toolkit_test_clicked()
     // Open shared memory object
     auto patch_size = PATCH_SIZE;
     std::string shm_name = SHM_NAME_FRAMES;
-    size_t buffer = 2448 * 2048 * MAX_FRAME_BATCH_SIZE;
+    size_t buffer = 2448 * 2048 * FRAME_BATCH_SIZE;
 
     int shm_fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0666);
     if (shm_fd == -1)
@@ -5976,7 +5949,7 @@ void *MainWindow::create_or_get_device_handle_by_serial_number(std::string sn)
     return nullptr;
 }
 
-void MainWindow::start_capture(void *device_handle, double capture_interval_ms)
+void MainWindow::start_capture(void *device_handle)
 {
     // Start grab images
     int nRet = MV_CC_StartGrabbing(device_handle);
@@ -5991,20 +5964,21 @@ void MainWindow::start_capture(void *device_handle, double capture_interval_ms)
         m_logger->log("Started MV_CC_StartGrabbing for device: " + camera_handle);
 
         // Start the frame acquisition thread
-        auto capturing_thread = std::thread([this, device_handle, capture_interval_ms]()
+        auto capturing_thread = std::thread([this, device_handle]()
         {
-            uint64_t lastCaptureTimestamp = 0;
+            const double frameIntervalMs = 1000.0 / CAPTURE_RATE;  // 30 FPS -> 33.33 ms interval
+            auto lastCaptureTime = std::chrono::steady_clock::now();
 
             while (m_is_running)
             {
-                auto currentTimeInMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now().time_since_epoch()).count();
-                double elapsed = currentTimeInMs - lastCaptureTimestamp;
+                auto currentTime = std::chrono::steady_clock::now();
+                double elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastCaptureTime).count();
 
-                if (elapsed >= capture_interval_ms)
+                if (elapsedMs >= frameIntervalMs)
                 {
-                    lastCaptureTimestamp = currentTimeInMs;
+                    lastCaptureTime = currentTime;
 
+                    // Trigger the camera to capture a frame
                     int nRet = MV_CC_SetCommandValue(device_handle, "TriggerSoftware");
                     if (nRet != MV_OK)
                     {
@@ -6013,12 +5987,14 @@ void MainWindow::start_capture(void *device_handle, double capture_interval_ms)
                     }
                     else
                     {
-                        // std::cout << "Capturing frames via TriggerSoftware." << std::endl;
+                        // Frame successfully triggered
+                        // m_logger->log("Frame captured at 30 FPS.");
+                        // std::cout << "Frame captured at 30 FPS." << std::endl;
                     }
                 }
 
-                // Prevent CPU overuse
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                // Prevent busy waiting
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         });
 
@@ -6197,7 +6173,7 @@ void MainWindow::start_detection()
     }
 
     size_t total_frame_rgb_size = 0;
-    for (int i = 0; i < MAX_FRAME_BATCH_SIZE; ++i)
+    for (int i = 0; i < FRAME_BATCH_SIZE; ++i)
     {
         total_frame_rgb_size += frame_width * frame_height * RGB_CHANNELS;
     }
@@ -6218,7 +6194,7 @@ void MainWindow::start_detection()
         m_patch_rgba_data_buffer.resize(total_patch_rgba_size);
     }
 
-    size_t shm_frames_buffer = frame_width * frame_height * (MAX_FRAME_BATCH_SIZE + 1); // add extra one frame for safety
+    size_t shm_frames_buffer = frame_width * frame_height * (FRAME_BATCH_SIZE + 1); // add extra one frame for safety
 
     // Start the frame processing thread
     m_processing_thread = std::thread([this, shm_frames_buffer]()
@@ -6274,7 +6250,7 @@ void MainWindow::start_detection()
         
         while (m_is_running)
         {
-            std::this_thread::sleep_for(std::chrono::milliseconds(5)); // Prevent CPU overuse
+            std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Prevent CPU overuse
             frame_offsets.clear();
             size_t offset = 0;
             int num_frames_dequeued = 0;
@@ -6282,9 +6258,15 @@ void MainWindow::start_detection()
             int frame_height = 0;
             uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
 
+            // make sure there are enough frames to process
+            if (m_frame_queue.get_size() < FRAME_BATCH_SIZE)
+            {
+                continue;
+            }
+
             // sort by serial number of each frame
             std::vector<FrameData> sorted_frames;
-            while (!m_frame_queue.isEmpty() && num_frames_dequeued < MAX_FRAME_BATCH_SIZE)
+            while (!m_frame_queue.isEmpty() && num_frames_dequeued < FRAME_BATCH_SIZE)
             {
                 if (m_frame_queue.dequeue(frame_data))
                 {
@@ -7165,7 +7147,7 @@ void MainWindow::warm_up_gpu(int num_iterations)
         // Open shared memory object
         auto patch_size = PATCH_SIZE;
         std::string shm_name = SHM_NAME_FRAMES;
-        size_t buffer = frame_width * frame_height * MAX_FRAME_BATCH_SIZE;
+        size_t buffer = frame_width * frame_height * FRAME_BATCH_SIZE;
 
         int shm_fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0666);
         if (shm_fd == -1)

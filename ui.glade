@@ -626,18 +626,6 @@
                               </packing>
                             </child>
                             <child>
-                              <object class="GtkLabel">
-                                <property name="visible">True</property>
-                                <property name="can-focus">False</property>
-                                <property name="halign">end</property>
-                                <property name="label" translatable="yes">Detection Rate (fps):</property>
-                              </object>
-                              <packing>
-                                <property name="left-attach">0</property>
-                                <property name="top-attach">1</property>
-                              </packing>
-                            </child>
-                            <child>
                               <object class="GtkLabel" id="detection_camera_lbl">
                                 <property name="visible">True</property>
                                 <property name="can-focus">False</property>
@@ -646,17 +634,6 @@
                               <packing>
                                 <property name="left-attach">1</property>
                                 <property name="top-attach">0</property>
-                              </packing>
-                            </child>
-                            <child>
-                              <object class="GtkLabel" id="detection_rate_lbl">
-                                <property name="visible">True</property>
-                                <property name="can-focus">False</property>
-                                <property name="halign">start</property>
-                              </object>
-                              <packing>
-                                <property name="left-attach">1</property>
-                                <property name="top-attach">1</property>
                               </packing>
                             </child>
                             <child>
@@ -825,6 +802,12 @@
                                 <property name="top-attach">8</property>
                                 <property name="width">2</property>
                               </packing>
+                            </child>
+                            <child>
+                              <placeholder/>
+                            </child>
+                            <child>
+                              <placeholder/>
                             </child>
                           </object>
                           <packing>
@@ -3305,29 +3288,6 @@ enabling the GPU to operate at peak efficiency.</property>
                                         <property name="visible">True</property>
                                         <property name="can-focus">False</property>
                                         <property name="halign">end</property>
-                                        <property name="label" translatable="yes">Rate (fps):</property>
-                                      </object>
-                                      <packing>
-                                        <property name="left-attach">0</property>
-                                        <property name="top-attach">1</property>
-                                      </packing>
-                                    </child>
-                                    <child>
-                                      <object class="GtkSpinButton" id="detection_rate_sb">
-                                        <property name="visible">True</property>
-                                        <property name="can-focus">True</property>
-                                        <property name="adjustment">detection_rate_adjustment</property>
-                                      </object>
-                                      <packing>
-                                        <property name="left-attach">1</property>
-                                        <property name="top-attach">1</property>
-                                      </packing>
-                                    </child>
-                                    <child>
-                                      <object class="GtkLabel">
-                                        <property name="visible">True</property>
-                                        <property name="can-focus">False</property>
-                                        <property name="halign">end</property>
                                         <property name="label" translatable="yes">Digital Input:</property>
                                       </object>
                                       <packing>
@@ -3412,6 +3372,12 @@ enabling the GPU to operate at peak efficiency.</property>
                                         <property name="left-attach">1</property>
                                         <property name="top-attach">5</property>
                                       </packing>
+                                    </child>
+                                    <child>
+                                      <placeholder/>
+                                    </child>
+                                    <child>
+                                      <placeholder/>
                                     </child>
                                   </object>
                                   <packing>
