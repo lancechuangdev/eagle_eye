@@ -113,12 +113,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("detection_camera_lbl", m_detection_camera_lbl);
 
-    m_builder->get_widget("warm_up_btn", m_warm_up_btn);
-    if (m_warm_up_btn)
-    {
-        m_warm_up_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_warm_up_clicked));
-    }
-
     m_builder->get_widget("start_btn", m_start_btn);
     if (m_start_btn)
     {
@@ -131,7 +125,9 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_stop_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_stop_clicked));
     }    
 
-    m_builder->get_widget("system_warm_up_lbl", m_system_warm_up_lbl);
+    m_builder->get_widget("runtime_event_viewer", m_runtime_event_viewer);
+
+    m_event_dispatcher.connect(sigc::mem_fun(*this, &MainWindow::on_event_dispatch));
 
     m_builder->get_widget("rt_monitoring_detection_start_time_lbl", m_rt_monitoring_detection_start_time_lbl);
 
@@ -3923,7 +3919,7 @@ void MainWindow::on_view_clicked(const std::string& sn)
     else
     {
         std::cout << "Camera with serial number " << sn << " not found." << std::endl;
-        show_camera_connect_warning(*this, "The selected camera appears to be disconnected. Please connect it before accessing the settings.");
+        show_dialog(*this, "The selected camera appears to be disconnected. Please connect it before accessing the settings.");
     }
 }
 
@@ -4436,7 +4432,7 @@ bool MainWindow::connect_camera(const std::string& sn)
     // Check if already connected
     if (MV_CC_IsDeviceConnected(device_handle))
     {
-        show_camera_connect_warning(*this, "The selected camera appears to be in use. Please disconnect it from any other application or device before proceeding.");
+        show_dialog(*this, "The selected camera appears to be in use. Please disconnect it from any other application or device before proceeding.");
         return false;
     }
 
@@ -4696,15 +4692,16 @@ bool MainWindow::disconnect_camera(const std::string& sn)
     return true;
 }
 
-void MainWindow::show_camera_connect_warning(Gtk::Window& parent, std::string message)
+void MainWindow::show_dialog(Gtk::Window& parent, std::string message, std::string secondary_message, Gtk::MessageType message_type)
 {
     // Create the message dialog with the specified parent window, message text, and button options
     Gtk::MessageDialog dialog(parent, 
                               message, 
                               false,
-                              Gtk::MESSAGE_WARNING,
+                              message_type,
                               Gtk::BUTTONS_OK,
                               true);
+    dialog.set_secondary_text(secondary_message);
 
     // Run the dialog and wait for the user to press the OK button
     dialog.run();
@@ -4773,7 +4770,7 @@ void MainWindow::on_new_project_clicked()
 {
     if (!m_connected_device_handles.empty())
     {
-        show_camera_connect_warning(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
+        show_dialog(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
         return;
     }
 
@@ -4836,6 +4833,9 @@ void MainWindow::on_new_project_clicked()
                         // Navigate to runtime page
                         m_runtime_btn->set_active(true);
                         
+                        // Clear events viewer
+                        clear_runtime_events();
+
                         // Update recent projects list
                         load_recent_projects();
                     }
@@ -4904,7 +4904,7 @@ void MainWindow::on_open_project_clicked()
 {
     if (!m_connected_device_handles.empty())
     {
-        show_camera_connect_warning(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
+        show_dialog(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
         return;
     }
 
@@ -4984,6 +4984,9 @@ void MainWindow::open_project(const std::string &project_file_path)
             // Update runtime page
             update_runtime_page("open_project");
 
+            // Clear events viewer
+            clear_runtime_events();
+
             // Navigate to runtime page
             m_runtime_btn->set_active(true);
 
@@ -5026,7 +5029,7 @@ void MainWindow::on_quick_start_clicked()
 {
     if (!m_connected_device_handles.empty())
     {
-        show_camera_connect_warning(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
+        show_dialog(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
         return;
     }
 
@@ -5058,6 +5061,9 @@ void MainWindow::on_quick_start_clicked()
 
     // Update runtime page
     update_runtime_page("quick_start");
+
+    // Clear events viewer
+    clear_runtime_events();
 
     // Navigate to runtime page
     m_runtime_btn->set_active(true);  
@@ -5118,7 +5124,7 @@ void MainWindow::on_recent_project_selected(Gtk::ListBoxRow* row)
 {
     if (!m_connected_device_handles.empty())
     {
-        show_camera_connect_warning(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
+        show_dialog(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
         return;
     }
 
@@ -5150,29 +5156,6 @@ void MainWindow::on_recent_project_selected(Gtk::ListBoxRow* row)
     {
         std::cout << "No row selected!" << std::endl;
     }
-}
-
-void MainWindow::on_warm_up_clicked()
-{
-    // Disable the button to prevent multiple clicks
-    m_warm_up_btn->set_sensitive(false);
-
-    // Launch warm-up in a separate thread
-    std::thread([this]() {
-        warm_up_gpu(5); // Warm up GPU
-
-        // Once done, re-enable the button in the UI thread
-        Glib::signal_idle().connect([this]() {
-            m_warm_up_btn->set_sensitive(true);
-            if (m_system_warm_up_lbl)
-            {
-                m_system_warm_up_lbl->get_style_context()->remove_class("warning-text");
-                m_system_warm_up_lbl->get_style_context()->add_class("green-text");
-                m_system_warm_up_lbl->set_text("The system has already been warmed up and is ready for operation.");
-            }
-            return false; // Disconnect idle handler
-        });
-    }).detach(); // Detach the thread to allow it to run independently
 }
 
 void MainWindow::on_start_clicked()
@@ -5212,6 +5195,80 @@ void MainWindow::on_start_clicked()
             {
                 serial_numbers.push_back(selected_detection_source);
             }
+        }
+
+        if (serial_numbers.empty())
+        {
+            std::string message = "Camera(s) has not been configured.";
+            std::string secondary_message = "Please go to the Settings page to configure camera(s) before running detection.";
+
+            // Queue the dialog display on the main thread
+            Glib::signal_idle().connect([this, message, secondary_message]() {
+                show_dialog(*this, message, secondary_message);
+                m_start_btn->set_label("Start");
+                m_start_btn->set_sensitive(true);
+                add_runtime_event("Detection Starting Failed", "red");
+                return false; // Disconnect idle handler
+            });
+            m_is_running = false;
+            return;
+        }
+
+        bool invalid_frame_dim;
+        int reference_width = -1, reference_height = -1;
+
+        for (const std::string sn : serial_numbers)
+        {
+            auto cam_settings = SettingsService::get_settings(sn);
+            int frame_width = 0, frame_height = 0;
+
+            if (!cam_settings.empty() && cam_settings.contains("width"))
+            {
+                frame_width = cam_settings["width"];
+            }
+
+            if (!cam_settings.empty() && cam_settings.contains("height"))
+            {
+                frame_height = cam_settings["height"];
+            }
+
+            if (frame_width < PATCH_SIZE || frame_height < PATCH_SIZE)
+            {
+                invalid_frame_dim = true;
+                break;
+            }
+
+            if (reference_width == -1 && reference_height == -1)
+            {
+                reference_width = frame_width;
+                reference_height = frame_height;
+            }
+            else if (frame_width != reference_width || frame_height != reference_height)
+            {
+                invalid_frame_dim = true;
+                break;
+            }
+        }
+
+        if (invalid_frame_dim)
+        {
+            std::string message = "Camera Configuration Error.";
+            std::string secondary_message = 
+                "Please update the camera settings on the Settings page before running detection.\n\n"
+                "Ensure that the frame dimensions meet the following criteria:\n"
+                "- All cameras have consistent frame dimensions.\n"
+                "- Frame dimensions are not smaller than the specified patch size.";
+
+            // Queue the dialog display on the main thread
+            Glib::signal_idle().connect([this, message, secondary_message]() {
+                show_dialog(*this, message, secondary_message);
+                m_start_btn->set_label("Start");
+                m_start_btn->set_sensitive(true);
+                add_runtime_event("Detection Starting Failed", "red");
+                return false; // Disconnect idle handler
+            });
+            m_is_running = false;
+            return;
         }
 
         size_t num_connected = 0;
@@ -5325,16 +5382,16 @@ void MainWindow::on_start_clicked()
             start_capture(device_handle);
         }
 
-        start_detection();
+        start_detection_with_warmup(reference_width, reference_height);
 
         // Once done, update the button in the UI thread
         Glib::signal_idle().connect([this]() {
+            m_start_btn->set_label("Start");
             if (!m_is_running)
             {
                 m_start_btn->set_sensitive(true);
+                add_runtime_event("Detection Starting Failed", "red");
             }
-            m_start_btn->set_label("Start");
-
             return false; // Disconnect idle handler
         });
     }).detach(); // Detach the thread to allow it to run independently
@@ -5372,6 +5429,73 @@ void MainWindow::on_stop_clicked()
     }
 
     m_start_btn->set_sensitive(!m_is_running);
+}
+
+void MainWindow::on_event_dispatch()
+{
+    std::lock_guard<std::mutex> lock(m_event_mutex);
+
+    if (!m_runtime_event_viewer)
+    {
+        return;
+    }
+
+    for (const auto& event : m_pending_events)
+    {
+        auto current_time = event.datetime;
+        auto color = event.color;
+        auto buffer = m_runtime_event_viewer->get_buffer();
+
+        // Create or retrieve the color tag
+        auto tag_table = buffer->get_tag_table();
+        Glib::RefPtr<Gtk::TextTag> color_tag;
+
+        if (!color.empty())
+        {
+            color_tag = tag_table->lookup("color_" + color);
+            if (!color_tag)
+            {
+                color_tag = Gtk::TextTag::create("color_" + color);
+                color_tag->property_foreground() = color;
+                tag_table->add(color_tag);
+            }
+        }
+
+        std::stringstream log_entry;
+        log_entry << "[" << current_time << "] " << event.message << "\n";
+        
+        // Append text with the tag
+        auto iter = buffer->end();
+        if (color_tag)
+        {
+            buffer->insert_with_tag(iter, log_entry.str(), color_tag);
+        }
+        else
+        {
+            buffer->insert(iter, log_entry.str());
+        }
+    }
+
+    m_pending_events.clear(); // Clear processed events
+}
+
+void MainWindow::add_runtime_event(const std::string &message, const std::string &color)
+{
+    {
+        std::lock_guard<std::mutex> lock(m_event_mutex);
+        auto current_time = TimeUtils::get_current_time();
+        m_pending_events.push_back({message, current_time, color});
+    }
+    m_event_dispatcher.emit();
+}
+
+void MainWindow::clear_runtime_events()
+{
+    if (m_runtime_event_viewer)
+    {
+        auto buffer = m_runtime_event_viewer->get_buffer();
+        buffer->set_text("");
+    }
 }
 
 void MainWindow::on_snap_clicked()
@@ -6021,8 +6145,227 @@ void MainWindow::stop_capture(void *device_handle)
     m_capturing_threads.erase(camera_handle);
 }
 
-void MainWindow::start_detection()
+void MainWindow::start_detection_with_warmup(int frame_width, int frame_height)
 {
+    // Ensure there's no existing warm-up thread running
+    if (m_warmup_thread.joinable())
+    {
+        m_warmup_thread.join();  // Wait for previous thread to finish
+    }
+
+    // Ensure there's no existing processing thread running
+    if (m_processing_thread.joinable())
+    {
+        m_processing_thread.join();  // Wait for previous thread to finish
+    }
+
+    m_frame_queue.clear();
+
+    start_warmup(frame_width, frame_height);
+
+    start_detection(frame_width, frame_height);
+}
+
+void MainWindow::start_warmup(int frame_width, int frame_height)
+{
+    add_runtime_event("Warm-up Starting");
+
+    size_t total_frame_rgb_size = 0;
+    for (int i = 0; i < FRAME_BATCH_SIZE; ++i)
+    {
+        total_frame_rgb_size += frame_width * frame_height * RGB_CHANNELS;
+    }
+
+    if (m_frame_rgb_data_buffer.size() < total_frame_rgb_size)
+    {
+        m_frame_rgb_data_buffer.resize(total_frame_rgb_size);
+    }
+
+    size_t shm_frames_buffer = frame_width * frame_height * (FRAME_BATCH_SIZE + 1); // add extra one frame for safety
+
+    std::promise<void> warmup_promise;
+    auto warmup_future = warmup_promise.get_future();
+
+    // Start the warm-up thread
+    m_warmup_thread = std::thread([this, shm_frames_buffer, promise = std::move(warmup_promise)]() mutable
+    {
+        add_runtime_event("Warm-up In Progress", "orange");
+
+        // Open shared memory object
+        std::cout << "Open shared memory object" << std::endl;
+        int shm_fd = shm_open(SHM_NAME_FRAMES.c_str(), O_CREAT | O_RDWR, 0666);
+        if (shm_fd == -1)
+        {
+            std::cerr << "Failed to open shared memory object." << std::endl;
+            return;
+        }
+
+        // Resize shared memory object to the initial data size
+        std::cout << "Resize shared memory object" << std::endl;
+        if (ftruncate(shm_fd, shm_frames_buffer) == -1)
+        {
+            std::cerr << "Failed to resize shared memory object." << std::endl;
+            ::close(shm_fd);
+            return;
+        }
+
+        // Map shared memory into address space
+        std::cout << "Map shared memory" << std::endl;
+        void *shm_ptr = mmap(0, shm_frames_buffer, PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        if (shm_ptr == MAP_FAILED)
+        {
+            std::cerr << "Failed to map shared memory." << std::endl;
+            ::close(shm_fd);
+            return;
+        }
+
+        FrameData frame_data(nullptr, nullptr, ""); // Initialize FrameData with null pointers
+        std::vector<FrameOffsetInfo> frame_offsets;
+        size_t count;
+
+        while (true)
+        {
+            if (count >= WARMUP_COUNT)
+            {
+                break;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Prevent CPU overuse
+            frame_offsets.clear();
+            size_t offset = 0;
+            int num_frames_dequeued = 0;
+            int frame_width = 0;
+            int frame_height = 0;
+            uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
+
+            // make sure there are enough frames to process
+            if (m_frame_queue.get_size() < FRAME_BATCH_SIZE)
+            {
+                continue;
+            }
+
+            // sort by serial number of each frame
+            std::vector<FrameData> sorted_frames;
+            while (!m_frame_queue.isEmpty() && num_frames_dequeued < FRAME_BATCH_SIZE)
+            {
+                if (m_frame_queue.dequeue(frame_data))
+                {
+                    sorted_frames.push_back(frame_data);
+                    num_frames_dequeued++;
+                }
+            }
+            std::sort(sorted_frames.begin(), sorted_frames.end(), [](const FrameData& a, const FrameData& b)
+            {
+                return a.serial_number < b.serial_number;
+            });
+
+            // Copy the frame data into the shared memory
+            for (auto frame_data : sorted_frames)
+            // for (auto frame_data : m_frame_queue)
+            {
+                auto frame_size = frame_data.pMetadata->nFrameLen;
+                frame_width = frame_data.pMetadata->nWidth;
+                frame_height = frame_data.pMetadata->nHeight;
+                auto serial_number = frame_data.serial_number;
+
+                // Save the frame metadata
+                frame_offsets.push_back({ offset, frame_size, serial_number });
+
+                // Calculate the memory address to copy this frame
+                void* frame_ptr = static_cast<uint8_t*>(shm_ptr) + offset;
+
+                // Copy the frame data into the calculated memory location
+                std::memcpy(frame_ptr, frame_data.pData, frame_size);
+
+                // Update offset for the next frame
+                offset += frame_size;
+            }
+
+            if (frame_offsets.empty())
+            {
+                continue;
+            }
+
+            // Generate a transaction ID
+            m_trans_id = generate_transaction_id();
+
+            // Get confidence threshold and pixel threshold from settings file
+            double confidence_threshold = 0.5;
+            double pixel_threshold = 0.1;
+
+            // Get current Datetime
+            std::string datetime = TimeUtils::get_current_time();
+
+            // Send the command to the ws server
+            nlohmann::json json_data;
+            json_data["project_name"] = m_curr_project_name;
+            json_data["transaction_id"] = m_trans_id;
+            json_data["transaction_datetime"] = datetime;
+            json_data["confidence_threshold"] = confidence_threshold;
+            json_data["pixel_threshold"] = pixel_threshold;
+            json_data["frame_width"] = frame_width;
+            json_data["frame_height"] = frame_height;
+            for (const auto& info : frame_offsets)
+            {
+                json_data["frames"].push_back({
+                    {"offset", info.offset},
+                    {"frame_size", info.frame_size},
+                    {"serial_number", info.serial_number}
+                });
+            }
+            std::string frame_info_string = json_data.dump(); // Convert JSON to string
+            send_ws_message(frame_info_string);
+            
+            if (!m_is_running)
+            {
+                std::cout << "Break out the loop while waiting for a WS response" << std::endl;
+                break;
+            }
+
+            // Parse the JSON response
+            nlohmann::json response_json = nlohmann::json::parse(m_ws_response);
+
+            // Extract values from the JSON object
+            std::string res_trans_id = response_json["transaction_id"];
+            if (res_trans_id != m_trans_id)
+            {
+                std::cout << "Transaction ID mismatch" << std::endl;
+                continue;
+            }
+
+            std::string status = response_json["status"];
+            int total_anomalies = response_json["total_anomalies"];
+            int patch_size = response_json["patch_size"];
+
+            if (status == "complete")
+            {
+                count++;
+            }
+        }
+
+        frame_offsets.clear();
+
+        std::cout << "Clean up shared memory object" << std::endl;
+        if (munmap(shm_ptr, shm_frames_buffer) == -1) // Unmap the shared memory
+        {
+            std::cerr << "Failed to unmap shared memory." << std::endl;
+        }
+        ::close(shm_fd);
+
+        // Signal completion
+        promise.set_value();
+    });
+
+    // Wait for the warm-up to complete
+    warmup_future.wait();
+
+    add_runtime_event("Warm-up Completed");
+}
+
+void MainWindow::start_detection(int frame_width, int frame_height)
+{
+    add_runtime_event("Detection Starting");
+
     auto now = std::chrono::system_clock::now();
     // Add a new session with the current time as the start and a placeholder for the end time
     m_session_times.emplace_back(now, std::chrono::system_clock::time_point::max());
@@ -6079,88 +6422,6 @@ void MainWindow::start_detection()
         m_rt_monitoring_num_anomalies_lbl->set_text("0");
     }
 
-    // Ensure there's no existing processing thread running
-    if (m_processing_thread.joinable()) 
-    {
-        m_processing_thread.join();  // Wait for previous thread to finish
-    }
-    m_frame_queue.clear();
-
-    // Retrieve camera settings (frame width and height) from settings.ini file
-    std::vector<std::string> serial_numbers;
-    if (m_select_detection_camera_cbox)
-    {
-        auto selected_detection_source = m_select_detection_camera_cbox->get_active_text();
-        if (selected_detection_source == "All Cameras")
-        {
-            auto model = m_select_detection_camera_cbox->get_model();
-            if (model)
-            {
-                for (auto& row : model->children())
-                {
-                    Glib::ustring sn;
-                    row.get_value(0, sn); // 0 is the column index for ComboBoxText items
-                    
-                    if (sn == "All Cameras")
-                    {
-                        continue;
-                    }
-
-                    serial_numbers.push_back(sn);
-                }
-            }
-        }
-        else
-        {
-            serial_numbers.push_back(selected_detection_source);
-        }
-    }
-
-    if (serial_numbers.empty())
-    {
-        // Create the message dialog with the specified parent window, message text, and button options
-        Gtk::MessageDialog dialog(*this, 
-                                "Camera(s) has not been configured.", 
-                                false,
-                                Gtk::MESSAGE_ERROR,
-                                Gtk::BUTTONS_OK,
-                                true);
-        dialog.set_secondary_text("Please go to the Settings page to configure camera(s) before running detection.");
-        
-        // Run the dialog and wait for the user to press the OK button
-        dialog.run();
-        return;
-    }
-
-    auto cam_settings = SettingsService::get_settings(serial_numbers[0]);
-    int frame_width = 0, frame_height = 0;
-    
-    if (!cam_settings.empty() && cam_settings.contains("width"))
-    {
-        frame_width = cam_settings["width"];
-    }
-
-    if (!cam_settings.empty() && cam_settings.contains("height"))
-    {
-        frame_height = cam_settings["height"];
-    }
-
-    if (frame_width < PATCH_SIZE || frame_height < PATCH_SIZE)
-    {
-        // Create the message dialog with the specified parent window, message text, and button options
-        Gtk::MessageDialog dialog(*this, 
-                                "Frame width or height is smaller than the specified patch size.", 
-                                false,
-                                Gtk::MESSAGE_ERROR,
-                                Gtk::BUTTONS_OK,
-                                true);
-        dialog.set_secondary_text("Please go to the Settings page to update camera(s) settings before running detection.");
-        
-        // Run the dialog and wait for the user to press the OK button
-        dialog.run();
-        return;
-    }
-
     // Gdk::Pixbuf does not directly support a single-channel format, 
     // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
     if (!m_image_pixbuf_rt_monitoring)
@@ -6199,6 +6460,8 @@ void MainWindow::start_detection()
     // Start the frame processing thread
     m_processing_thread = std::thread([this, shm_frames_buffer]()
     {
+        add_runtime_event("Detection In Progress", "green");
+
         // Open shared memory object
         std::cout << "Open shared memory object" << std::endl;
         int shm_fd = shm_open(SHM_NAME_FRAMES.c_str(), O_CREAT | O_RDWR, 0666);
@@ -6673,6 +6936,8 @@ void MainWindow::start_detection()
 
 void MainWindow::stop_detection()
 {
+    add_runtime_event("Detection Stopping");
+
     auto now = std::chrono::system_clock::now();
     if (!m_session_times.empty() &&
         m_session_times.back().second == std::chrono::system_clock::time_point::max())
@@ -6736,6 +7001,11 @@ void MainWindow::stop_detection()
         m_processing_thread.join();  // Wait for previous thread to finish
     }
 
+    if (m_warmup_thread.joinable())
+    {
+        m_warmup_thread.join();  // Wait for previous thread to finish
+    }
+
     if (m_rt_monitoring_detection_start_time_lbl)
     {
         m_rt_monitoring_detection_start_time_lbl->set_text("");
@@ -6758,6 +7028,8 @@ void MainWindow::stop_detection()
 
     // RetentionManager retention_manager;
     // retention_manager.enforce_daily_limit();
+
+    add_runtime_event("Detection Stopped");
 }
 
 void MainWindow::send_ws_message(std::string message)
@@ -6770,7 +7042,7 @@ void MainWindow::send_ws_message(std::string message)
 
         // wait until receive the response
         std::unique_lock<std::mutex> lock(m_ws_response_mutex);
-        auto timeout_duration = std::chrono::milliseconds(2500);
+        auto timeout_duration = std::chrono::milliseconds(DETECTION_TIMEOUT_MS);
         if (m_ws_response_cv.wait_for(lock, timeout_duration, [this]{ return m_ws_response_ready; }))
         {
             // Response received within timeout

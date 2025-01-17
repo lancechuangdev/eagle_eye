@@ -49,10 +49,9 @@ protected:
     Gtk::Label *m_detection_digital_input_line_number_lbl;
     Gtk::Label *m_detection_digital_output_lbl;
     Gtk::Label *m_detection_digital_output_line_number_lbl;
-    Gtk::Button *m_warm_up_btn;
     Gtk::Button *m_start_btn;
     Gtk::Button *m_stop_btn;
-    Gtk::Label *m_system_warm_up_lbl;
+    Gtk::TextView *m_runtime_event_viewer;
     Gtk::Button *m_snap_btn;
     Gtk::ComboBoxText *m_snap_source_cbox;
     Gtk::FileChooserButton *m_toolkit_image_picker_fcb;
@@ -242,6 +241,13 @@ private:
             : main_window_ptr(ptr), serial_number(sn) {}
     };
 
+    struct RuntimeEvent
+    {
+        std::string message;
+        std::string datetime;
+        std::string color;
+    };
+
     Glib::RefPtr<Gtk::Builder> m_builder;
     std::string m_curr_project_name;
     MV_CC_DEVICE_INFO_LIST m_cam_list;
@@ -251,7 +257,7 @@ private:
     FrameQueue m_frame_queue;
     std::unordered_map<std::string, std::thread> m_capturing_threads;
     std::thread m_processing_thread;
-
+    std::thread m_warmup_thread;
     WebSocketClient m_ws_client;
     bool m_is_ws_connected;
     std::string m_ws_response;
@@ -327,6 +333,10 @@ private:
     std::vector<uint8_t> m_frame_rgb_data_buffer;
     std::vector<uint8_t> m_patch_rgba_data_buffer;
 
+    Glib::Dispatcher m_event_dispatcher; // Dispatcher to signal the main thread
+    std::vector<RuntimeEvent> m_pending_events; // Thread-safe event storage
+    std::mutex m_event_mutex; // Mutex to protect the event list
+
     void set_window_title(const std::string &title);
     bool create_project(const std::string &project_name);
     void open_project(const std::string &project_file_path);
@@ -336,12 +346,17 @@ private:
     bool disconnect_camera(const std::string& sn);
     bool configure_camera(const std::string sn);
     void update_cam_grid();
-    void show_camera_connect_warning(Gtk::Window& parent, std::string message);
+    void show_dialog(Gtk::Window& parent, std::string message, std::string secondary_message="", Gtk::MessageType message_type = Gtk::MESSAGE_ERROR);
     void *create_or_get_device_handle_by_serial_number(std::string sn);
     void start_capture(void *device_handle);
-    void start_detection();
+    void start_warmup(int frame_width, int frame_height);
+    void start_detection(int frame_width, int frame_height);
+    void start_detection_with_warmup(int frame_width, int frame_height);
     void stop_capture(void *device_handle);
     void stop_detection();
+    void on_event_dispatch(); // Called when dispatcher emits a signal
+    void add_runtime_event(const std::string &message, const std::string &color="");
+    void clear_runtime_events();
     void send_ws_message(std::string message);
     void save_tmp_image(unsigned char *pData, MV_FRAME_OUT_INFO_EX FrameInfo, void *deviceHandle);
     std::string generate_transaction_id();

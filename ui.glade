@@ -757,19 +757,6 @@
                                 <property name="halign">end</property>
                                 <property name="spacing">10</property>
                                 <child>
-                                  <object class="GtkButton" id="warm_up_btn">
-                                    <property name="label" translatable="yes">Warm up</property>
-                                    <property name="can-focus">True</property>
-                                    <property name="receives-default">True</property>
-                                    <property name="margin-end">20</property>
-                                  </object>
-                                  <packing>
-                                    <property name="expand">False</property>
-                                    <property name="fill">True</property>
-                                    <property name="position">0</property>
-                                  </packing>
-                                </child>
-                                <child>
                                   <object class="GtkButton" id="start_btn">
                                     <property name="label" translatable="yes">Start</property>
                                     <property name="visible">True</property>
@@ -816,56 +803,24 @@
                           </packing>
                         </child>
                         <child>
-                          <object class="GtkLabel" id="system_warm_up_lbl">
-                            <property name="can-focus">False</property>
-                            <property name="halign">start</property>
-                            <property name="label" translatable="yes">The system has not been warmed up yet.</property>
-                            <style>
-                              <class name="warning-text"/>
-                            </style>
+                          <object class="GtkScrolledWindow">
+                            <property name="visible">True</property>
+                            <property name="can-focus">True</property>
+                            <property name="vexpand">True</property>
+                            <property name="shadow-type">in</property>
+                            <child>
+                              <object class="GtkTextView" id="runtime_event_viewer">
+                                <property name="visible">True</property>
+                                <property name="can-focus">True</property>
+                                <property name="editable">False</property>
+                                <property name="accepts-tab">False</property>
+                              </object>
+                            </child>
                           </object>
                           <packing>
                             <property name="expand">False</property>
                             <property name="fill">True</property>
                             <property name="position">1</property>
-                          </packing>
-                        </child>
-                        <child>
-                          <object class="GtkBox">
-                            <property name="can-focus">False</property>
-                            <property name="halign">start</property>
-                            <property name="spacing">5</property>
-                            <child>
-                              <object class="GtkImage">
-                                <property name="visible">True</property>
-                                <property name="can-focus">False</property>
-                                <property name="pixbuf">resource:///com/example/eagle_eye/info.svg</property>
-                              </object>
-                              <packing>
-                                <property name="expand">False</property>
-                                <property name="fill">True</property>
-                                <property name="position">0</property>
-                              </packing>
-                            </child>
-                            <child>
-                              <object class="GtkLabel">
-                                <property name="visible">True</property>
-                                <property name="can-focus">False</property>
-                                <property name="halign">start</property>
-                                <property name="label" translatable="yes">GPU warm-up eliminates initialization overheads,
-enabling the GPU to operate at peak efficiency.</property>
-                              </object>
-                              <packing>
-                                <property name="expand">False</property>
-                                <property name="fill">True</property>
-                                <property name="position">1</property>
-                              </packing>
-                            </child>
-                          </object>
-                          <packing>
-                            <property name="expand">False</property>
-                            <property name="fill">True</property>
-                            <property name="position">2</property>
                           </packing>
                         </child>
                       </object>
