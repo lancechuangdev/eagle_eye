@@ -113,6 +113,8 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("detection_camera_lbl", m_detection_camera_lbl);
 
+    m_builder->get_widget("detection_rate_lbl", m_detection_rate_lbl);
+
     m_builder->get_widget("start_btn", m_start_btn);
     if (m_start_btn)
     {
@@ -123,7 +125,9 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     if (m_stop_btn)
     {
         m_stop_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_stop_clicked));
-    }    
+    }
+
+    start_detection_rate_timer();
 
     m_builder->get_widget("runtime_event_viewer", m_runtime_event_viewer);
 
@@ -4824,6 +4828,9 @@ void MainWindow::on_new_project_clicked()
                         // Clear position track by redrawing
                         m_report_position_display_area->queue_draw();
 
+                        // Initialize detection rate records with 5 elements, all set to 0.0
+                        m_detection_rate_records = std::vector<double>(5, 0.0);
+
                         // Update main window title with a project name
                         set_window_title(APP_NAME + " - " + project_name);
                         
@@ -4981,6 +4988,9 @@ void MainWindow::open_project(const std::string &project_file_path)
             // Clear position track by redrawing
             m_report_position_display_area->queue_draw();
 
+            // Initialize detection rate records with 5 elements, all set to 0.0
+            m_detection_rate_records = std::vector<double>(5, 0.0);
+
             // Update runtime page
             update_runtime_page("open_project");
 
@@ -5055,6 +5065,9 @@ void MainWindow::on_quick_start_clicked()
 
     // Clear position track by redrawing
     m_report_position_display_area->queue_draw();
+
+    // Initialize detection rate records with 5 elements, all set to 0.0
+    m_detection_rate_records = std::vector<double>(5, 0.0);
 
     // Update main window title with a project name
     set_window_title(APP_NAME);
@@ -5156,6 +5169,31 @@ void MainWindow::on_recent_project_selected(Gtk::ListBoxRow* row)
     {
         std::cout << "No row selected!" << std::endl;
     }
+}
+
+void MainWindow::start_detection_rate_timer()
+{
+    // Start a Glib timer to update the GUI every second
+    Glib::signal_timeout().connect_seconds([this]() {
+        double average_fps = 0.0;
+
+        // Calculate the average FPS in a thread-safe way
+        {
+            std::lock_guard<std::mutex> lock(m_detection_rate_mutex);
+            if (!m_detection_rate_records.empty())
+            {
+                average_fps = std::accumulate(m_detection_rate_records.begin(), m_detection_rate_records.end(), 0.0) / m_detection_rate_records.size();
+            }
+        }
+
+        // Update the detection rate label
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(2) << average_fps;
+        m_detection_rate_lbl->set_text(oss.str());
+
+        // Keep the timer running
+        return true;
+    }, 1); // Update every second
 }
 
 void MainWindow::on_start_clicked()
@@ -6225,7 +6263,7 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
 
         while (true)
         {
-            if (count >= WARMUP_COUNT)
+            if (count >= WARMUP_NUM_ITERATIONS)
             {
                 break;
             }
@@ -6510,9 +6548,32 @@ void MainWindow::start_detection(int frame_width, int frame_height)
         std::vector<FrameOffsetInfo> frame_offsets;
         std::vector<PatchPosition> patch_positions;
         m_session_anomaly_count = 0;
-        
+
+        // Get confidence threshold and pixel threshold from settings file
+        double confidence_threshold = 0.5;
+        double pixel_threshold = 0.1;
+
+        auto detection_settings = SettingsService::get_settings("detection");
+        if (!detection_settings.empty())
+        {
+            if (detection_settings.contains("confidence_threshold"))
+            {
+                confidence_threshold = detection_settings["confidence_threshold"];
+            }
+            if (detection_settings.contains("pixel_threshold"))
+            {
+                pixel_threshold = detection_settings["pixel_threshold"];
+            }
+        }
+
+        size_t record_index = 0; 
+        auto last_detection_time = std::chrono::steady_clock::now();
+
         while (m_is_running)
         {
+            // Record the start time
+            auto start_time = std::chrono::steady_clock::now();
+
             std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Prevent CPU overuse
             frame_offsets.clear();
             size_t offset = 0;
@@ -6644,17 +6705,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
 
             // Generate a transaction ID
             m_trans_id = generate_transaction_id();
-
-            // Get confidence threshold and pixel threshold from settings file
-            double confidence_threshold = 0.5;
-            double pixel_threshold = 0.1;
-
-            auto detection_settings = SettingsService::get_settings("detection");
-            if (!detection_settings.empty())
-            {
-                confidence_threshold = detection_settings["confidence_threshold"];
-                pixel_threshold = detection_settings["pixel_threshold"];
-            }
 
             // Get current Datetime
             std::string datetime = TimeUtils::get_current_time();
@@ -6902,6 +6952,21 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             }
 
             m_main_masks_dispatcher.emit();
+
+            // Calculate the time difference (in seconds) since the last detection
+            auto end_time = std::chrono::steady_clock::now();
+            double elapsed_time = std::chrono::duration<double>(end_time - last_detection_time).count();
+            last_detection_time = end_time;
+
+            // Calculate FPS for the current detection
+            double current_fps = (elapsed_time > 0) ? (1.0 / elapsed_time) : 0.0;
+
+            // Update the FPS records in a thread-safe way
+            {
+                std::lock_guard<std::mutex> lock(m_detection_rate_mutex);
+                m_detection_rate_records[record_index] = current_fps; // Update the current index
+                record_index = (record_index + 1) % m_detection_rate_records.size(); // Move to the next index
+            }
         }
 
         // Clean up
@@ -7405,133 +7470,4 @@ bool MainWindow::on_detection_display_area_motion_notify_event(GdkEventMotion *m
     m_detection_results_display_area->queue_draw();
 
     return true;
-}
-
-void MainWindow::warm_up_gpu(int num_iterations)
-{
-    // Define the image dimensions and channels
-    int frame_width = 2448;
-    int frame_height = 2048;
-    int channels = 1;
-
-    for (int i = 0; i < num_iterations; i++)
-    {
-        // Open shared memory object
-        auto patch_size = PATCH_SIZE;
-        std::string shm_name = SHM_NAME_FRAMES;
-        size_t buffer = frame_width * frame_height * FRAME_BATCH_SIZE;
-
-        int shm_fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0666);
-        if (shm_fd == -1)
-        {
-            std::cerr << "Failed to open shared memory object." << std::endl;
-            continue;
-        }
-
-        // Resize shared memory object to the initial data size
-        if (ftruncate(shm_fd, buffer) == -1)
-        {
-            std::cerr << "Failed to resize shared memory object." << std::endl;
-            ::close(shm_fd);
-            continue;
-        }
-
-        // Map shared memory into address space
-        void *shm_ptr = mmap(0, buffer, PROT_WRITE, MAP_SHARED, shm_fd, 0);
-        if (shm_ptr == MAP_FAILED)
-        {
-            std::cerr << "Failed to map shared memory." << std::endl;
-            ::close(shm_fd);
-            continue;
-        }
-
-        // Generate image data for warm up
-        std::vector<uint8_t> image_data;
-        // Resize the vector to hold the pixel data (black)
-        image_data.resize(frame_width * frame_height * channels);
-
-        // Copy the frame data into the calculated memory location
-        auto frame_size = frame_width * frame_height;
-        void* frame_ptr = static_cast<uint8_t*>(shm_ptr);
-        std::memcpy(frame_ptr, image_data.data(), frame_size);
-
-        // Save the frame metadata
-        std::vector<FrameOffsetInfo> frame_offsets;
-        frame_offsets.push_back({ 0, frame_size, "N/A" });
-        
-        if (!frame_offsets.empty())
-        {
-            // Send the command to the ws server
-            m_trans_id = generate_transaction_id();
-
-            // Get confidence threshold and pixel threshold from settings file
-            double confidence_threshold = 0.5;
-            double pixel_threshold = 0.03;
-
-            auto detection_settings = SettingsService::get_settings("detection");
-            if (!detection_settings.empty())
-            {
-                if (detection_settings.contains("confidence_threshold"))
-                {
-                    confidence_threshold = detection_settings["confidence_threshold"];
-                }
-                if (detection_settings.contains("pixel_threshold"))
-                {
-                    pixel_threshold = detection_settings["pixel_threshold"];
-                }
-            }
-
-            // Get current Datetime
-            std::string datetime = TimeUtils::get_current_time();
-
-            // Build JSON transaction data
-            nlohmann::json json_data;
-            json_data["transaction_id"] = m_trans_id;
-            json_data["transaction_datetime"] = datetime;
-            json_data["confidence_threshold"] = confidence_threshold;
-            json_data["pixel_threshold"] = pixel_threshold;
-            json_data["frame_width"] = frame_width;
-            json_data["frame_height"] = frame_height;
-            for (const auto& info : frame_offsets)
-            {
-                json_data["frames"].push_back({
-                    {"offset", info.offset},
-                    {"frame_size", info.frame_size},
-                    {"serial_number", info.serial_number}
-                });
-            }
-
-            std::string frame_info_string = json_data.dump(); // Convert JSON to string
-            send_ws_message(frame_info_string);
-
-            // Parse the JSON response
-            nlohmann::json response_json = nlohmann::json::parse(m_ws_response);
-
-            // Extract values from the JSON object
-            std::string res_trans_id = response_json["transaction_id"];
-            if (res_trans_id != m_trans_id)
-            {
-                std::cout << "Transaction ID mismatch" << std::endl;
-            }
-            else
-            {
-                std::string status = response_json["status"];            
-                if (status == "complete")
-                {
-                    std::cout << "Warming up gpu with transaction: " << res_trans_id << std::endl;
-                }
-            }
-        }
-
-        // Clean up
-        std::cout << "Clean up shared memory object" << std::endl; 
-        if (munmap(shm_ptr, buffer) == -1) // Unmap the shared memory
-        {
-            std::cerr << "Failed to unmap shared memory." << std::endl;
-        }
-        ::close(shm_fd);
-
-        // Add a delay before next iteration
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    }
 }

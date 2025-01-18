@@ -45,6 +45,7 @@ protected:
     Gtk::Label *m_rt_monitoring_detection_start_time_lbl;
     Gtk::Label *m_rt_monitoring_num_anomalies_lbl;
     Gtk::Label *m_detection_camera_lbl;
+    Gtk::Label *m_detection_rate_lbl;
     Gtk::Label *m_detection_digital_input_lbl;
     Gtk::Label *m_detection_digital_input_line_number_lbl;
     Gtk::Label *m_detection_digital_output_lbl;
@@ -337,6 +338,9 @@ private:
     std::vector<RuntimeEvent> m_pending_events; // Thread-safe event storage
     std::mutex m_event_mutex; // Mutex to protect the event list
 
+    std::vector<double> m_detection_rate_records;
+    std::mutex m_detection_rate_mutex;
+
     void set_window_title(const std::string &title);
     bool create_project(const std::string &project_name);
     void open_project(const std::string &project_file_path);
@@ -354,6 +358,7 @@ private:
     void start_detection_with_warmup(int frame_width, int frame_height);
     void stop_capture(void *device_handle);
     void stop_detection();
+    void start_detection_rate_timer();
     void on_event_dispatch(); // Called when dispatcher emits a signal
     void add_runtime_event(const std::string &message, const std::string &color="");
     void clear_runtime_events();
@@ -380,7 +385,6 @@ private:
     std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> track_position(double speed);
     bool is_transaction_valid(const std::string &transaction_path);
     void create_csv_file(const std::string &file_name);
-    void warm_up_gpu(int num_iterations);
 };
 
 #endif
