@@ -648,12 +648,15 @@ void MainWindow::on_report_refresh_clicked()
     // Populating the detection results list box with rows
     for (const auto &result_folder : m_sorted_detection_results_in_report)
     {
-        // std::cout << result_folder << std::endl;
+        auto trans_file_path = result_folder / "transaction_data.json";
+
+        if (is_warmup_transaction(trans_file_path.string()))
+        {
+            continue;
+        }
 
         auto row_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
         auto trans_id = result_folder.filename().string();
-        auto trans_file_path = result_folder / "transaction_data.json";
-
         auto trans_label = Gtk::make_managed<Gtk::Label>(trans_id);
         if (is_transaction_valid(trans_file_path.string()))
         {
@@ -810,6 +813,32 @@ bool MainWindow::on_report_display_area_motion_notify_event(GdkEventMotion *moti
 
     // Return true to indicate that the event has been handled
     return true;
+}
+
+bool MainWindow::is_warmup_transaction(const std::string &transaction_path)
+{
+    bool is_warmup_transaction = false;
+
+    // Attempt to load the JSON data from the file
+    auto json_data_optional = FileUtils::get_json(transaction_path);
+    if (!json_data_optional.has_value())
+    {
+        std::cerr << "Failed to load JSON data from path: " << transaction_path << std::endl;
+        return false; // Return false if the JSON could not be loaded
+    }
+
+    const auto &json_data = json_data_optional.value();
+    if (json_data.contains("transaction_type"))
+    {
+        const auto type = json_data["transaction_type"];
+        is_warmup_transaction = type == "warmup";
+    }
+    else
+    {
+        std::cerr << "The 'transaction_type' field is missing in the JSON data." << std::endl;
+    }
+
+    return is_warmup_transaction;
 }
 
 bool MainWindow::is_transaction_valid(const std::string &transaction_path)
@@ -1119,7 +1148,7 @@ void MainWindow::create_csv_file(const std::string &file_name)
 
     // Write the last row
     csv_file << "N/A" << ','
-             << '=' << '"' << TimeUtils::get_formatted_time(start_time) << '"' << ','
+             << '=' << '"' << TimeUtils::get_formatted_time(end_time) << '"' << ','
              << "N/A" << '\n';
 
     // Close the file
@@ -6355,6 +6384,7 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
             json_data["project_name"] = m_curr_project_name;
             json_data["transaction_id"] = m_trans_id;
             json_data["transaction_datetime"] = datetime;
+            json_data["transaction_type"] = "warmup";
             json_data["confidence_threshold"] = confidence_threshold;
             json_data["pixel_threshold"] = pixel_threshold;
             json_data["frame_width"] = frame_width;
@@ -6730,6 +6760,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             json_data["project_name"] = m_curr_project_name;
             json_data["transaction_id"] = m_trans_id;
             json_data["transaction_datetime"] = datetime;
+            json_data["transaction_type"] = "detection";
             json_data["confidence_threshold"] = confidence_threshold;
             json_data["pixel_threshold"] = pixel_threshold;
             json_data["frame_width"] = frame_width;
