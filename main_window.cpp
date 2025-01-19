@@ -3443,9 +3443,22 @@ void MainWindow::snap_and_display(void *device_handle)
 
     auto frame_width = stImageInfo.nWidth;
     auto frame_height = stImageInfo.nHeight;
+    size_t frame_rgb_size = frame_width * frame_height * RGB_CHANNELS;
 
-    // Save the frame to file
-    save_tmp_image(pData, stImageInfo, device_handle);
+    if (m_frame_rgb_data_buffer.size() < frame_rgb_size)
+    {
+        m_frame_rgb_data_buffer.resize(frame_rgb_size);
+    }
+
+    // Convert Mono8 to RGB directly into the allocated RGB buffer
+    uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data();
+    for (size_t i = 0; i < frame_width * frame_height; ++i)
+    {
+        uint8_t gray = pData[i];
+        frame_rgb_data_ptr[i * RGB_CHANNELS + 0] = gray; // Red channel
+        frame_rgb_data_ptr[i * RGB_CHANNELS + 1] = gray; // Green channel
+        frame_rgb_data_ptr[i * RGB_CHANNELS + 2] = gray; // Blue channel
+    }
 
     // Reset image pixel buffer
     if (m_image_pixbuf_settings)
@@ -3453,24 +3466,16 @@ void MainWindow::snap_and_display(void *device_handle)
         m_image_pixbuf_settings.reset();
     }
 
-    // Load the frame from file    
-    try
-    {
-        m_image_pixbuf_settings = Gdk::Pixbuf::create_from_file("/tmp/eagle_eye/tmp.jpeg");
-    }
-    catch (const Glib::FileError &ex)
-    {
-        std::cerr << "File Error: " << ex.what() << std::endl;
-    }
-    catch (const Gdk::PixbufError &ex)
-    {
-        std::cerr << "Pixbuf Error: " << ex.what() << std::endl;
-    }
-
-    // Reset zoom and pan when a new image is loaded
-    m_zoom_factor_settings = 1.0;
-    m_offset_x_settings = 0.0;
-    m_offset_y_settings = 0.0;
+    int row_stride = frame_width * RGB_CHANNELS;
+    m_image_pixbuf_settings = Gdk::Pixbuf::create_from_data(
+        m_frame_rgb_data_buffer.data(), // Pointer to the current frame's RGB data
+        Gdk::COLORSPACE_RGB,            // Gdk::Pixbuf expects RGB data
+        false,                          // No alpha channel
+        8,                              // 8 bits per channel
+        frame_width,
+        frame_height,
+        row_stride
+    );
 
     // Queue the frame for diaplay
     if (m_image_pixbuf_settings)
@@ -3845,23 +3850,39 @@ void MainWindow::on_connect_clicked(const std::string& sn)
 
     auto frame_width = stImageInfo.nWidth;
     auto frame_height = stImageInfo.nHeight;
+    size_t frame_rgb_size = frame_width * frame_height * RGB_CHANNELS;
 
-    // Save the frame to file
-    save_tmp_image(pData, stImageInfo, device_handle);
+    if (m_frame_rgb_data_buffer.size() < frame_rgb_size)
+    {
+        m_frame_rgb_data_buffer.resize(frame_rgb_size);
+    }
 
-    // Load the frame from file    
-    try
+    // Convert Mono8 to RGB directly into the allocated RGB buffer
+    uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data();
+    for (size_t i = 0; i < frame_width * frame_height; ++i)
     {
-        m_image_pixbuf_settings = Gdk::Pixbuf::create_from_file("/tmp/eagle_eye/tmp.jpeg");
+        uint8_t gray = pData[i];
+        frame_rgb_data_ptr[i * RGB_CHANNELS + 0] = gray; // Red channel
+        frame_rgb_data_ptr[i * RGB_CHANNELS + 1] = gray; // Green channel
+        frame_rgb_data_ptr[i * RGB_CHANNELS + 2] = gray; // Blue channel
     }
-    catch (const Glib::FileError &ex)
+
+    // Reset image pixel buffer
+    if (m_image_pixbuf_settings)
     {
-        std::cerr << "File Error: " << ex.what() << std::endl;
+        m_image_pixbuf_settings.reset();
     }
-    catch (const Gdk::PixbufError &ex)
-    {
-        std::cerr << "Pixbuf Error: " << ex.what() << std::endl;
-    }
+
+    int row_stride = frame_width * RGB_CHANNELS;
+    m_image_pixbuf_settings = Gdk::Pixbuf::create_from_data(
+        m_frame_rgb_data_buffer.data(), // Pointer to the current frame's RGB data
+        Gdk::COLORSPACE_RGB,            // Gdk::Pixbuf expects RGB data
+        false,                          // No alpha channel
+        8,                              // 8 bits per channel
+        frame_width,
+        frame_height,
+        row_stride
+    );
 
     // Queue the frame for diaplay
     if (m_image_pixbuf_settings)
@@ -5610,22 +5631,35 @@ void MainWindow::on_snap_clicked()
         return;
     }
 
-    // Save the frame to file
-    save_tmp_image(pData, stImageInfo, device_handle);
+    auto frame_width = stImageInfo.nWidth;
+    auto frame_height = stImageInfo.nHeight;
+    size_t frame_rgb_size = frame_width * frame_height * RGB_CHANNELS;
 
-    // Load the frame from file    
-    try
+    if (m_frame_rgb_data_buffer.size() < frame_rgb_size)
     {
-        m_image_pixbuf_toolkit = Gdk::Pixbuf::create_from_file("/tmp/eagle_eye/tmp.jpeg");
+        m_frame_rgb_data_buffer.resize(frame_rgb_size);
     }
-    catch (const Glib::FileError &ex)
+
+    // Convert Mono8 to RGB directly into the allocated RGB buffer
+    uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data();
+    for (size_t i = 0; i < frame_width * frame_height; ++i)
     {
-        std::cerr << "File Error: " << ex.what() << std::endl;
+        uint8_t gray = pData[i];
+        frame_rgb_data_ptr[i * RGB_CHANNELS + 0] = gray; // Red channel
+        frame_rgb_data_ptr[i * RGB_CHANNELS + 1] = gray; // Green channel
+        frame_rgb_data_ptr[i * RGB_CHANNELS + 2] = gray; // Blue channel
     }
-    catch (const Gdk::PixbufError &ex)
-    {
-        std::cerr << "Pixbuf Error: " << ex.what() << std::endl;
-    }
+
+    int row_stride = frame_width * RGB_CHANNELS;
+    m_image_pixbuf_toolkit = Gdk::Pixbuf::create_from_data(
+        m_frame_rgb_data_buffer.data(), // Pointer to the current frame's RGB data
+        Gdk::COLORSPACE_RGB,            // Gdk::Pixbuf expects RGB data
+        false,                          // No alpha channel
+        8,                              // 8 bits per channel
+        frame_width,
+        frame_height,
+        row_stride
+    );
 
     // Reset zoom and pan when a new image is loaded
     m_zoom_factor_toolkit = 1.0;
@@ -5665,8 +5699,6 @@ void MainWindow::on_snap_clicked()
         return;
     }
 
-    auto frame_width = stImageInfo.nWidth;
-    auto frame_height = stImageInfo.nHeight;
     auto frame_size = frame_width * frame_height;
     std::vector<FrameOffsetInfo> frame_offsets;
 
@@ -6208,24 +6240,13 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
 {
     add_runtime_event("Warm-up Starting");
 
-    size_t total_frame_rgb_size = 0;
-    for (int i = 0; i < FRAME_BATCH_SIZE; ++i)
-    {
-        total_frame_rgb_size += frame_width * frame_height * RGB_CHANNELS;
-    }
-
-    if (m_frame_rgb_data_buffer.size() < total_frame_rgb_size)
-    {
-        m_frame_rgb_data_buffer.resize(total_frame_rgb_size);
-    }
-
     size_t shm_frames_buffer = frame_width * frame_height * (FRAME_BATCH_SIZE + 1); // add extra one frame for safety
 
     std::promise<void> warmup_promise;
     auto warmup_future = warmup_promise.get_future();
 
     // Start the warm-up thread
-    m_warmup_thread = std::thread([this, shm_frames_buffer, promise = std::move(warmup_promise)]() mutable
+    m_warmup_thread = std::thread([this, frame_width, frame_height, shm_frames_buffer, promise = std::move(warmup_promise)]() mutable
     {
         add_runtime_event("Warm-up In Progress", "orange");
 
@@ -6272,9 +6293,6 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
             frame_offsets.clear();
             size_t offset = 0;
             int num_frames_dequeued = 0;
-            int frame_width = 0;
-            int frame_height = 0;
-            uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
 
             // make sure there are enough frames to process
             if (m_frame_queue.get_size() < FRAME_BATCH_SIZE)
@@ -6302,8 +6320,6 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
             // for (auto frame_data : m_frame_queue)
             {
                 auto frame_size = frame_data.pMetadata->nFrameLen;
-                frame_width = frame_data.pMetadata->nWidth;
-                frame_height = frame_data.pMetadata->nHeight;
                 auto serial_number = frame_data.serial_number;
 
                 // Save the frame metadata
@@ -7140,36 +7156,36 @@ void MainWindow::send_ws_message(std::string message)
     }
 }
 
-void MainWindow::save_tmp_image(unsigned char *pData, MV_FRAME_OUT_INFO_EX frameInfo, void *deviceHandle)
-{
-    std::string temp_dir = "/tmp/eagle_eye";
-    if (!std::filesystem::is_directory(temp_dir))
-    {
-        if (!std::filesystem::create_directory(temp_dir))
-        {
-            std::cerr << "Failed to create temporary directory: " << temp_dir << std::endl;
-            return;
-        }
-    }
+// void MainWindow::save_tmp_image(unsigned char *pData, MV_FRAME_OUT_INFO_EX frameInfo, void *deviceHandle)
+// {
+//     std::string temp_dir = "/tmp/eagle_eye";
+//     if (!std::filesystem::is_directory(temp_dir))
+//     {
+//         if (!std::filesystem::create_directory(temp_dir))
+//         {
+//             std::cerr << "Failed to create temporary directory: " << temp_dir << std::endl;
+//             return;
+//         }
+//     }
 
-    MV_SAVE_IMG_TO_FILE_PARAM stSaveFileParam;
-    memset(&stSaveFileParam, 0, sizeof(MV_SAVE_IMG_TO_FILE_PARAM));
+//     MV_SAVE_IMG_TO_FILE_PARAM stSaveFileParam;
+//     memset(&stSaveFileParam, 0, sizeof(MV_SAVE_IMG_TO_FILE_PARAM));
 
-    stSaveFileParam.enImageType = MV_Image_Jpeg;
-    stSaveFileParam.nQuality = 90;
-    stSaveFileParam.enPixelType = frameInfo.enPixelType;
-    stSaveFileParam.nWidth = frameInfo.nWidth;
-    stSaveFileParam.nHeight = frameInfo.nHeight;
-    stSaveFileParam.nDataLen = frameInfo.nFrameLen;
-    stSaveFileParam.pData = pData;
-    sprintf(stSaveFileParam.pImagePath, "/tmp/eagle_eye/tmp.jpeg");
+//     stSaveFileParam.enImageType = MV_Image_Jpeg;
+//     stSaveFileParam.nQuality = 90;
+//     stSaveFileParam.enPixelType = frameInfo.enPixelType;
+//     stSaveFileParam.nWidth = frameInfo.nWidth;
+//     stSaveFileParam.nHeight = frameInfo.nHeight;
+//     stSaveFileParam.nDataLen = frameInfo.nFrameLen;
+//     stSaveFileParam.pData = pData;
+//     sprintf(stSaveFileParam.pImagePath, "/tmp/eagle_eye/tmp.jpeg");
     
-    int nRet = MV_CC_SaveImageToFile(deviceHandle, &stSaveFileParam);
-    if (nRet != MV_OK)
-    {
-        std::cerr << "Failed to save image to file. Error code: " << nRet << std::endl;
-    }
-}
+//     int nRet = MV_CC_SaveImageToFile(deviceHandle, &stSaveFileParam);
+//     if (nRet != MV_OK)
+//     {
+//         std::cerr << "Failed to save image to file. Error code: " << nRet << std::endl;
+//     }
+// }
 
 std::string MainWindow::generate_transaction_id()
 {

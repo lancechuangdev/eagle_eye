@@ -363,7 +363,6 @@ private:
     void add_runtime_event(const std::string &message, const std::string &color="");
     void clear_runtime_events();
     void send_ws_message(std::string message);
-    void save_tmp_image(unsigned char *pData, MV_FRAME_OUT_INFO_EX FrameInfo, void *deviceHandle);
     std::string generate_transaction_id();
     void update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf);
     void update_mask_alpha(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf, gint32 alpha);
