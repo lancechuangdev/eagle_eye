@@ -207,6 +207,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_save_report_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_save_report_clicked));
     }
 
+    m_builder->get_widget("view_report_btn", m_view_report_btn);
+    if (m_view_report_btn)
+    {
+        m_view_report_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_view_report_clicked));
+    }
+
     m_builder->get_widget("snap_source_cbox", m_snap_source_cbox);
 
     m_builder->get_widget("snap_btn", m_snap_btn);
@@ -1018,7 +1024,7 @@ bool MainWindow::on_report_position_draw(const Cairo::RefPtr<Cairo::Context> &cr
 
         auto x = position * width / total_distance;
 
-        std::cout << "position: " << position << ", width: " << width << ", total distance: " << total_distance << std::endl;
+        // std::cout << "position: " << position << ", width: " << width << ", total distance: " << total_distance << std::endl;
 
         // Draw the vertical line
         cr->set_line_width(2.0);
@@ -1084,6 +1090,57 @@ void MainWindow::on_save_report_clicked()
         }
         case Gtk::ResponseType::RESPONSE_REJECT:
             std::cout << "Save operation canceled." << std::endl;
+            break;
+
+        default:
+            std::cout << "Unexpected response." << std::endl;
+            break;
+    }
+}
+
+void MainWindow::on_view_report_clicked()
+{
+    // Create a FileChooserDialog in Open mode
+    Gtk::FileChooserDialog dialog("View Report", Gtk::FileChooserAction::FILE_CHOOSER_ACTION_OPEN);
+
+    // Set the initial folder
+    dialog.set_current_folder(AppPaths::Project_Path(m_curr_project_name));
+
+    // Add a filter to show only CSV files
+    auto csv_filter = Gtk::FileFilter::create();
+    csv_filter->set_name("CSV files");
+    csv_filter->add_pattern("*.csv");
+    dialog.add_filter(csv_filter);
+
+    // Add buttons for user actions
+    dialog.add_button("_Cancel", Gtk::ResponseType::RESPONSE_REJECT);
+    dialog.add_button("_Open", Gtk::ResponseType::RESPONSE_ACCEPT);
+
+    // Show the dialog and wait for user response
+    int result = dialog.run();
+
+    switch (result)
+    {
+        case Gtk::ResponseType::RESPONSE_ACCEPT:
+        {
+            // Get the selected file path
+            std::string file_path = dialog.get_filename();
+            std::cout << "File selected to open: " << file_path << std::endl;
+
+            try
+            {
+                // Open the selected file with the default application
+                Gio::AppInfo::launch_default_for_uri(Gio::File::create_for_path(file_path)->get_uri());
+            }
+            catch (const Glib::Error& ex)
+            {
+                std::cerr << "Error opening report file: " << ex.what() << std::endl;
+            }
+
+            break;
+        }
+        case Gtk::ResponseType::RESPONSE_REJECT:
+            std::cout << "Open operation canceled." << std::endl;
             break;
 
         default:

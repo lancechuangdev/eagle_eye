@@ -127,6 +127,7 @@ protected:
     Gtk::Switch *m_detection_results_masking_switch;
     Gtk::Entry *m_moving_speed_entry;
     Gtk::Button *m_save_report_btn;
+    Gtk::Button *m_view_report_btn;
     Gtk::Button *m_report_refresh_btn;
     Gtk::ListBox *m_report_transactions_listbox;
     Gtk::Switch *m_report_masking_switch;
@@ -161,6 +162,7 @@ protected:
     bool on_report_display_area_motion_notify_event(GdkEventMotion *motion_event);
     void on_report_enable_masking_changed();
     void on_save_report_clicked();
+    void on_view_report_clicked();
     bool on_rt_monitoring_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_toolkit_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     bool on_settings_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
