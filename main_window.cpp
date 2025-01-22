@@ -3189,6 +3189,7 @@ void MainWindow::on_start_listening_digital_input_event_clicked()
         m_logger->log("Failed to connect to the camera: " + sn, Logger::ERROR);
         return;
     }
+
     auto device_handle = create_or_get_device_handle_by_serial_number(sn);
 
     int nRet = MV_CC_SetEnumValue(device_handle, "LineSelector", std::stoi(line_number));
@@ -3196,73 +3197,99 @@ void MainWindow::on_start_listening_digital_input_event_clicked()
     {
         std::cerr << "Error to set LineSelector. Error code: " << nRet << std::endl;
         m_logger->log("Error on MV_CC_SetEnumValue(LineSelector): " + std::to_string(nRet), Logger::ERROR);
-        return;
     }
-
-    nRet = MV_CC_SetIntValue(device_handle, "LineDebouncerTime", debounce_time);
-    if (nRet != MV_OK)
+    else
     {
-        std::cerr << "Error to set LineDebouncerTime. Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_SetIntValue(LineDebouncerTime): " + std::to_string(nRet), Logger::ERROR);
-        return;
-    }
-
-    nRet = MV_CC_SetEnumValueByString(device_handle, "EventSelector", event_trigger.c_str());
-    if (nRet != MV_OK)
-    {
-        std::cerr << "Error to set EventSelector. Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_SetEnumValueByString(EventSelector): " + std::to_string(nRet), Logger::ERROR);
-        return;
-    }
-
-    nRet = MV_CC_SetEnumValueByString(device_handle, "EventNotification", notification_status.c_str());
-    if (nRet != MV_OK)
-    {
-        std::cerr << "Error to set EventNotification. Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_SetEnumValueByString(EventNotification): " + std::to_string(nRet), Logger::ERROR);
-        return;
-    }
-
-    auto event_callback = [](MV_EVENT_OUT_INFO * pEventInfo, void* pUser)
-    {
-        if (pEventInfo)
+        nRet = MV_CC_SetIntValue(device_handle, "LineDebouncerTime", debounce_time);
+        if (nRet != MV_OK)
         {
-            int64_t nBlockId = pEventInfo->nBlockIdHigh;
-            nBlockId = (nBlockId << 32) + pEventInfo->nBlockIdLow;
-
-            int64_t nTimestamp = pEventInfo->nTimestampHigh;
-            nTimestamp = (nTimestamp << 32) + pEventInfo->nTimestampLow;
-
-            std::ostringstream oss;
-            oss << "Timestamp: " << nTimestamp 
-                << ", Event Name: " << pEventInfo->EventName 
-                << ", Event Id: " << pEventInfo->nEventID 
-                << ", Block Id: " << nBlockId;
-            std::string eventInfoStr = oss.str();
-
-            // Update the TextView on the main thread
-            MainWindow *pThis = static_cast<MainWindow*>(pUser);
-            Glib::signal_idle().connect_once([pThis, eventInfoStr]()
-            {
-                auto buffer = pThis->m_digital_input_event_tv->get_buffer();
-                buffer->insert(buffer->end(), eventInfoStr + "\n");
-            });
-
-            std::cout << eventInfoStr << std::endl;
-            pThis->m_logger->log(eventInfoStr);
+            std::cerr << "Error to set LineDebouncerTime. Error code: " << nRet << std::endl;
+            m_logger->log("Error on MV_CC_SetIntValue(LineDebouncerTime): " + std::to_string(nRet), Logger::ERROR);
         }
-    };
+        else
+        {
+            nRet = MV_CC_SetEnumValueByString(device_handle, "EventSelector", event_trigger.c_str());
+            if (nRet != MV_OK)
+            {
+                std::cerr << "Error to set EventSelector. Error code: " << nRet << std::endl;
+                m_logger->log("Error on MV_CC_SetEnumValueByString(EventSelector): " + std::to_string(nRet), Logger::ERROR);
+            }
+            else
+            {
+                nRet = MV_CC_SetEnumValueByString(device_handle, "EventNotification", notification_status.c_str());
+                if (nRet != MV_OK)
+                {
+                    std::cerr << "Error to set EventNotification. Error code: " << nRet << std::endl;
+                    m_logger->log("Error on MV_CC_SetEnumValueByString(EventNotification): " + std::to_string(nRet), Logger::ERROR);
+                }
+                else
+                {
+                    auto event_callback = [](MV_EVENT_OUT_INFO * pEventInfo, void* pUser)
+                    {
+                        if (pEventInfo)
+                        {
+                            int64_t nBlockId = pEventInfo->nBlockIdHigh;
+                            nBlockId = (nBlockId << 32) + pEventInfo->nBlockIdLow;
 
-    nRet = MV_CC_RegisterEventCallBackEx(device_handle, event_trigger.c_str(), event_callback, this);
-    if (nRet != MV_OK)
-    {
-        std::cerr << "Error to register EventCallBackEx. Error code: " << nRet << std::endl;
-        m_logger->log("Error on MV_CC_RegisterEventCallBackEx: " + std::to_string(nRet), Logger::ERROR);
-        return;
+                            int64_t nTimestamp = pEventInfo->nTimestampHigh;
+                            nTimestamp = (nTimestamp << 32) + pEventInfo->nTimestampLow;
+
+                            std::ostringstream oss;
+                            oss << "Timestamp: " << nTimestamp 
+                                << ", Event Name: " << pEventInfo->EventName 
+                                << ", Event Id: " << pEventInfo->nEventID 
+                                << ", Block Id: " << nBlockId;
+                            std::string eventInfoStr = oss.str();
+
+                            // Update the TextView on the main thread
+                            MainWindow *pThis = static_cast<MainWindow*>(pUser);
+                            Glib::signal_idle().connect_once([pThis, eventInfoStr]()
+                            {
+                                auto buffer = pThis->m_digital_input_event_tv->get_buffer();
+                                buffer->insert(buffer->end(), eventInfoStr + "\n");
+                            });
+
+                            std::cout << eventInfoStr << std::endl;
+                            pThis->m_logger->log(eventInfoStr);
+                        }
+                    };
+
+                    nRet = MV_CC_RegisterEventCallBackEx(device_handle, event_trigger.c_str(), event_callback, this);
+                    if (nRet != MV_OK)
+                    {
+                        std::cerr << "Error to register EventCallBackEx. Error code: " << nRet << std::endl;
+                        m_logger->log("Error on MV_CC_RegisterEventCallBackEx: " + std::to_string(nRet), Logger::ERROR);
+                    }
+                    else
+                    {
+                        nRet = MV_CC_StartGrabbing(device_handle);
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error on MV_CC_StartGrabbing. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_StartGrabbing: " + std::to_string(nRet), Logger::ERROR);
+                        }
+                        else
+                        {
+                            m_is_listening_digital_input_event = true;
+                            std::cout << "Digital input event listening started." << std::endl;
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    m_is_listening_digital_input_event = true;
-    std::cout << "Digital input event listening started." << std::endl;
+    if (!m_is_listening_digital_input_event)
+    {
+        std::cout << "Failed to start listening digital input event: " << sn << std::endl;
+        m_logger->log("Failed to start listening digital input event: " + sn, Logger::ERROR);
+
+        if (!disconnect_camera(sn))
+        {
+            std::cout << "Failed to disconnect from the camera: " << sn << std::endl;
+            m_logger->log("Failed to disconnect from the camera: " + sn, Logger::ERROR);
+        }
+    }
 }
 
 void MainWindow::on_stop_listening_digital_input_event_clicked()
@@ -3279,6 +3306,15 @@ void MainWindow::on_stop_listening_digital_input_event_clicked()
     m_digital_input_event_status_lbl->get_style_context()->add_class("gray-indicator");
 
     auto sn = m_toolkit_digital_input_sink_cbox->get_active_text();
+    auto device_handle = create_or_get_device_handle_by_serial_number(sn);
+
+    int nRet = MV_CC_StopGrabbing(device_handle);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error on MV_CC_StopGrabbing. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_StopGrabbing: " + std::to_string(nRet), Logger::ERROR);
+    }
+
     if (!disconnect_camera(sn))
     {
         std::cout << "Failed to disconnect from the camera: " << sn << std::endl;
