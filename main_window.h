@@ -26,6 +26,7 @@ public:
     virtual ~MainWindow();
 
 protected:
+    Gtk::Button *m_start_signal_test_btn;
     Gtk::ComboBoxText *m_runtime_mode_cbox;
     Gtk::RadioButton *m_startup_btn;
     Gtk::RadioButton *m_runtime_btn;
@@ -141,6 +142,7 @@ protected:
     Gtk::Label* m_current_selected_patch_in_report_lbl;
     Gtk::DrawingArea *m_report_position_display_area;
 
+    void on_start_signal_test_clicked();
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
     void on_menu_toggled();

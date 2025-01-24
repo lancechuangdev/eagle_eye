@@ -31,6 +31,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     // Set the window title
     set_window_title(APP_NAME);
 
+    m_builder->get_widget("start_signal_test_btn", m_start_signal_test_btn);
+    if (m_start_signal_test_btn)
+    {
+        m_start_signal_test_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_start_signal_test_clicked));
+    }
+
     m_builder->get_widget("runtime_mode_cbox", m_runtime_mode_cbox);
     if (m_runtime_mode_cbox)
     {
@@ -726,7 +732,7 @@ void MainWindow::start_listening_for_start_signal()
     }
     else
     {
-        add_runtime_event("The system is waiting for the start signal.", "orange");
+        add_runtime_event("The system is waiting for the start signal...", "orange");
     }
 }
 
@@ -763,7 +769,13 @@ void MainWindow::stop_listening_for_start_signal()
 
     m_is_monitoring_camera_event = false;
     std::cout << "Digital input event listening stopped." << std::endl;
-    add_runtime_event("The system is no longer waiting for the start signal.");
+    add_runtime_event("The system received a start signal and is no longer waiting for it.");
+}
+
+void MainWindow::on_start_signal_test_clicked()
+{
+    m_cam_event_queue.push({"Line0RisingEdge", 36870});
+    m_cam_event_queue_cv.notify_one();
 }
 
 void MainWindow::process_camera_event()
@@ -773,7 +785,7 @@ void MainWindow::process_camera_event()
         std::unique_lock<std::mutex> lock(m_cam_event_queue_mutex);
 
         // Wait for an event to be added to the queue
-        m_cam_event_queue_cv.wait(lock, [this] { return !m_cam_event_queue.empty() || m_is_monitoring_camera_event.load(); });
+        m_cam_event_queue_cv.wait(lock, [this] { return !m_cam_event_queue.empty() || m_stop_processing_camera_event.load(); });
 
         if (m_stop_processing_camera_event.load()) break;
 
