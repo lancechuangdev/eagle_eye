@@ -26,6 +26,7 @@ public:
     virtual ~MainWindow();
 
 protected:
+    Gtk::ComboBoxText *m_runtime_mode_cbox;
     Gtk::RadioButton *m_startup_btn;
     Gtk::RadioButton *m_runtime_btn;
     Gtk::RadioButton *m_explore_btn;
@@ -35,8 +36,12 @@ protected:
     Gtk::RadioButton *m_runtime_monitoring_rbtn;
     Gtk::RadioButton *m_runtime_report_rbtn;
     Gtk::Stack *m_runtime_stack;
+    Gtk::Box *m_runtime_start_section_box;
+    Gtk::Box *m_runtime_recent_section_box;
+    Gtk::Box *m_runtime_close_section_box;
     Gtk::Button *m_new_project_btn;
     Gtk::Button *m_open_project_btn;
+    Gtk::Button *m_close_project_btn;
     Gtk::Button *m_quick_start_btn; // start without project
     Gtk::ListBox *m_recent_projects_listbox;
     Gtk::Label *m_runtime_no_project_lbl;
@@ -139,12 +144,13 @@ protected:
     void on_window_shown();
     bool on_window_delete(GdkEventAny* event);
     void on_menu_toggled();
+    void on_runtime_mode_changed();
     void on_runtime_tab_clicked();
     void on_new_project_clicked();
     void on_open_project_clicked();
+    void on_close_project_clicked();
     void on_quick_start_clicked();
     void on_recent_project_selected(Gtk::ListBoxRow* row);
-    void on_warm_up_clicked();
     void on_start_clicked();
     void on_stop_clicked();
     void on_snap_clicked();
@@ -179,8 +185,8 @@ protected:
     void on_strobe_enable_state_set();
     void on_strobe_duration_value_changed();
     void on_test_digital_out_clicked();
-    void on_start_listening_digital_input_event_clicked();
-    void on_stop_listening_digital_input_event_clicked();
+    void on_start_listening_for_start_signal_clicked();
+    void on_stop_listening_for_start_signal_clicked();
     void on_save_camera_settings_clicked();
     void on_toolkit_toggled();
     void on_check_service_status_clicked();
@@ -251,12 +257,27 @@ private:
         std::string color;
     };
 
+    struct CameraEvent
+    {
+        std::string event_name;
+        int event_id;
+    };
+    
+
     Glib::RefPtr<Gtk::Builder> m_builder;
     std::string m_curr_project_name;
+    std::string m_runtime_mode;
     MV_CC_DEVICE_INFO_LIST m_cam_list;
     std::unordered_map<std::string, void*> m_connected_device_handles;
-    std::atomic<bool> m_is_running;
-    std::atomic<bool> m_is_listening_digital_input_event;
+    std::atomic<bool> m_is_running;    
+    std::atomic<bool> m_is_listening_toolkit_digital_input_event;
+    
+    std::atomic<bool> m_is_monitoring_camera_event;
+    std::atomic<bool> m_stop_processing_camera_event;
+    std::queue<CameraEvent> m_cam_event_queue;
+    std::condition_variable m_cam_event_queue_cv;
+    std::mutex m_cam_event_queue_mutex;
+
     FrameQueue m_frame_queue;
     std::unordered_map<std::string, std::thread> m_capturing_threads;
     std::thread m_processing_thread;
@@ -346,7 +367,8 @@ private:
     void set_window_title(const std::string &title);
     bool create_project(const std::string &project_name);
     void open_project(const std::string &project_file_path);
-    void update_runtime_page(const std::string &mode);
+    void update_runtime_page(const std::string &option);
+    void update_startup_page(bool show_start = true);
     void discover_cameras();
     bool connect_camera(const std::string& sn);
     bool disconnect_camera(const std::string& sn);
@@ -387,6 +409,9 @@ private:
     bool is_transaction_valid(const std::string &transaction_path);
     bool is_warmup_transaction(const std::string &transaction_path);
     void create_csv_file(const std::string &file_name);
+    void start_listening_for_start_signal();
+    void stop_listening_for_start_signal();
+    void process_camera_event();
 };
 
 #endif

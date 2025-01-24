@@ -31,6 +31,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     // Set the window title
     set_window_title(APP_NAME);
 
+    m_builder->get_widget("runtime_mode_cbox", m_runtime_mode_cbox);
+    if (m_runtime_mode_cbox)
+    {
+        m_runtime_mode_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_runtime_mode_changed));
+    }
+
     m_builder->get_widget("startup_rbtn", m_startup_btn);
     if (m_startup_btn)
     {
@@ -40,6 +46,7 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     m_builder->get_widget("runtime_rbtn", m_runtime_btn);
     if (m_runtime_btn)
     {
+        m_runtime_btn->set_visible(false); // Hide runtime radio button initially
         m_runtime_btn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_menu_toggled));
     }
 
@@ -65,6 +72,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("runtime_stack", m_runtime_stack);
 
+    m_builder->get_widget("runtime_start_section_box", m_runtime_start_section_box);
+
+    m_builder->get_widget("runtime_recent_section_box", m_runtime_recent_section_box);
+
+    m_builder->get_widget("runtime_close_section_box", m_runtime_close_section_box);
+
     m_builder->get_widget("new_project_btn", m_new_project_btn);
     if (m_new_project_btn)
     {
@@ -75,6 +88,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     if (m_open_project_btn)
     {
         m_open_project_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_open_project_clicked));
+    }
+
+    m_builder->get_widget("close_project_btn", m_close_project_btn);
+    if (m_close_project_btn)
+    {
+        m_close_project_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_close_project_clicked));
     }
 
     m_builder->get_widget("quick_start_btn", m_quick_start_btn);
@@ -461,13 +480,13 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     m_builder->get_widget("start_digital_input_event_listening_btn", m_start_digital_input_event_listening_btn);
     if (m_start_digital_input_event_listening_btn)
     {
-        m_start_digital_input_event_listening_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_start_listening_digital_input_event_clicked));
+        m_start_digital_input_event_listening_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_start_listening_for_start_signal_clicked));
     }
 
     m_builder->get_widget("stop_digital_input_event_listening_btn", m_stop_digital_input_event_listening_btn);
     if (m_stop_digital_input_event_listening_btn)
     {
-        m_stop_digital_input_event_listening_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_stop_listening_digital_input_event_clicked));
+        m_stop_digital_input_event_listening_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_stop_listening_for_start_signal_clicked));
     }
 
     m_builder->get_widget("settings_stack", m_settings_stack);
@@ -615,6 +634,14 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     m_builder->get_widget("digital_input_event_status_lbl", m_digital_input_event_status_lbl);
 
     m_builder->get_widget("digital_input_event_tv", m_digital_input_event_tv);
+
+    // Update UI based on runtime mode
+    on_runtime_mode_changed();
+
+    std::thread digital_input_event_monitoring_thread([this]() {
+        process_camera_event();
+    });
+    digital_input_event_monitoring_thread.detach();
 }
 
 void MainWindow::set_window_title(const std::string &title)
@@ -637,6 +664,155 @@ void MainWindow::on_runtime_tab_clicked()
     else if (m_runtime_report_rbtn->get_active())
     {
         m_runtime_stack->set_visible_child("page_rt_report");
+    }
+}
+
+void MainWindow::start_listening_for_start_signal()
+{
+    if (m_is_monitoring_camera_event)
+    {
+        std::cout << "Already listening to camera events." << std::endl;
+        return;
+    }
+
+    auto detection_settings = SettingsService::get_settings("detection");
+    if (detection_settings.empty() || !detection_settings.contains("digital_input"))
+    {
+        add_runtime_event("The Digital Input is not yet configured.", "red");
+        return;
+    }
+
+    std::string sn = detection_settings["digital_input"];
+
+    if (!connect_camera(sn))
+    {
+        std::cout << "Failed to connect to the camera: " << sn << std::endl;
+        m_logger->log("Failed to connect to the camera: " + sn, Logger::ERROR);
+        return;
+    }
+
+    if (!configure_camera(sn))
+    {
+        std::cout << "Failed to configure the camera: " << sn << std::endl;
+        m_logger->log("Failed to configure the camera: " + sn, Logger::ERROR);
+    }
+    else
+    {
+        auto device_handle = create_or_get_device_handle_by_serial_number(sn);
+        int nRet = MV_CC_StartGrabbing(device_handle);
+        if (nRet != MV_OK)
+        {
+            std::cerr << "Error on MV_CC_StartGrabbing. Error code: " << nRet << std::endl;
+            m_logger->log("Error on MV_CC_StartGrabbing: " + std::to_string(nRet), Logger::ERROR);
+        }
+        else
+        {
+            m_is_monitoring_camera_event = true;
+            std::cout << "Digital input event listening started." << std::endl;
+            m_logger->log("Digital input event listening started.");
+        }
+    }
+
+    if (!m_is_monitoring_camera_event)
+    {
+        std::cout << "Failed to start listening digital input event: " << sn << std::endl;
+        m_logger->log("Failed to start listening digital input event: " + sn, Logger::ERROR);
+
+        if (!disconnect_camera(sn))
+        {
+            std::cout << "Failed to disconnect from the camera: " << sn << std::endl;
+            m_logger->log("Failed to disconnect from the camera: " + sn, Logger::ERROR);
+        }
+    }
+    else
+    {
+        add_runtime_event("The system is waiting for the start signal.", "orange");
+    }
+}
+
+void MainWindow::stop_listening_for_start_signal()
+{
+    if (!m_is_monitoring_camera_event)
+    {
+        std::cout << "Not currently listening to events." << std::endl;
+        return;
+    }
+
+    auto detection_settings = SettingsService::get_settings("detection");
+    if (detection_settings.empty() || !detection_settings.contains("digital_input"))
+    {
+        add_runtime_event("The Digital Input is not yet configured.", "red");
+        return;
+    }
+
+    std::string sn = detection_settings["digital_input"];
+    auto device_handle = create_or_get_device_handle_by_serial_number(sn);
+
+    int nRet = MV_CC_StopGrabbing(device_handle);
+    if (nRet != MV_OK)
+    {
+        std::cerr << "Error on MV_CC_StopGrabbing. Error code: " << nRet << std::endl;
+        m_logger->log("Error on MV_CC_StopGrabbing: " + std::to_string(nRet), Logger::ERROR);
+    }
+
+    if (!disconnect_camera(sn))
+    {
+        std::cout << "Failed to disconnect from the camera: " << sn << std::endl;
+        m_logger->log("Failed to disconnect from the camera: " + sn, Logger::ERROR);
+    }
+
+    m_is_monitoring_camera_event = false;
+    std::cout << "Digital input event listening stopped." << std::endl;
+    add_runtime_event("The system is no longer waiting for the start signal.");
+}
+
+void MainWindow::process_camera_event()
+{
+    while (!m_stop_processing_camera_event.load())
+    {
+        std::unique_lock<std::mutex> lock(m_cam_event_queue_mutex);
+
+        // Wait for an event to be added to the queue
+        m_cam_event_queue_cv.wait(lock, [this] { return !m_cam_event_queue.empty() || m_is_monitoring_camera_event.load(); });
+
+        if (m_stop_processing_camera_event.load()) break;
+
+        // Get the event from the queue
+        CameraEvent event_info = m_cam_event_queue.front();
+        m_cam_event_queue.pop();
+        lock.unlock();
+
+        // Throttle? check the time diff between the current event and last event
+
+        // Log and process the event on the worker thread
+        m_logger->log("Receiving camera event: " + event_info.event_name);
+        
+        if (event_info.event_name == "Line0RisingEdge" || 
+            event_info.event_name == "Line0FallingEdge")
+        {
+            Glib::signal_idle().connect_once([this]() {
+                if (m_is_running)
+                {
+                    // Received a stop signal
+                    on_stop_clicked();
+
+                    // Wait for a bit before re-starting digital input event monitoring
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+                    start_listening_for_start_signal();
+                }
+                else
+                {
+                    // Received a start signal
+                    stop_listening_for_start_signal();
+
+                    // Wait for a bit before starting detection
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    
+                    on_start_clicked();
+                }
+            });
+        }
     }
 }
 
@@ -2709,6 +2885,11 @@ void MainWindow::load_detection_settings()
             {
                 // Digital IO type mismatch, reset digital_input to empty string
                 digital_input = "";
+
+                // Update Digital Input field in the settings file
+                nlohmann::json new_settings;
+                new_settings["digital_input"] = digital_input;
+                SettingsService::add_or_update_settings("detection", new_settings);
             }
         }
     }
@@ -2731,6 +2912,11 @@ void MainWindow::load_detection_settings()
             {
                 // Digital IO type mismatch, reset digital_output to empty string
                 digital_output = "";
+
+                // Update Digital Output field in the settings file
+                nlohmann::json new_settings;
+                new_settings["digital_output"] = digital_output;
+                SettingsService::add_or_update_settings("detection", new_settings);
             }
         }
     }
@@ -3161,9 +3347,9 @@ void MainWindow::on_test_digital_out_clicked()
     }
 }
 
-void MainWindow::on_start_listening_digital_input_event_clicked()
+void MainWindow::on_start_listening_for_start_signal_clicked()
 {
-    if (m_is_listening_digital_input_event)
+    if (m_is_listening_toolkit_digital_input_event)
     {
         std::cout << "Already listening to events." << std::endl;
         return;
@@ -3270,7 +3456,7 @@ void MainWindow::on_start_listening_digital_input_event_clicked()
                         }
                         else
                         {
-                            m_is_listening_digital_input_event = true;
+                            m_is_listening_toolkit_digital_input_event = true;
                             std::cout << "Digital input event listening started." << std::endl;
                         }
                     }
@@ -3279,7 +3465,7 @@ void MainWindow::on_start_listening_digital_input_event_clicked()
         }
     }
 
-    if (!m_is_listening_digital_input_event)
+    if (!m_is_listening_toolkit_digital_input_event)
     {
         std::cout << "Failed to start listening digital input event: " << sn << std::endl;
         m_logger->log("Failed to start listening digital input event: " + sn, Logger::ERROR);
@@ -3292,9 +3478,9 @@ void MainWindow::on_start_listening_digital_input_event_clicked()
     }
 }
 
-void MainWindow::on_stop_listening_digital_input_event_clicked()
+void MainWindow::on_stop_listening_for_start_signal_clicked()
 {
-    if (!m_is_listening_digital_input_event)
+    if (!m_is_listening_toolkit_digital_input_event)
     {
         std::cout << "Not currently listening to events." << std::endl;
         return;
@@ -3321,7 +3507,7 @@ void MainWindow::on_stop_listening_digital_input_event_clicked()
         m_logger->log("Failed to disconnect from the camera: " + sn, Logger::ERROR);
     }
 
-    m_is_listening_digital_input_event = false;
+    m_is_listening_toolkit_digital_input_event = false;
     std::cout << "Digital input event listening stopped." << std::endl;
 }
 
@@ -4520,6 +4706,7 @@ void MainWindow::on_window_shown()
         m_logger->log("No camera found.");
     }
 
+    update_startup_page();
     load_recent_projects();
     load_detection_results();
     load_detection_settings();
@@ -4567,6 +4754,9 @@ bool MainWindow::on_window_delete(GdkEventAny* event)
 {
     // Disconnect from the WebSocket server
     m_ws_client.disconnect();
+
+    // Stop process camera events
+    m_stop_processing_camera_event.store(true);
 
     // Returning false allows the window to close
     return false;
@@ -4748,6 +4938,50 @@ bool MainWindow::configure_camera(const std::string sn)
             }                         
         }
 
+        if (cam_settings.contains("digital_io_type"))
+        {
+            std::string digital_io_type = cam_settings["digital_io_type"];
+            if (digital_io_type == "Input")
+            {
+                auto event_callback = [](MV_EVENT_OUT_INFO * pEventInfo, void* pUser)
+                {
+                    MainWindow *pThis = static_cast<MainWindow*>(pUser);
+
+                    if (pEventInfo)
+                    {
+                        // int64_t nTimestamp = pEventInfo->nTimestampHigh;
+                        // nTimestamp = (nTimestamp << 32) + pEventInfo->nTimestampLow;
+                        std::ostringstream oss;
+                        oss << "Event Name: " << pEventInfo->EventName
+                            << ", Event Id: " << pEventInfo->nEventID;
+                        std::string eventInfoStr = oss.str();
+                        std::cout << eventInfoStr << std::endl;
+                        pThis->m_logger->log(eventInfoStr);
+
+                        pThis->add_runtime_event(eventInfoStr);
+
+                        // Add the camera event to the queue
+                        {
+                            std::lock_guard<std::mutex> lock(pThis->m_cam_event_queue_mutex);
+                            pThis->m_cam_event_queue.push({pEventInfo->EventName, pEventInfo->nEventID});
+                        }
+                        pThis->m_cam_event_queue_cv.notify_one();
+                    }
+                };
+
+                if (cam_settings.contains("digital_input_event_trigger"))
+                {
+                    std::string event_trigger = cam_settings["digital_input_event_trigger"];    
+                    nRet = MV_CC_RegisterEventCallBackEx(device_handle, event_trigger.c_str(), event_callback, this);
+                    if (nRet != MV_OK)
+                    {
+                        std::cerr << "Error to register EventCallBackEx. Error code: " << nRet << std::endl;
+                        m_logger->log("Error on MV_CC_RegisterEventCallBackEx: " + std::to_string(nRet), Logger::ERROR);
+                    }
+                }
+            }
+        }
+
         if (cam_settings.contains("digital_output_line_number"))
         {
             std::string line_number = cam_settings["digital_output_line_number"];
@@ -4865,6 +5099,60 @@ void MainWindow::discover_cameras()
     }
 }
 
+void MainWindow::on_runtime_mode_changed()
+{
+    // Update UI based on runtime mode
+    m_runtime_mode = m_runtime_mode_cbox->get_active_text();
+    if (m_runtime_mode == "Production")
+    {
+        if (m_explore_btn)
+        {
+            m_explore_btn->set_visible(false);
+        }
+
+        if (m_toolkit_btn)
+        {
+            m_toolkit_btn->set_visible(false);
+        }
+
+        if (m_start_btn)
+        {
+            m_start_btn->set_visible(false);
+        }
+
+        if (m_stop_btn)
+        {
+            m_stop_btn->set_visible(false);
+        }
+    }
+    else if (m_runtime_mode == "Debug")
+    {
+        if (m_explore_btn)
+        {
+            m_explore_btn->set_visible(true);
+        }
+
+        if (m_toolkit_btn)
+        {
+            m_toolkit_btn->set_visible(true);
+        }
+
+        if (m_start_btn)
+        {
+            m_start_btn->set_visible(true);
+        }
+
+        if (m_stop_btn)
+        {
+            m_stop_btn->set_visible(true);
+        }
+    }
+    else
+    {
+        std::cerr << "Non-supported runtime mode." << std::endl;
+    }
+}
+
 void MainWindow::on_menu_toggled()
 {
     if (m_startup_btn->get_active())
@@ -4948,46 +5236,38 @@ void MainWindow::on_new_project_clicked()
                 {
                     if (create_project(project_name))
                     {
-                        // Reset session times when a new project is created
-                        m_session_times.clear();
-                        
-                        // Clear transactions list
-                        for (auto *child : m_report_transactions_listbox->get_children())
-                        {
-                            m_report_transactions_listbox->remove(*child);
-                        }
+                        // Update main window title with a project name
+                        set_window_title(APP_NAME + " - " + project_name);
 
-                        // Clear display area on report page
-                        m_image_pixbuf_report.reset();
-                        m_mask_pixbuf_report.reset();
-                        m_report_image_display_area->queue_draw();
-                        
-                        // Clear patches box before adding
-                        for (auto *child : m_report_patches_box->get_children())
-                        {
-                            m_report_patches_box->remove(*child);
-                        }
-                        
-                        // Clear position track by redrawing
-                        m_report_position_display_area->queue_draw();
+                        // Update runtime page based on startup option
+                        update_runtime_page("create_project");
+
+                        // Hide start section on startup page
+                        update_startup_page(false);
 
                         // Initialize detection rate records with 5 elements, all set to 0.0
                         m_detection_rate_records = std::vector<double>(5, 0.0);
 
-                        // Update main window title with a project name
-                        set_window_title(APP_NAME + " - " + project_name);
-                        
-                        // Update runtime page
-                        update_runtime_page("create_project");
+                        // Display runtime radio button
+                        m_runtime_btn->set_visible(true);
 
                         // Navigate to runtime page
                         m_runtime_btn->set_active(true);
-                        
+
                         // Clear events viewer
                         clear_runtime_events();
 
                         // Update recent projects list
                         load_recent_projects();
+
+                        if (m_runtime_mode == "Production")
+                        {
+                            // Launch listening in a separate thread
+                            std::thread([this]() {
+                                // Start listening to digital input event
+                                start_listening_for_start_signal(); 
+                            }).detach();
+                        }
                     }
                 }
                 else
@@ -5111,34 +5391,20 @@ void MainWindow::open_project(const std::string &project_file_path)
             // Update main window title with a project name
             set_window_title(APP_NAME + " - " + m_curr_project_name);
 
-            // Clear transactions list
-            for (auto *child : m_report_transactions_listbox->get_children())
-            {
-                m_report_transactions_listbox->remove(*child);
-            }
-
-            // Clear display area on report page
-            m_image_pixbuf_report.reset();
-            m_mask_pixbuf_report.reset();
-            m_report_image_display_area->queue_draw();
-            
-            // Clear patches box before adding
-            for (auto *child : m_report_patches_box->get_children())
-            {
-                m_report_patches_box->remove(*child);
-            }
-            
-            // Clear position track by redrawing
-            m_report_position_display_area->queue_draw();
-
             // Initialize detection rate records with 5 elements, all set to 0.0
             m_detection_rate_records = std::vector<double>(5, 0.0);
 
-            // Update runtime page
+            // Hide start section on startup page
+            update_startup_page(false);
+
+            // Update runtime page based on the startup option
             update_runtime_page("open_project");
 
             // Clear events viewer
             clear_runtime_events();
+
+            // Display runtime radio button
+            m_runtime_btn->set_visible(true);
 
             // Navigate to runtime page
             m_runtime_btn->set_active(true);
@@ -5175,19 +5441,53 @@ void MainWindow::open_project(const std::string &project_file_path)
 
         // Update recent projects list
         load_recent_projects();
+
+        if (m_runtime_mode == "Production")
+        {
+            // Launch listening in a separate thread
+            std::thread([this]() {
+                // Start listening to digital input event
+                start_listening_for_start_signal(); 
+            }).detach();
+        }
     }
 }
 
-void MainWindow::on_quick_start_clicked()
+void MainWindow::on_close_project_clicked()
 {
-    if (!m_connected_device_handles.empty())
+    // Clear current project name
+    m_curr_project_name = "";
+
+    // Stop listening start signal (digital input event)
+    if (m_runtime_mode == "Production")
     {
-        show_dialog(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
-        return;
+        if (m_is_monitoring_camera_event.load())
+        {
+            stop_listening_for_start_signal();
+        }
     }
 
-    // Reset session times when a new project is created
+    // Disconnect all cameras
+    for (const auto& [sn, device_handle] : m_connected_device_handles)
+    {
+        if (!disconnect_camera(sn))
+        {
+            std::cerr << "Failed to disconnect camera: " << sn << std::endl;
+        }
+    }
+
+    // Reset app title
+    set_window_title(APP_NAME);
+
+    // Hide close project option on startup page (and show start section)
+    update_startup_page();
+
+    // Clear session times
     m_session_times.clear();
+    
+    //
+    // Clear report page
+    //
 
     // Clear transactions list
     for (auto *child : m_report_transactions_listbox->get_children())
@@ -5199,15 +5499,48 @@ void MainWindow::on_quick_start_clicked()
     m_image_pixbuf_report.reset();
     m_mask_pixbuf_report.reset();
     m_report_image_display_area->queue_draw();
-
+    
     // Clear patches box before adding
     for (auto *child : m_report_patches_box->get_children())
     {
         m_report_patches_box->remove(*child);
     }
-
+    
     // Clear position track by redrawing
     m_report_position_display_area->queue_draw();
+    
+    //
+    // End Clear report page
+    //
+
+    // Hide runtime radio button
+    m_runtime_btn->set_visible(false);
+
+}
+
+void MainWindow::update_startup_page(bool show_start)
+{
+    if (m_runtime_start_section_box)
+    {
+        m_runtime_start_section_box->set_visible(show_start);
+    }
+    if (m_runtime_recent_section_box)
+    {
+        m_runtime_recent_section_box->set_visible(show_start);
+    }
+    if (m_runtime_close_section_box)
+    {
+        m_runtime_close_section_box->set_visible(!show_start);
+    }    
+}
+
+void MainWindow::on_quick_start_clicked()
+{
+    if (!m_connected_device_handles.empty())
+    {
+        show_dialog(*this, "The camera(s) appears to be in use. Please disconnect it before proceeding.");
+        return;
+    }
 
     // Initialize detection rate records with 5 elements, all set to 0.0
     m_detection_rate_records = std::vector<double>(5, 0.0);
@@ -5215,17 +5548,32 @@ void MainWindow::on_quick_start_clicked()
     // Update main window title with a project name
     set_window_title(APP_NAME);
 
-    // Update runtime page
+    // Hide start section on startup page
+    update_startup_page(false);
+
+    // Update runtime page based on the startup option
     update_runtime_page("quick_start");
 
     // Clear events viewer
     clear_runtime_events();
 
+    // Display runtime radio button
+    m_runtime_btn->set_visible(true);
+
     // Navigate to runtime page
-    m_runtime_btn->set_active(true);  
+    m_runtime_btn->set_active(true);
+
+    if (m_runtime_mode == "Production")
+    {
+        // Launch listening in a separate thread
+        std::thread([this]() {
+            // Start listening to digital input event
+            start_listening_for_start_signal(); 
+        }).detach();
+    }
 }
 
-void MainWindow::update_runtime_page(const std::string &mode)
+void MainWindow::update_runtime_page(const std::string &option)
 {
     // Hide the no project text
     if (m_runtime_no_project_lbl)
@@ -5255,15 +5603,15 @@ void MainWindow::update_runtime_page(const std::string &mode)
         }
     }
 
-    // Populate the runtime page base on the given mode
-    if (mode == "create_project" || mode == "open_project")
+    // Populate the runtime page base on the given startup option
+    if (option == "create_project" || option == "open_project")
     {
         if (m_runtime_control_panel_rbtn)
         {
             m_runtime_control_panel_rbtn->set_active(true);
         }
     }
-    else if (mode == "quick_start")
+    else if (option == "quick_start")
     {
         if (m_runtime_report_rbtn)
         {
