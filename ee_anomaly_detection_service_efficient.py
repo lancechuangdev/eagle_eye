@@ -11,6 +11,7 @@ from anomalib.data.dataclasses.torch import ImageBatch
 from anomalib.engine import Engine
 from anomalib.models import EfficientAd
 from anomalib.visualization import visualize_anomaly_map
+from anomalib.visualization.image.visualizer import ImageVisualizer
 
 from PIL import Image
 from datetime import datetime
@@ -22,8 +23,7 @@ import struct
 
 shared_memory_name_frames = "/ee_shared_memory_frames" # DONOT CHANGE
 shared_memory_name_predictions = "/ee_shared_memory_predictions" # DONOT CHANGE
-# model_path = '/usr/local/share/eagle_eye/ds.keras'
-model_ckpt_path = "/home/boris-alienware/anomalib/examples/notebooks/000_getting_started/results/EfficientAd/poly_fabric_dataset/v16/weights/lightning/model.ckpt"
+model_ckpt_path = "/usr/local/share/eagle_eye/model.ckpt"
 patch_size = 512
 rgb_channels = 3
 home_dir = os.path.expanduser("~")
@@ -304,6 +304,8 @@ def message_received(client, server, message):
     result = json.dumps(result_json)
     server.send_message(client, result)
 
+# Override the on_predict_batch_end method to disable visualization
+ImageVisualizer.on_predict_batch_end = lambda self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0: None
 model = EfficientAd.load_from_checkpoint(model_ckpt_path)
 engine = Engine()
 
