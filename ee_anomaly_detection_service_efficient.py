@@ -218,7 +218,10 @@ def message_received(client, server, message):
 
             num_patches = input_patches.size(0)
             transaction_json["num_patches"] = num_patches
-            
+                        
+            # Override the on_predict_batch_end method to disable visualization
+            ImageVisualizer.on_predict_batch_end = lambda self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0: None
+
             # Perform prediction on the entire batch
             print_with_ts("Prediction Started.\n")
             start_time = time.time()
@@ -304,8 +307,6 @@ def message_received(client, server, message):
     result = json.dumps(result_json)
     server.send_message(client, result)
 
-# Override the on_predict_batch_end method to disable visualization
-ImageVisualizer.on_predict_batch_end = lambda self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0: None
 model = EfficientAd.load_from_checkpoint(model_ckpt_path)
 engine = Engine()
 
