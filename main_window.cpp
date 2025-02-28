@@ -1821,118 +1821,6 @@ void MainWindow::on_detection_result_selected(Gtk::ListBoxRow* row)
     }
 }
 
-// nlohmann::json parse_json(const std::filesystem::path& json_path) {
-//     if (!std::filesystem::exists(json_path)) {
-//         throw std::runtime_error("File not found: " + json_path.string());
-//     }
-
-//     std::ifstream json_file(json_path);
-//     if (!json_file.is_open()) {
-//         throw std::runtime_error("Failed to open the file.");
-//     }
-
-//     nlohmann::json json_data;
-//     json_file >> json_data;
-//     return json_data;
-// }
-
-// Glib::RefPtr<Gdk::Pixbuf> create_combined_pixbuf(
-//     const nlohmann::json& frames,
-//     int frame_width, 
-//     int frame_height, 
-//     int total_height) 
-// {
-//     auto pixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
-//     pixbuf->fill(0x00000000); // Initialize with black
-
-//     int current_y = 0;
-//     for (const auto& frame : frames) {
-//         auto path = frame["file_name"].get<std::string>();
-//         auto frame_pixbuf = Gdk::Pixbuf::create_from_file(path, frame_width, frame_height);
-//         frame_pixbuf->copy_area(0, 0, frame_width, frame_height, pixbuf, 0, current_y);
-//         current_y += frame_height;
-//     }
-//     return pixbuf;
-// }
-
-// Glib::RefPtr<Gdk::Pixbuf> create_mask_pixbuf(int width, int height) {
-//     auto pixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, width, height);
-//     pixbuf->fill(0x00000000); // Transparent black
-//     return pixbuf;
-// }
-
-// void add_patch_to_box(Gtk::Box* patches_box, 
-//                       int prediction_id, 
-//                       const Glib::RefPtr<Gdk::Pixbuf>& pixbuf, 
-//                       const std::function<void()>& on_focus_click, 
-//                       const std::function<void()>& on_delete_click) 
-// {
-//     auto item_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_VERTICAL);
-//     item_box->set_spacing(5);
-
-//     auto label = Gtk::make_managed<Gtk::Label>("Patch ID: " + std::to_string(prediction_id));
-//     label->set_halign(Gtk::ALIGN_START);
-//     item_box->pack_start(*label, Gtk::PACK_SHRINK);
-
-//     auto thumbnail_pixbuf = pixbuf->scale_simple(80, 80, Gdk::INTERP_BILINEAR);
-//     auto thumbnail = Gtk::make_managed<Gtk::Image>(thumbnail_pixbuf);
-//     thumbnail->set_halign(Gtk::ALIGN_START);
-//     item_box->pack_start(*thumbnail, Gtk::PACK_SHRINK);
-
-//     auto action_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-//     action_box->set_spacing(10);
-
-//     auto view_button = Gtk::make_managed<Gtk::Button>();
-//     view_button->signal_clicked().connect(on_focus_click);
-//     set_button_icon(view_button, "/com/example/eagle_eye/focus.svg");
-//     action_box->pack_start(*view_button, Gtk::PACK_SHRINK);
-
-//     auto delete_button = Gtk::make_managed<Gtk::Button>();
-//     delete_button->signal_clicked().connect(on_delete_click);
-//     set_button_icon(delete_button, "/com/example/eagle_eye/delete.svg");
-//     action_box->pack_start(*delete_button, Gtk::PACK_SHRINK);
-
-//     item_box->pack_start(*action_box, Gtk::PACK_SHRINK);
-//     patches_box->pack_start(*item_box, Gtk::PACK_SHRINK);
-// }
-
-// void MainWindow::load_detection_result2(std::string& detection_result_folder) {
-//     try {
-//         auto json_path = std::filesystem::path(detection_result_folder) / "transaction_data.json";
-//         auto json_data = parse_json(json_path);
-
-//         int patch_size = json_data["patch_size"];
-//         int frame_width = json_data["frame_width"];
-//         int frame_height = json_data["frame_height"];
-//         int num_frames = json_data["num_frames"];
-//         int total_height = frame_height * num_frames;
-
-//         m_image_pixbuf_explorer = create_combined_pixbuf(
-//             json_data["frames"], frame_width, frame_height, total_height);
-
-//         m_mask_pixbuf_explorer = create_mask_pixbuf(frame_width, total_height);
-
-//         m_detection_patches_box->foreach([](Gtk::Widget& child) {
-//             m_detection_patches_box->remove(child);
-//         });
-
-//         for (const auto& prediction : json_data["predictions"]) {
-//             int prediction_id = prediction["prediction_id"];
-//             std::string filename = prediction["file_name"];
-//             auto prediction_pixbuf = Gdk::Pixbuf::create_from_file(filename);
-
-//             add_patch_to_box(
-//                 m_detection_patches_box,
-//                 prediction_id,
-//                 prediction_pixbuf,
-//                 [this, prediction_id]() { /* Focus callback */ },
-//                 [this, prediction_id]() { /* Delete callback */ });
-//         }
-//     } catch (const std::exception& e) {
-//         std::cerr << "Error: " << e.what() << std::endl;
-//     }
-// }
-
 void MainWindow::load_detection_result_in_report(std::string &detection_result_folder)
 {
     std::filesystem::path trans_json_path = std::filesystem::path(detection_result_folder) / "transaction_data.json";
@@ -2296,7 +2184,7 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
     // Update mask pixel buf
     if (m_mask_pixbuf_report)
     {
-        update_mask_color(m_mask_pixbuf_report);
+        // update_mask_color(m_mask_pixbuf_report);
         update_mask_alpha(m_mask_pixbuf_report, m_mask_alpha * 255);
     }
 
@@ -2351,8 +2239,6 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
     }
 
     // Create the combined pixbuf for detection images.
-    // Gdk::Pixbuf does not directly support a single-channel format, 
-    // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
     m_image_pixbuf_explorer.reset();
     m_image_pixbuf_explorer = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, total_height);
     m_image_pixbuf_explorer->fill(0x00000000); // Fill with black
@@ -2539,7 +2425,7 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
                     surface->get_width(),
                     surface->get_height());
 
-                // // Refresh the UI with the updated pixbuf
+                // Refresh the UI with the updated pixbuf
                 m_detection_results_display_area->queue_draw();
             }
             catch (const Glib::Error& ex)
@@ -2671,7 +2557,7 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
     // Update mask pixel buf
     if (m_mask_pixbuf_explorer)
     {
-        update_mask_color(m_mask_pixbuf_explorer);
+        // update_mask_color(m_mask_pixbuf_explorer);
         update_mask_alpha(m_mask_pixbuf_explorer, m_mask_alpha * 255);
     }
 
@@ -6149,8 +6035,7 @@ void MainWindow::on_snap_clicked()
     m_offset_y_toolkit = 0.0;
     
     // Start detection
-    auto patch_size = 256;
-    std::string shm_name = "/ee_shared_memory";
+    std::string shm_name = SHM_NAME_FRAMES;
     size_t buffer = 2448 * 2048 * FRAME_BATCH_SIZE;
 
     // Open shared memory object
@@ -6181,17 +6066,15 @@ void MainWindow::on_snap_clicked()
         return;
     }
 
-    auto frame_size = frame_width * frame_height;
-    std::vector<FrameOffsetInfo> frame_offsets;
-
     // Save the frame metadata
-    frame_offsets.push_back({ 0, frame_size, sn });
+    std::vector<FrameOffsetInfo> frame_offsets;
+    frame_offsets.push_back({ 0, frame_rgb_size, sn });
 
     // Calculate the memory address to copy this frame
     void* frame_ptr = static_cast<uint8_t*>(shm_ptr);
 
     // Copy the frame data into the calculated memory location
-    std::memcpy(frame_ptr, pData, frame_size);
+    std::memcpy(frame_ptr, frame_rgb_data_ptr, frame_rgb_size);
 
     if (!frame_offsets.empty())
     {
@@ -6200,13 +6083,11 @@ void MainWindow::on_snap_clicked()
 
         // Get confidence threshold and pixel threshold from settings file
         double confidence_threshold = 0.5;
-        double pixel_threshold = 0.1;
 
         auto detection_settings = SettingsService::get_settings("detection");
         if (!detection_settings.empty())
         {
             confidence_threshold = detection_settings["confidence_threshold"];
-            pixel_threshold = detection_settings["pixel_threshold"];
         }
 
         // Get current Datetime
@@ -6217,7 +6098,6 @@ void MainWindow::on_snap_clicked()
         json_data["transaction_id"] = m_trans_id;
         json_data["transaction_datetime"] = datetime;
         json_data["confidence_threshold"] = confidence_threshold;
-        json_data["pixel_threshold"] = pixel_threshold;
         json_data["frame_width"] = frame_width;
         json_data["frame_height"] = frame_height;
         for (const auto& info : frame_offsets)
@@ -6286,7 +6166,6 @@ void MainWindow::on_snap_clicked()
 void MainWindow::on_toolkit_test_clicked()
 {
     // Open shared memory object
-    auto patch_size = PATCH_SIZE;
     std::string shm_name = SHM_NAME_FRAMES;
     size_t buffer = 2448 * 2048 * FRAME_BATCH_SIZE;
 
@@ -6317,22 +6196,13 @@ void MainWindow::on_toolkit_test_clicked()
     auto frame_width = m_image_pixbuf_toolkit->get_width();
     auto frame_height = m_image_pixbuf_toolkit->get_height();
 
-    // Create a new buffer to hold a single channel (grayscale)
-    std::vector<uint8_t> single_channel_data(frame_width * frame_height);
-
     // Get the pointer to the image data (raw pixel data)
     uint8_t* pData = reinterpret_cast<uint8_t*>(m_image_pixbuf_toolkit->get_pixels());
 
-    // Iterate over each pixel and extract the red channel (index 0 = Red, 1 = Green, 2 = Blue)
-    for (int i = 0; i < frame_width * frame_height; ++i) {
-        uint8_t gray = pData[i * RGB_CHANNELS];  // Take data from the Red channel
-        single_channel_data[i] = gray;           // Set grayscale pixel based on Red channel
-    }
-
     // Copy the frame data into the calculated memory location
-    auto frame_size = frame_width * frame_height;
+    auto frame_size = frame_width * frame_height * RGB_CHANNELS;
     void* frame_ptr = static_cast<uint8_t*>(shm_ptr);
-    std::memcpy(frame_ptr, single_channel_data.data(), frame_size);
+    std::memcpy(frame_ptr, pData, frame_size);
 
     // Save the frame metadata
     std::vector<FrameOffsetInfo> frame_offsets;
@@ -6345,18 +6215,12 @@ void MainWindow::on_toolkit_test_clicked()
 
         // Get confidence threshold and pixel threshold from settings file
         double confidence_threshold = 0.5;
-        double pixel_threshold = 0.03;
-
         auto detection_settings = SettingsService::get_settings("detection");
         if (!detection_settings.empty())
         {
             if (detection_settings.contains("confidence_threshold"))
             {
                 confidence_threshold = detection_settings["confidence_threshold"];
-            }
-            if (detection_settings.contains("pixel_threshold"))
-            {
-                pixel_threshold = detection_settings["pixel_threshold"];
             }
         }
 
@@ -6368,7 +6232,6 @@ void MainWindow::on_toolkit_test_clicked()
         json_data["transaction_id"] = m_trans_id;
         json_data["transaction_datetime"] = datetime;
         json_data["confidence_threshold"] = confidence_threshold;
-        json_data["pixel_threshold"] = pixel_threshold;
         json_data["frame_width"] = frame_width;
         json_data["frame_height"] = frame_height;
         for (const auto& info : frame_offsets)
@@ -6505,8 +6368,8 @@ void MainWindow::update_snap_masks(std::string trans_id)
         prediction_pixbuf->Gdk::Pixbuf::copy_area(
             0,
             0,
-            prediction_pixbuf->get_width(),
-            prediction_pixbuf->get_height(),
+            patch_size,
+            patch_size,
             m_mask_pixbuf_toolkit,
             position_x,
             position_y
@@ -6514,44 +6377,43 @@ void MainWindow::update_snap_masks(std::string trans_id)
     }
 
     // Update mask pixel buf
-    update_mask_color(m_mask_pixbuf_toolkit);
     update_mask_alpha(m_mask_pixbuf_toolkit, m_mask_alpha * 255);
 }
 
-void MainWindow::update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf)
-{
-    if (!mask_pixbuf)
-        return;
+// void MainWindow::update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf)
+// {
+//     if (!mask_pixbuf)
+//         return;
 
-    const int AmberRed = 255;
-    const int AmberGreen = 191;
-    const int AmberBlue = 0;
+//     const int AmberRed = 255;
+//     const int AmberGreen = 191;
+//     const int AmberBlue = 0;
 
-    // Get pixbuf properties
-    int mask_width = mask_pixbuf->get_width();
-    int mask_height = mask_pixbuf->get_height();
-    int mask_rowstride = mask_pixbuf->get_rowstride();
-    int mask_n_channels = mask_pixbuf->get_n_channels();
+//     // Get pixbuf properties
+//     int mask_width = mask_pixbuf->get_width();
+//     int mask_height = mask_pixbuf->get_height();
+//     int mask_rowstride = mask_pixbuf->get_rowstride();
+//     int mask_n_channels = mask_pixbuf->get_n_channels();
 
-    // Get pointer to the pixel data
-    guchar *pixels = mask_pixbuf->get_pixels();
+//     // Get pointer to the pixel data
+//     guchar *pixels = mask_pixbuf->get_pixels();
 
-    // Iterate through the pixels and modify the RGB channel
-    for (int y = 0; y < mask_height; ++y)
-    {
-        for (int x = 0; x < mask_width; ++x)
-        {
-            guchar *pixel = pixels + y * mask_rowstride + x * mask_n_channels;
+//     // Iterate through the pixels and modify the RGB channel
+//     for (int y = 0; y < mask_height; ++y)
+//     {
+//         for (int x = 0; x < mask_width; ++x)
+//         {
+//             guchar *pixel = pixels + y * mask_rowstride + x * mask_n_channels;
 
-            if (pixel[0] > 0 && pixel[1] > 0 && pixel[2] > 0)
-            {
-                pixel[0] = AmberRed;
-                pixel[1] = AmberGreen;
-                pixel[2] = AmberBlue;
-            }
-        }
-    }
-}
+//             if (pixel[0] > 0 && pixel[1] > 0 && pixel[2] > 0)
+//             {
+//                 pixel[0] = AmberRed;
+//                 pixel[1] = AmberGreen;
+//                 pixel[2] = AmberBlue;
+//             }
+//         }
+//     }
+// }
 
 void MainWindow::update_mask_alpha(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf, gint32 alpha)
 {
@@ -6722,7 +6584,16 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
 {
     add_runtime_event("Warm-up Starting");
 
-    size_t shm_frames_buffer = frame_width * frame_height * (FRAME_BATCH_SIZE + 1); // add extra one frame for safety
+    size_t total_frame_rgb_size = 0;
+    for (int i = 0; i < FRAME_BATCH_SIZE; ++i)
+    {
+        total_frame_rgb_size += frame_width * frame_height * RGB_CHANNELS;
+    }
+    if (m_frame_rgb_data_buffer.size() < total_frame_rgb_size)
+    {
+        m_frame_rgb_data_buffer.resize(total_frame_rgb_size);
+    }
+    size_t shm_frames_buffer = total_frame_rgb_size;
 
     std::promise<void> warmup_promise;
     auto warmup_future = warmup_promise.get_future();
@@ -6775,6 +6646,7 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
             frame_offsets.clear();
             size_t offset = 0;
             int num_frames_dequeued = 0;
+            uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
 
             // make sure there are enough frames to process
             if (m_frame_queue.get_size() < FRAME_BATCH_SIZE)
@@ -6799,22 +6671,37 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
 
             // Copy the frame data into the shared memory
             for (auto frame_data : sorted_frames)
-            // for (auto frame_data : m_frame_queue)
             {
-                auto frame_size = frame_data.pMetadata->nFrameLen;
+                // auto frame_size = frame_data.pMetadata->nFrameLen;
+                size_t frame_width = frame_data.pMetadata->nWidth;
+                size_t frame_height = frame_data.pMetadata->nHeight;
+                size_t frame_rgb_size = frame_width * frame_height * RGB_CHANNELS;
                 auto serial_number = frame_data.serial_number;
 
                 // Save the frame metadata
-                frame_offsets.push_back({ offset, frame_size, serial_number });
+                frame_offsets.push_back({ offset, frame_rgb_size, serial_number });
 
                 // Calculate the memory address to copy this frame
                 void* frame_ptr = static_cast<uint8_t*>(shm_ptr) + offset;
 
+                // Convert Mono8 to RGB directly into the allocated RGB buffer
+                uint8_t* current_rgb_frame = frame_rgb_data_ptr;
+                for (size_t i = 0; i < frame_width * frame_height; ++i)
+                {
+                    uint8_t gray = frame_data.pData[i];
+                    current_rgb_frame[i * RGB_CHANNELS + 0] = gray; // Red channel
+                    current_rgb_frame[i * RGB_CHANNELS + 1] = gray; // Green channel
+                    current_rgb_frame[i * RGB_CHANNELS + 2] = gray; // Blue channel
+                }
+
                 // Copy the frame data into the calculated memory location
-                std::memcpy(frame_ptr, frame_data.pData, frame_size);
+                std::memcpy(frame_ptr, current_rgb_frame, frame_rgb_size);
 
                 // Update offset for the next frame
-                offset += frame_size;
+                offset += frame_rgb_size;
+
+                // Update the pointer to the next RGB frame
+                frame_rgb_data_ptr += frame_rgb_size;
             }
 
             if (frame_offsets.empty())
@@ -6839,7 +6726,6 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
             json_data["transaction_datetime"] = datetime;
             json_data["transaction_type"] = "warmup";
             json_data["confidence_threshold"] = confidence_threshold;
-            json_data["pixel_threshold"] = pixel_threshold;
             json_data["frame_width"] = frame_width;
             json_data["frame_height"] = frame_height;
             for (const auto& info : frame_offsets)
@@ -6871,9 +6757,6 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
             }
 
             std::string status = response_json["status"];
-            int total_anomalies = response_json["total_anomalies"];
-            int patch_size = response_json["patch_size"];
-
             if (status == "complete")
             {
                 count++;
@@ -6963,41 +6846,28 @@ void MainWindow::start_detection(int frame_width, int frame_height)
     // so still create an RGB pixbuf and replicate the grayscale values across the three color channels.
     if (!m_image_pixbuf_rt_monitoring)
     {
-        m_image_pixbuf_rt_monitoring = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, frame_width, frame_height * 2);
+        m_image_pixbuf_rt_monitoring = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, frame_width, frame_height * FRAME_BATCH_SIZE);
     }
     if (!m_mask_pixbuf_rt_monitoring)
     {
-        m_mask_pixbuf_rt_monitoring = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, frame_height * 2);
+        m_mask_pixbuf_rt_monitoring = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, frame_height * FRAME_BATCH_SIZE);
     }
-
-    size_t total_frame_rgb_size = 0;
-    for (int i = 0; i < FRAME_BATCH_SIZE; ++i)
-    {
-        total_frame_rgb_size += frame_width * frame_height * RGB_CHANNELS;
-    }
-
-    if (m_frame_rgb_data_buffer.size() < total_frame_rgb_size)
-    {
-        m_frame_rgb_data_buffer.resize(total_frame_rgb_size);
-    }
-
-    size_t total_patch_rgba_size = 0;
-    for (int i = 0; i < MAX_PATCHES_PER_BATCH; ++i)
-    {
-        total_patch_rgba_size += PATCH_SIZE * PATCH_SIZE * RGBA_CHANNELS;
-    }
-
-    if (m_patch_rgba_data_buffer.size() < total_patch_rgba_size)
-    {
-        m_patch_rgba_data_buffer.resize(total_patch_rgba_size);
-    }
-
-    size_t shm_frames_buffer = frame_width * frame_height * (FRAME_BATCH_SIZE + 1); // add extra one frame for safety
 
     // Start the frame processing thread
-    m_processing_thread = std::thread([this, shm_frames_buffer]()
+    m_processing_thread = std::thread([this, frame_width, frame_height]()
     {
         add_runtime_event("Detection In Progress", "green");
+
+        size_t total_frame_rgb_size = 0;
+        for (int i = 0; i < FRAME_BATCH_SIZE; ++i)
+        {
+            total_frame_rgb_size += frame_width * frame_height * RGB_CHANNELS;
+        }
+        if (m_frame_rgb_data_buffer.size() < total_frame_rgb_size)
+        {
+            m_frame_rgb_data_buffer.resize(total_frame_rgb_size);
+        }
+        size_t shm_frames_buffer = frame_width * frame_height * RGB_CHANNELS * (FRAME_BATCH_SIZE + 1); // add extra one frame for safety;
 
         // Open shared memory object
         std::cout << "Open shared memory object" << std::endl;
@@ -7027,6 +6897,17 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             return;
         }
 
+        size_t total_patch_rgba_size = 0;
+        for (int i = 0; i < MAX_PATCHES_PER_BATCH; ++i)
+        {
+            total_patch_rgba_size += PATCH_SIZE * PATCH_SIZE * RGBA_CHANNELS;
+        }
+        if (m_patch_rgba_data_buffer.size() < total_patch_rgba_size)
+        {
+            m_patch_rgba_data_buffer.resize(total_patch_rgba_size);
+        }
+        size_t shm_size_pred = PATCH_SIZE * PATCH_SIZE * RGB_CHANNELS * MAX_PATCHES_PER_BATCH + sysconf(_SC_PAGESIZE); // Adjust for metadata
+
         // Open predictions shared memory
         int shm_fd_pred = shm_open(SHM_NAME_PREDICTIONS.c_str(), O_RDONLY, 0666);
         if (shm_fd_pred == -1)
@@ -7036,7 +6917,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
         }
 
         // Map the entire shared memory region
-        size_t shm_size_pred = PATCH_SIZE * PATCH_SIZE * MAX_PATCHES_PER_BATCH + sysconf(_SC_PAGESIZE); // Adjust for metadata
         void* shm_ptr_pred = mmap(nullptr, shm_size_pred, PROT_READ, MAP_SHARED, shm_fd_pred, 0);
         if (shm_ptr_pred == MAP_FAILED) {
             std::cerr << "Failed to map shared memory." << std::endl;
@@ -7050,7 +6930,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
 
         // Get confidence threshold and pixel threshold from settings file
         double confidence_threshold = 0.5;
-        double pixel_threshold = 0.1;
 
         auto detection_settings = SettingsService::get_settings("detection");
         if (!detection_settings.empty())
@@ -7058,10 +6937,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             if (detection_settings.contains("confidence_threshold"))
             {
                 confidence_threshold = detection_settings["confidence_threshold"];
-            }
-            if (detection_settings.contains("pixel_threshold"))
-            {
-                pixel_threshold = detection_settings["pixel_threshold"];
             }
         }
 
@@ -7105,22 +6980,16 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             // Copy the frame data into the shared memory
             for (auto frame_data : sorted_frames)
             {
-                auto frame_size = frame_data.pMetadata->nFrameLen;
                 frame_width = frame_data.pMetadata->nWidth;
                 frame_height = frame_data.pMetadata->nHeight;
+                size_t frame_rgb_size = frame_width * frame_height * RGB_CHANNELS;
                 auto serial_number = frame_data.serial_number;
 
                 // Save the frame metadata
-                frame_offsets.push_back({ offset, frame_size, serial_number });
+                frame_offsets.push_back({ offset, frame_rgb_size, serial_number });
 
                 // Calculate the memory address to copy this frame
                 void* frame_ptr = static_cast<uint8_t*>(shm_ptr) + offset;
-
-                // Copy the frame data into the calculated memory location
-                std::memcpy(frame_ptr, frame_data.pData, frame_size);
-
-                // Update offset for the next frame
-                offset += frame_size;
 
                 // Convert Mono8 to RGB directly into the allocated RGB buffer
                 uint8_t* current_rgb_frame = frame_rgb_data_ptr;
@@ -7131,9 +7000,15 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                     current_rgb_frame[i * RGB_CHANNELS + 1] = gray; // Green channel
                     current_rgb_frame[i * RGB_CHANNELS + 2] = gray; // Blue channel
                 }
+
+                // Copy the rgb frame data into the calculated memory location
+                std::memcpy(frame_ptr, current_rgb_frame, frame_rgb_size);
+
+                // Update offset for the next frame
+                offset += frame_rgb_size;
                 
                 // Update the pointer to the next RGB frame
-                frame_rgb_data_ptr += frame_width * frame_height * RGB_CHANNELS;
+                frame_rgb_data_ptr += frame_rgb_size;
             }
 
             if (frame_offsets.empty())
@@ -7215,7 +7090,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             json_data["transaction_datetime"] = datetime;
             json_data["transaction_type"] = "detection";
             json_data["confidence_threshold"] = confidence_threshold;
-            json_data["pixel_threshold"] = pixel_threshold;
             json_data["frame_width"] = frame_width;
             json_data["frame_height"] = frame_height;
             for (const auto& info : frame_offsets)
@@ -7330,27 +7204,33 @@ void MainWindow::start_detection(int frame_width, int frame_height)
 
                     int i = 0;
                     uint8_t* patch_rgba_data_ptr = m_patch_rgba_data_buffer.data(); // Reset to the beginning of the buffer
+                    size_t patch_rgba_size = patch_size * patch_size * RGBA_CHANNELS;
 
                     patch_positions.clear();
 
                     for (uint32_t offset : offsets)
                     {
-                        uint8_t* mono8_data = static_cast<uint8_t*>(shm_ptr_pred) + offset;
+                        // This is the start of the i-th anomaly map in shared memory
+                        uint8_t* anomaly_map = static_cast<uint8_t*>(shm_ptr_pred) + offset;
 
-                        // Convert Mono8 to RGBA for Gdk::Pixbuf
+                        // Convert RGB to RGBA
                         uint8_t* current_rgba_patch = patch_rgba_data_ptr;
-                        for (int i = 0; i < patch_size * patch_size; ++i)
+                        for (int pixel_idx = 0; pixel_idx < patch_size * patch_size; ++pixel_idx)
                         {   
-                            // For every pixel
-                            unsigned char gray = mono8_data[i];
-                            current_rgba_patch[i * RGBA_CHANNELS + 0] = gray; // Red channel
-                            current_rgba_patch[i * RGBA_CHANNELS + 1] = gray; // Green channel
-                            current_rgba_patch[i * RGBA_CHANNELS + 2] = gray; // Blue channel
-                            current_rgba_patch[i * RGBA_CHANNELS + 3] = 255;  // Alpha channel (fully opaque)
+                            // Source offsets:
+                            unsigned char r = anomaly_map[pixel_idx * 3 + 0];
+                            unsigned char g = anomaly_map[pixel_idx * 3 + 1];
+                            unsigned char b = anomaly_map[pixel_idx * 3 + 2];
+
+                            // Destination offsets:
+                            current_rgba_patch[pixel_idx * RGBA_CHANNELS + 0] = r;   
+                            current_rgba_patch[pixel_idx * RGBA_CHANNELS + 1] = g;   
+                            current_rgba_patch[pixel_idx * RGBA_CHANNELS + 2] = b;   
+                            current_rgba_patch[pixel_idx * RGBA_CHANNELS + 3] = 255; // fully opaque
                         }
 
                         // Update the pointer to the next patch
-                        patch_rgba_data_ptr += patch_size * patch_size * RGBA_CHANNELS;
+                        patch_rgba_data_ptr += patch_rgba_size;
 
                         // Calculate row and column based on the index
                         int prediction_id = predictions[i++].get<int>();
@@ -7393,11 +7273,11 @@ void MainWindow::start_detection(int frame_width, int frame_height)
 
                             uint8_t* data_ptr = m_patch_rgba_data_buffer.data();
                             int row_stride = patch_size * RGBA_CHANNELS;                     
-                            int i = 0;
+                            int patch_idx = 0;
 
                             for (auto patch_pos : patch_positions)
                             {
-                                uint8_t* patch_data_ptr = data_ptr + (i * row_stride * patch_size);
+                                uint8_t* patch_data_ptr = data_ptr + (patch_idx * row_stride * patch_size);
                                 auto position_x = patch_pos.position_x;
                                 auto position_y = patch_pos.position_y;
                                 // std::cout << "position_x: " << position_x << " position_y: " << position_y << std::endl;
@@ -7424,7 +7304,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                                 }
 
                                 // Update mask pixel buf
-                                update_mask_color(prediction_pixbuf);
+                                // update_mask_color(prediction_pixbuf);
                                 update_mask_alpha(prediction_pixbuf, this->m_mask_alpha * 255);
 
                                 // Copy the prediction image into m_mask_pixbuf_rt_monitoring at the specified position
@@ -7439,7 +7319,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                                 );
                                 prediction_pixbuf.reset();
 
-                                i++;
+                                patch_idx++;
                             }
                         }
                         

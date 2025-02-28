@@ -12,14 +12,14 @@ const double CAPTURE_RATE = 30.0;
 const int WARMUP_NUM_ITERATIONS = 5;
 const int DETECTION_TIMEOUT_MS = 3000;
 const int FRAME_BATCH_SIZE = 2;
-const int MAX_PATCHES_PER_BATCH = 100; // The max number of anomaly patches that detection model generates per batch.
+const int MAX_PATCHES_PER_BATCH = 50; // The max number of anomaly patches that detection model generates per batch.
 
 // RGB-related constants
 const int RGB_CHANNELS = 3;
 const int RGBA_CHANNELS = 4;
 
 // Patch-related constants
-const int PATCH_SIZE = 256; // The patch_size that detection model expects.
+const int PATCH_SIZE = 512; // The patch_size that detection expects.
 
 // Shared memory-related constants
 const std::string SHM_NAME_FRAMES = "/ee_shared_memory_frames"; // The shared memory name that refers to the memory that stores the frames that captured by camera(s) and then pass to detection model for further processing.
