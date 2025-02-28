@@ -15,7 +15,7 @@
   </object>
   <object class="GtkAdjustment" id="detection_sensitivity_adjustment">
     <property name="upper">1</property>
-    <property name="value">0.5</property>
+    <property name="value">0.51</property>
     <property name="step-increment">0.01</property>
     <property name="page-increment">1</property>
   </object>
@@ -2115,7 +2115,7 @@
                                           <object class="GtkLabel">
                                             <property name="visible">True</property>
                                             <property name="can-focus">False</property>
-                                            <property name="label" translatable="yes">Height must be a multiple of 256</property>
+                                            <property name="label" translatable="yes">Height must be a multiple of 512</property>
                                           </object>
                                           <packing>
                                             <property name="expand">False</property>
@@ -3355,7 +3355,7 @@
                                           <object class="GtkLabel">
                                             <property name="visible">True</property>
                                             <property name="can-focus">False</property>
-                                            <property name="label" translatable="yes">Height must be a multiple of 256</property>
+                                            <property name="label" translatable="yes">Height must be a multiple of 512</property>
                                           </object>
                                           <packing>
                                             <property name="expand">False</property>
@@ -3681,92 +3681,6 @@ While higher values focus on clearer, more obvious anomalies, but could miss sub
                                   </packing>
                                 </child>
                                 <child>
-                                  <object class="GtkLabel">
-                                    <property name="visible">True</property>
-                                    <property name="can-focus">False</property>
-                                    <property name="halign">start</property>
-                                    <property name="label" translatable="yes">Anomaly Size Threshold</property>
-                                    <style>
-                                      <class name="header_label"/>
-                                    </style>
-                                  </object>
-                                  <packing>
-                                    <property name="expand">False</property>
-                                    <property name="fill">True</property>
-                                    <property name="position">6</property>
-                                  </packing>
-                                </child>
-                                <child>
-                                  <object class="GtkLabel">
-                                    <property name="visible">True</property>
-                                    <property name="can-focus">False</property>
-                                    <property name="halign">start</property>
-                                    <property name="label" translatable="yes">Specifies how much of an area needs to show anomalies before it’s flagged. 
-Lower values detect smaller anomalies, but could introduce false positive result.
-While higher values focus on larger, more obvious issues, but could miss subtle anomalies.</property>
-                                    <property name="wrap">True</property>
-                                    <property name="wrap-mode">word-char</property>
-                                  </object>
-                                  <packing>
-                                    <property name="expand">False</property>
-                                    <property name="fill">True</property>
-                                    <property name="position">7</property>
-                                  </packing>
-                                </child>
-                                <child>
-                                  <object class="GtkBox">
-                                    <property name="visible">True</property>
-                                    <property name="can-focus">False</property>
-                                    <property name="halign">start</property>
-                                    <property name="spacing">5</property>
-                                    <child>
-                                      <object class="GtkLabel">
-                                        <property name="visible">True</property>
-                                        <property name="can-focus">False</property>
-                                        <property name="label" translatable="yes">Small Area</property>
-                                      </object>
-                                      <packing>
-                                        <property name="expand">False</property>
-                                        <property name="fill">True</property>
-                                        <property name="position">0</property>
-                                      </packing>
-                                    </child>
-                                    <child>
-                                      <object class="GtkScale" id="anomaly_size_threshold_scale">
-                                        <property name="width-request">400</property>
-                                        <property name="visible">True</property>
-                                        <property name="can-focus">True</property>
-                                        <property name="adjustment">detection_size_threshold_adjustment</property>
-                                        <property name="round-digits">2</property>
-                                        <property name="digits">2</property>
-                                      </object>
-                                      <packing>
-                                        <property name="expand">True</property>
-                                        <property name="fill">True</property>
-                                        <property name="position">1</property>
-                                      </packing>
-                                    </child>
-                                    <child>
-                                      <object class="GtkLabel">
-                                        <property name="visible">True</property>
-                                        <property name="can-focus">False</property>
-                                        <property name="label" translatable="yes">Larger Area</property>
-                                      </object>
-                                      <packing>
-                                        <property name="expand">False</property>
-                                        <property name="fill">True</property>
-                                        <property name="pack-type">end</property>
-                                        <property name="position">2</property>
-                                      </packing>
-                                    </child>
-                                  </object>
-                                  <packing>
-                                    <property name="expand">False</property>
-                                    <property name="fill">True</property>
-                                    <property name="position">8</property>
-                                  </packing>
-                                </child>
-                                <child>
                                   <object class="GtkSeparator">
                                     <property name="visible">True</property>
                                     <property name="can-focus">False</property>
@@ -3776,7 +3690,7 @@ While higher values focus on larger, more obvious issues, but could miss subtle 
                                   <packing>
                                     <property name="expand">False</property>
                                     <property name="fill">True</property>
-                                    <property name="position">9</property>
+                                    <property name="position">6</property>
                                   </packing>
                                 </child>
                                 <child>
@@ -3853,7 +3767,7 @@ While higher values focus on larger, more obvious issues, but could miss subtle 
                                   <packing>
                                     <property name="expand">False</property>
                                     <property name="fill">True</property>
-                                    <property name="position">10</property>
+                                    <property name="position">7</property>
                                   </packing>
                                 </child>
                               </object>
