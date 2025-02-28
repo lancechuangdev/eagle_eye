@@ -220,7 +220,9 @@ def message_received(client, server, message):
             transaction_json["num_patches"] = num_patches
                         
             # Override the on_predict_batch_end method to disable visualization
-            ImageVisualizer.on_predict_batch_end = lambda self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0: None
+            ImageVisualizer.on_predict_batch_end = (
+                lambda self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0: None
+            )
 
             # Perform prediction on the entire batch
             print_with_ts("Prediction Started.\n")
