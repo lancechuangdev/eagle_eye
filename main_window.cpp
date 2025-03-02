@@ -538,17 +538,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         });
     }
 
-    m_builder->get_widget("anomaly_size_threshold_scale", m_anomaly_size_threshold_scale);
-    if (m_anomaly_size_threshold_scale)
-    {
-        m_anomaly_size_threshold_scale->signal_format_value().connect([](double value)
-        {
-            std::ostringstream oss;
-            oss << std::fixed << std::setprecision(0) << (value * 100) << "%";
-            return oss.str(); 
-        });
-    }
-
     m_builder->get_widget("cancel_detection_settings_btn", m_cancel_detection_settings_btn);
     if (m_cancel_detection_settings_btn)
     {
@@ -565,6 +554,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     if (m_recent_detection_results_selector_cbox)
     {
         m_recent_detection_results_selector_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_recent_detection_results_selector_changed));
+    }
+
+    m_builder->get_widget("load_detection_results_spinner", m_load_detection_results_spinner);
+    if (m_load_detection_results_spinner)
+    {
+        m_load_detection_results_spinner->hide();
     }
 
     m_builder->get_widget("detection_results_listbox", m_detection_results_listbox);
@@ -1696,15 +1691,47 @@ void MainWindow::load_recent_projects()
 
 void MainWindow::on_recent_detection_results_selector_changed()
 {
-    load_detection_results();
+    load_detection_results_async();
 }
 
 void MainWindow::on_detection_results_refresh_clicked()
 {
-    load_detection_results();
+    load_detection_results_async();
 }
 
-void MainWindow::load_detection_results()
+std::vector<std::filesystem::path> MainWindow::scan_filesystem_for_detection_results(
+    const std::chrono::system_clock::time_point& start_tp,
+    const std::chrono::system_clock::time_point& end_tp)
+{
+    std::vector<std::filesystem::path> recent_results_folders;
+
+    // This is the blocking I/O from your sample code
+    if (std::filesystem::exists(AppPaths::Projects_Path)
+        && std::filesystem::is_directory(AppPaths::Projects_Path))
+    {
+        for (const auto &entry : std::filesystem::directory_iterator(AppPaths::Projects_Path))
+        {
+            if (std::filesystem::is_directory(entry.status()))
+            {
+                auto project_name = entry.path().filename().string();
+                auto results = FileUtils::get_folders_by_time(
+                    AppPaths::Project_Detection_Results_Path(project_name), start_tp, end_tp);
+
+                recent_results_folders.insert(recent_results_folders.end(),
+                                              results.begin(),
+                                              results.end());
+            }
+        }
+    }
+    else
+    {
+        std::cerr << "Projects_Path does not exist or is not a directory." << std::endl;
+    }
+
+    return recent_results_folders;
+}
+
+void MainWindow::load_detection_results_async()
 {
     // Clear the resutls before loading
     for (auto *child : m_detection_results_listbox->get_children())
@@ -1712,95 +1739,79 @@ void MainWindow::load_detection_results()
         m_detection_results_listbox->remove(*child);
     }
 
-    if (m_recent_detection_results_selector_cbox)
+    // Show & start the spinner while we load in background
+    if (m_load_detection_results_spinner)
     {
-        auto selected_time_range = m_recent_detection_results_selector_cbox->get_active_text();
-        std::string start_time;
-        std::string end_time = TimeUtils::get_current_time();
-
-        if (selected_time_range == "Past 15 Minutes")
-        {
-            start_time = TimeUtils::get_time_minutes_ago(15);
-        }
-        else if (selected_time_range == "Past 1 Hour")
-        {
-            start_time = TimeUtils::get_time_hours_ago(1);
-        }
-        else if (selected_time_range == "Past 4 Hours")
-        {
-            start_time = TimeUtils::get_time_hours_ago(4);
-        }
-        else if (selected_time_range == "Past 8 Hours")
-        {
-            start_time = TimeUtils::get_time_hours_ago(8);
-        }
-        else if (selected_time_range == "Past 24 Hours")
-        {
-            start_time = TimeUtils::get_time_hours_ago(24);
-        }
-
-        auto start_tp = TimeUtils::parse_time(start_time);
-        auto end_tp = TimeUtils::parse_time(end_time);
-
-        // Load transactions list
-        std::vector<std::filesystem::path> recent_results_folders;
-
-        try
-        {
-            if (std::filesystem::exists(AppPaths::Projects_Path) && std::filesystem::is_directory(AppPaths::Projects_Path))
-            {
-                for (const auto& entry : std::filesystem::directory_iterator(AppPaths::Projects_Path))
-                {
-                    // Check if the entry is a directory
-                    if (std::filesystem::is_directory(entry.status()))
-                    {
-                        auto project_name = entry.path().filename().string();
-                        auto results = FileUtils::get_folders_by_time(AppPaths::Project_Detection_Results_Path(project_name), start_tp, end_tp);
-                        
-                        // Add the results to recent_results_folders
-                        recent_results_folders.insert(recent_results_folders.end(), results.begin(), results.end());
-                    }
-                }
-            }
-            else
-            {
-                std::cerr << "Projects_Path does not exist or is not a directory." << std::endl;
-            }
-        }
-        catch (const std::filesystem::filesystem_error& e)
-        {
-            std::cerr << "Filesystem error: " << e.what() << std::endl;
-        }
-        
-        // Populating the detection results list box with rows
-        for (const auto &result_folder : recent_results_folders)
-        {
-            std::cout << result_folder << std::endl;
-
-            auto row_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-            auto trans_label = Gtk::make_managed<Gtk::Label>(result_folder.filename().string());
-            row_box->set_tooltip_text(result_folder.string());
-            row_box->pack_start(*trans_label, Gtk::PACK_SHRINK);
-            // Create a Gtk::ListBoxRow to wrap the box
-            auto listbox_row = Gtk::make_managed<Gtk::ListBoxRow>();
-            listbox_row->add(*row_box);
-            // Set margin around the row
-            listbox_row->set_margin_top(5);      // Space above the row
-            listbox_row->set_margin_start(5);   // Space to the left of the row
-            listbox_row->set_margin_end(5);     // Space to the right of the row
-            // Add the Gtk::ListBoxRow to the list box
-            m_detection_results_listbox->append(*listbox_row);
-            // Show all the newly added widgets
-            listbox_row->show_all();
-        }
-
-        // Select the first row
-        auto most_recent_result = m_detection_results_listbox->get_row_at_index(0);
-        if (most_recent_result)
-        {
-            m_detection_results_listbox->select_row(*most_recent_result);
-        }
+        m_load_detection_results_spinner->show();
+        m_load_detection_results_spinner->start();    
     }
+
+    // Capture start and end time point
+    auto selected_time_range = m_recent_detection_results_selector_cbox->get_active_text();
+    std::string start_time;
+    std::string end_time = TimeUtils::get_current_time();
+
+    if (selected_time_range == "Past 15 Minutes")
+    {
+        start_time = TimeUtils::get_time_minutes_ago(15);
+    }
+    else if (selected_time_range == "Past 1 Hour")
+    {
+        start_time = TimeUtils::get_time_hours_ago(1);
+    }
+    else if (selected_time_range == "Past 4 Hours")
+    {
+        start_time = TimeUtils::get_time_hours_ago(4);
+    }
+    else if (selected_time_range == "Past 8 Hours")
+    {
+        start_time = TimeUtils::get_time_hours_ago(8);
+    }
+    else if (selected_time_range == "Past 24 Hours")
+    {
+        start_time = TimeUtils::get_time_hours_ago(24);
+    }
+
+    auto start_tp = TimeUtils::parse_time(start_time);
+    auto end_tp = TimeUtils::parse_time(end_time);
+
+    // Start background thread
+    std::thread loader_thread([this, start_tp, end_tp]() {
+        auto results = scan_filesystem_for_detection_results(start_tp, end_tp);
+
+        // Then queue to main thread to update the GUI
+        Glib::signal_idle().connect_once([this, results]() {
+
+            // Stop and hide the spinner
+            if (m_load_detection_results_spinner)
+            {
+                m_load_detection_results_spinner->stop();
+                m_load_detection_results_spinner->hide();    
+            }
+
+            // Populate the list box
+            for (const auto& folder : results)
+            {
+                // Create row, label, etc., then append
+                auto row_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+                auto trans_label = Gtk::make_managed<Gtk::Label>(folder.filename().string());
+                row_box->set_tooltip_text(folder.string());
+                row_box->pack_start(*trans_label, Gtk::PACK_SHRINK);
+                auto listbox_row = Gtk::make_managed<Gtk::ListBoxRow>();
+                listbox_row->add(*row_box);
+                listbox_row->show_all();
+                m_detection_results_listbox->append(*listbox_row);
+            }
+
+            // Select the first row
+            auto most_recent_result = m_detection_results_listbox->get_row_at_index(0);
+            if (most_recent_result)
+            {
+                m_detection_results_listbox->select_row(*most_recent_result);
+            }
+        });
+    });
+    loader_thread.detach();
 }
 
 void MainWindow::on_detection_result_selected(Gtk::ListBoxRow* row)
@@ -2863,10 +2874,6 @@ void MainWindow::load_detection_settings()
     {
         m_detection_sensitivity_scale->set_value(confidence_threshold);
     }
-    if (m_anomaly_size_threshold_scale)
-    {
-        m_anomaly_size_threshold_scale->set_value(pixel_threshold);
-    }
 }
 
 void MainWindow::on_cancel_detection_settings_clicked()
@@ -2899,11 +2906,6 @@ void MainWindow::on_save_detection_settings_clicked()
     {
         auto confidence_threshold = m_detection_sensitivity_scale->get_value();
         new_settings["confidence_threshold"] = confidence_threshold;
-    }
-    if (m_anomaly_size_threshold_scale)
-    {
-        auto pixel_threshold = m_anomaly_size_threshold_scale->get_value();
-        new_settings["pixel_threshold"] = pixel_threshold;
     }
 
     // Save detection settings
@@ -4606,7 +4608,7 @@ void MainWindow::on_window_shown()
 
     update_startup_page();
     load_recent_projects();
-    load_detection_results();
+    load_detection_results_async();
     load_detection_settings();
     clear_camera_settings();
 
@@ -5641,7 +5643,7 @@ void MainWindow::on_start_clicked()
             return;
         }
 
-        bool invalid_frame_dim;
+        bool invalid_frame_dim = false;
         int reference_width = -1, reference_height = -1;
 
         for (const std::string sn : serial_numbers)
@@ -6778,6 +6780,48 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
 
     // Wait for the warm-up to complete
     warmup_future.wait();
+
+    // Send digital output signal once warm-up is completed
+    std::string digital_ouput;
+    std::string line_number;
+
+    if (m_detection_digital_output_lbl)
+    {
+        digital_ouput = m_detection_digital_output_lbl->get_text();
+    }
+    if (m_detection_digital_output_line_number_lbl)
+    {
+        line_number = m_detection_digital_output_line_number_lbl->get_text();
+    }
+
+    if (digital_ouput != "" && 
+        line_number != "" && 
+        m_connected_device_handles.find(digital_ouput) != m_connected_device_handles.end())
+    {
+        void *device_handle = m_connected_device_handles[digital_ouput];
+        // Select digital output
+        int nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", line_number.c_str());
+        if (nRet == MV_OK)
+        {
+            // Trigger digital output
+            int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
+            if (nRet != MV_OK)
+            {
+                std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
+                m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
+            }
+            else
+            {
+                std::cout << "Trigger digital output after warm-up via software succeeded" << std::endl;
+                m_logger->log("Trigger digital output after warm-up via software succeeded");
+            }
+        }
+    }
+    else
+    {
+        std::cerr << "Digital output source not found: " << digital_ouput << std::endl;
+        m_logger->log("Digital output source not found: " + digital_ouput, Logger::ERROR);
+    }
 
     add_runtime_event("Warm-up Completed");
 }

@@ -121,9 +121,9 @@ protected:
     Gtk::ComboBoxText *m_select_detection_digital_output_cbox;
     Gtk::Label *m_settings_detection_digital_output_line_number_lbl;
     Gtk::Scale *m_detection_sensitivity_scale;
-    Gtk::Scale *m_anomaly_size_threshold_scale;
     Gtk::Button *m_cancel_detection_settings_btn;
     Gtk::Button *m_save_detection_settings_btn;
+    Gtk::Spinner *m_load_detection_results_spinner;
     Gtk::ListBox *m_detection_results_listbox;
     Gtk::Box *m_detection_patches_box;
     Gtk::Label *m_current_selected_patch_in_explorer_lbl;
@@ -401,7 +401,10 @@ private:
     std::string run_command(const std::string& command);
     void load_recent_projects();
     void load_detection_settings();
-    void load_detection_results();
+    std::vector<std::filesystem::path> scan_filesystem_for_detection_results(
+        const std::chrono::system_clock::time_point& start_tp,
+        const std::chrono::system_clock::time_point& end_tp);
+    void load_detection_results_async();
     void load_detection_result_in_explorer(std::string &detection_result_folder);
     void load_detection_result_in_report(std::string &detection_result_folder);
     std::string get_patch_remark(const std::string &transaction_json_path, int prediction_id);
