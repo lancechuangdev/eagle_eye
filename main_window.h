@@ -135,6 +135,7 @@ protected:
     Gtk::Button *m_save_report_btn;
     Gtk::Button *m_view_report_btn;
     Gtk::Button *m_report_refresh_btn;
+    Gtk::Spinner *m_load_report_spinner;
     Gtk::ListBox *m_report_transactions_listbox;
     Gtk::Switch *m_report_masking_switch;
     Gtk::DrawingArea *m_report_image_display_area;
@@ -345,7 +346,7 @@ private:
     double m_zoom_factor_detection = 1.0; // Zoom factor (1.0 = no zoom) on detection results page
 
     Glib::RefPtr<Gio::FileMonitor> m_detection_results_monitor;
-    std::vector<std::filesystem::path> m_sorted_detection_results_in_report;
+    std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> m_transactions_with_positions;
     std::string m_selected_transaction_id;
     bool m_show_mask_in_report;
     std::shared_ptr<Logger> m_logger;
@@ -410,6 +411,7 @@ private:
     std::string get_patch_remark(const std::string &transaction_json_path, int prediction_id);
     void update_patch_thumbnail_alpha(Glib::RefPtr<Gdk::Pixbuf> thumbnail_pixbuf, Gtk::Image *thumbnail, int alpha_value);
     void update_patch_remark(const std::string &transaction_json_path, int prediction_id, const std::string &remark);
+    void update_track_positions(double speed);
     std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> track_position(double speed);
     bool is_transaction_valid(const std::string &transaction_path);
     bool is_warmup_transaction(const std::string &transaction_path);

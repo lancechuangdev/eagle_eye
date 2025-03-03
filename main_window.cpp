@@ -184,6 +184,12 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_report_refresh_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_report_refresh_clicked));
     }
 
+    m_builder->get_widget("load_report_spinner", m_load_report_spinner);
+    if (m_load_report_spinner)
+    {
+        m_load_report_spinner->hide();
+    }
+
     m_builder->get_widget("report_transactions_listbox", m_report_transactions_listbox);
     if (m_report_transactions_listbox)
     {
@@ -825,8 +831,12 @@ void MainWindow::process_camera_event()
 
 void MainWindow::on_report_refresh_clicked()
 {
-    // Load transactions list
-    m_sorted_detection_results_in_report = FileUtils::get_folders_by_time(AppPaths::Project_Detection_Results_Path(m_curr_project_name), std::chrono::system_clock::time_point::min(), std::chrono::system_clock::now());
+    // Show & start the spinner while we load in the background
+    if (m_load_report_spinner)
+    {
+        m_load_report_spinner->show();
+        m_load_report_spinner->start();
+    }
 
     // Clear the results before loading
     for (auto *child : m_report_transactions_listbox->get_children())
@@ -834,54 +844,70 @@ void MainWindow::on_report_refresh_clicked()
         m_report_transactions_listbox->remove(*child);
     }
 
-    // Populating the detection results list box with rows
-    for (const auto &result_folder : m_sorted_detection_results_in_report)
-    {
-        auto trans_file_path = result_folder / "transaction_data.json";
+    std::thread loader_thread([this]() {
+        // Load transactions list
+        auto results = FileUtils::get_folders_by_time(AppPaths::Project_Detection_Results_Path(m_curr_project_name), std::chrono::system_clock::time_point::min(), std::chrono::system_clock::now());
 
-        if (is_warmup_transaction(trans_file_path.string()))
-        {
-            continue;
-        }
+        Glib::signal_idle().connect_once([this, results]() {
+            if (m_load_report_spinner)
+            {
+                m_load_report_spinner->stop();
+                m_load_report_spinner->hide();
+            }
 
-        auto row_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
-        auto trans_id = result_folder.filename().string();
-        auto trans_label = Gtk::make_managed<Gtk::Label>(trans_id);
-        if (is_transaction_valid(trans_file_path.string()))
-        {
-            trans_label->get_style_context()->remove_class("gray-text");
-        }
-        else
-        {
-            trans_label->get_style_context()->add_class("gray-text");
-        }
-        row_box->set_tooltip_text(result_folder.string());
-        row_box->pack_start(*trans_label, Gtk::PACK_SHRINK);
-        // Create a Gtk::ListBoxRow to wrap the box
-        auto listbox_row = Gtk::make_managed<Gtk::ListBoxRow>();
-        listbox_row->add(*row_box);
-        // Set margin around the row
-        listbox_row->set_margin_top(5);
-        listbox_row->set_margin_start(5);
-        listbox_row->set_margin_end(5);
-        // Add the Gtk::ListBoxRow to the list box
-        m_report_transactions_listbox->append(*listbox_row);
-        // Show all the newly added widgets
-        listbox_row->show_all();
-    }
+            // Populating the detection results list box with rows
+            for (const auto &result_folder : results)
+            {
+                auto trans_file_path = result_folder / "transaction_data.json";
 
-    // Select the first row
-    auto most_recent_result = m_report_transactions_listbox->get_row_at_index(0);
-    if (most_recent_result)
-    {
-        m_report_transactions_listbox->select_row(*most_recent_result);
-    }
+                if (is_warmup_transaction(trans_file_path.string()))
+                {
+                    continue;
+                }
 
-    // Load position track
-    if (m_report_position_display_area)
-    {
-        m_report_position_display_area->queue_draw();
-    }
+                auto row_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
+                auto trans_id = result_folder.filename().string();
+                auto trans_label = Gtk::make_managed<Gtk::Label>(trans_id);
+                if (is_transaction_valid(trans_file_path.string()))
+                {
+                    trans_label->get_style_context()->remove_class("gray-text");
+                }
+                else
+                {
+                    trans_label->get_style_context()->add_class("gray-text");
+                }
+                row_box->set_tooltip_text(result_folder.string());
+                row_box->pack_start(*trans_label, Gtk::PACK_SHRINK);
+                // Create a Gtk::ListBoxRow to wrap the box
+                auto listbox_row = Gtk::make_managed<Gtk::ListBoxRow>();
+                listbox_row->add(*row_box);
+                // Set margin around the row
+                listbox_row->set_margin_top(5);
+                listbox_row->set_margin_start(5);
+                listbox_row->set_margin_end(5);
+                // Add the Gtk::ListBoxRow to the list box
+                m_report_transactions_listbox->append(*listbox_row);
+                // Show all the newly added widgets
+                listbox_row->show_all();
+            }
+
+            // Select the first row
+            auto most_recent_result = m_report_transactions_listbox->get_row_at_index(0);
+            if (most_recent_result)
+            {
+                m_report_transactions_listbox->select_row(*most_recent_result);
+            }
+
+            // Load position track
+            if (m_report_position_display_area)
+            {
+                m_report_position_display_area->queue_draw();
+            }
+
+            update_track_positions(1.0);
+        });
+    });
+    loader_thread.detach();
 }
 
 void MainWindow::on_report_enable_masking_changed()
@@ -1079,12 +1105,23 @@ bool MainWindow::is_transaction_valid(const std::string &transaction_path)
     return false;
 }
 
+void MainWindow::update_track_positions(double speed)
+{
+    // Heavy calculation here
+    m_transactions_with_positions = track_position(speed);
+
+    // Once updated, request a redraw of the widget
+    m_report_position_display_area->queue_draw();
+}
+
 std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> MainWindow::track_position(double speed)
 {
     std::map<std::pair<std::chrono::system_clock::time_point, std::chrono::system_clock::time_point>, 
              std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>>> session_time_points_with_positions;
 
-    for (const auto &transaction_folder : m_sorted_detection_results_in_report)
+    auto detection_results = FileUtils::get_folders_by_time(AppPaths::Project_Detection_Results_Path(m_curr_project_name), std::chrono::system_clock::time_point::min(), std::chrono::system_clock::now());
+
+    for (const auto &transaction_folder : detection_results)
     {
         auto trans_file_path = std::filesystem::path(transaction_folder) / "transaction_data.json";
         
@@ -1186,20 +1223,18 @@ bool MainWindow::on_report_position_draw(const Cairo::RefPtr<Cairo::Context> &cr
     cr->line_to(width, height / 2);
     cr->stroke();
 
-    auto transactions_with_positions = track_position(1.0); // unit speed
-
-    if (transactions_with_positions.empty())
+    if (m_transactions_with_positions.empty())
     {
         std::cout << "No transactions available." << std::endl;
         return true;
     }
-    
-    const auto &last_transaction = transactions_with_positions.back();
+
+    const auto &last_transaction = m_transactions_with_positions.back();
     const auto &position = std::get<2>(last_transaction);
     auto total_distance = position;
 
     // Draw transactions on position track
-    for (const auto &transaction : transactions_with_positions)
+    for (const auto &transaction : m_transactions_with_positions)
     {
         const auto &transaction_id = std::get<0>(transaction);
         const auto &time_point = std::get<1>(transaction);
