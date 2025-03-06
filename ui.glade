@@ -940,7 +940,6 @@
                                 <child>
                                   <object class="GtkButton" id="start_signal_test_btn">
                                     <property name="label" translatable="yes">Trigger Start/Stop Signal</property>
-                                    <property name="visible">True</property>
                                     <property name="can-focus">True</property>
                                     <property name="receives-default">True</property>
                                   </object>
