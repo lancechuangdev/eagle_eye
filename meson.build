@@ -44,7 +44,7 @@ executable('ee',
 
 # Install application data files
 install_data(
-    ['ui.glade', 'style.css', 'model.ckpt', 'ee_anomaly_detection_service_efficient.py'],
+    ['ui.glade', 'style.css', 'model.ckpt', 'model.onnx', 'ee_anomaly_detection_service_efficient.py'],
     install_dir: join_paths(get_option('prefix'), 'share', 'eagle_eye')
 )
 

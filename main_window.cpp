@@ -1740,7 +1740,6 @@ std::vector<std::filesystem::path> MainWindow::scan_filesystem_for_detection_res
 {
     std::vector<std::filesystem::path> recent_results_folders;
 
-    // This is the blocking I/O from your sample code
     if (std::filesystem::exists(AppPaths::Projects_Path)
         && std::filesystem::is_directory(AppPaths::Projects_Path))
     {
@@ -4643,7 +4642,6 @@ void MainWindow::on_window_shown()
 
     update_startup_page();
     load_recent_projects();
-    load_detection_results_async();
     load_detection_settings();
     clear_camera_settings();
 
@@ -6169,6 +6167,9 @@ void MainWindow::on_snap_clicked()
                 update_snap_masks(res_trans_id);
             }
         }
+
+        // Reset transaction ID for future use.
+        m_trans_id = "";
     }
 
     if (m_toolkit_display_area)
@@ -6303,6 +6304,9 @@ void MainWindow::on_toolkit_test_clicked()
                 update_snap_masks(res_trans_id);
             }
         }
+
+        // Reset transaction ID for future use.
+        m_trans_id = "";
     }
 
     if (m_toolkit_display_area)
@@ -6798,6 +6802,9 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
             {
                 count++;
             }
+
+            // Reset transaction ID for future use.
+            m_trans_id = "";
         }
 
         frame_offsets.clear();
@@ -7426,6 +7433,9 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 m_detection_rate_records[record_index] = current_fps; // Update the current index
                 record_index = (record_index + 1) % m_detection_rate_records.size(); // Move to the next index
             }
+
+            // Reset transaction ID for future use.
+            m_trans_id = "";
         }
 
         // Clean up
@@ -7572,9 +7582,6 @@ void MainWindow::send_ws_message(std::string message)
             // Response received within timeout
             std::cout << "receiving a ws response: " << m_ws_response << std::endl;
             m_logger->log("receiving a ws response: " + m_ws_response);
-
-            // Reset the condition for future use if needed
-            m_ws_response_ready = false;
         }
         else
         {
@@ -7591,6 +7598,9 @@ void MainWindow::send_ws_message(std::string message)
             // Convert to a JSON string
             m_ws_response = json_obj.dump();
         }
+
+        // Reset the condition for future use if needed
+        m_ws_response_ready = false;
     }
     else
     {
