@@ -20,6 +20,7 @@ import struct
 shared_memory_name_frames = "/ee_shared_memory_frames" # DONOT CHANGE
 shared_memory_name_predictions = "/ee_shared_memory_predictions" # DONOT CHANGE
 model_path = "/usr/local/share/eagle_eye/model.onnx"
+onnx_engine_cache_path = "/usr/local/share/eagle_eye/trt_engines"
 patch_size = 512
 rgb_channels = 3
 home_dir = os.path.expanduser("~")
@@ -309,7 +310,9 @@ providers = [
     ('TensorrtExecutionProvider', {
         'device_id': 0, # Select GPU to execute
         'trt_max_workspace_size': 4 * 1024 * 1024 * 1024, # Allocate 4GB GPU memory
-        'trt_fp16_enable': True, # Enable FP16 precision for faster inference  
+        'trt_fp16_enable': True, # Enable FP16 precision for faster inference
+        'trt_engine_cache_enable': True, # Enable engine cache
+        'trt_engine_cache_path': onnx_engine_cache_path # Specify engine cache path
     }),
     ('CUDAExecutionProvider', {
         'device_id': 0,
