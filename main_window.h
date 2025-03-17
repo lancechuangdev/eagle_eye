@@ -13,6 +13,8 @@
 #include <future>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
+#include <onnxruntime_cxx_api.h>
+
 #include "MvCameraControl.h"
 #include "frame_queue.h"
 #include "logger.h"
@@ -367,6 +369,9 @@ private:
     std::vector<double> m_detection_rate_records;
     std::mutex m_detection_rate_mutex;
 
+    // Ort::Session m_onnx_session;
+    std::unique_ptr<Ort::Session> m_onnx_session;
+
     void set_window_title(const std::string &title);
     bool create_project(const std::string &project_name);
     void open_project(const std::string &project_file_path);
@@ -393,7 +398,6 @@ private:
     std::string generate_transaction_id();
     void update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf);
     void update_mask_alpha(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf, gint32 alpha);
-    void update_snap_masks(std::string trans_id);
     std::string convert_to_ip_address_str(uint32_t ip);
     void set_button_icon(Gtk::Button* button, const Glib::ustring& resource_path);
     void populate_camera_settings(void *device_handle);
@@ -419,6 +423,10 @@ private:
     void start_listening_for_start_signal();
     void stop_listening_for_start_signal();
     void process_camera_event();
+    void setup_onnx_session(const std::string& model_path);
+    std::vector<Ort::Value> run_inference(std::vector<Ort::Value>& input_tensors);
+    void print_tensor_shape(const Ort::Value& tensor, const std::string& tensor_name);
+    void print_tensor_values(const Ort::Value& tensor, const std::string& name);
 };
 
 #endif
