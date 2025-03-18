@@ -6283,9 +6283,6 @@ void MainWindow::on_toolkit_test_clicked()
         // Convert BGR (OpenCV default) to RGB for GTK display
         cv::cvtColor(anomaly_map_colored, anomaly_map_colored, cv::COLOR_BGR2RGB);
 
-        // Save or use the image
-        // cv::imwrite("anomaly_map_" + std::to_string(b) + ".png", anomaly_map_colored);
-
         // Copy the prediction image into m_mask_pixbuf_toolkit at the specified position
         auto prediction_pixbuf = Gdk::Pixbuf::create_from_data(
             anomaly_map_colored.data,
@@ -6297,21 +6294,12 @@ void MainWindow::on_toolkit_test_clicked()
             PATCH_SIZE * 3 // Rowstride (each row has width * 3 bytes)
         );
 
-        // std::cout << "Width of prediction_pixbuf: " << prediction_pixbuf->get_width() << std::endl;
-        // std::cout << "Height of prediction_pixbuf: " << prediction_pixbuf->get_height() << std::endl;
-        // std::cout << "Rowstride of prediction_pixbuf: " << prediction_pixbuf->get_rowstride() << std::endl;
-
-        // prediction_pixbuf->save("anomaly_map_pixbuf_" + std::to_string(b) + ".png", "png");
-
         int predictions_per_row = frame_width / PATCH_SIZE;
         int row = b / predictions_per_row;
         int col = b % predictions_per_row;
         int position_x = col * PATCH_SIZE;
         int position_y = row * PATCH_SIZE;
 
-        // std::cout << "batch_id: " << b << std::endl;
-        // std::cout << "position_x: " << position_x << std::endl;
-        // std::cout << "position_y: " << position_y << std::endl;
         prediction_pixbuf->Gdk::Pixbuf::copy_area(
             0,
             0,
@@ -6322,11 +6310,8 @@ void MainWindow::on_toolkit_test_clicked()
             position_y
         );
 
-        // m_mask_pixbuf_toolkit->save("anomaly_map_toolkit.png", "png");
-
         if (m_toolkit_display_area)
         {
-            // m_toolkit_display_area->set_size_request(patch_size, patch_size);
             m_toolkit_display_area->queue_draw();
         }
     }
@@ -6708,70 +6693,12 @@ void MainWindow::start_detection(int frame_width, int frame_height)
         {
             m_frame_rgb_data_buffer.resize(total_frame_rgb_size);
         }
-        size_t shm_frames_buffer = frame_width * frame_height * RGB_CHANNELS * (FRAME_BATCH_SIZE + 1); // add extra one frame for safety;
-
-        // Open shared memory object
-        std::cout << "Open shared memory object" << std::endl;
-        int shm_fd = shm_open(SHM_NAME_FRAMES.c_str(), O_CREAT | O_RDWR, 0666);
-        if (shm_fd == -1)
-        {
-            std::cerr << "Failed to open shared memory object." << std::endl;
-            return;
-        }
-
-        // Resize shared memory object to the initial data size
-        std::cout << "Resize shared memory object" << std::endl;
-        if (ftruncate(shm_fd, shm_frames_buffer) == -1)
-        {
-            std::cerr << "Failed to resize shared memory object." << std::endl;
-            ::close(shm_fd);
-            return;
-        }
-
-        // Map shared memory into address space
-        std::cout << "Map shared memory" << std::endl;
-        void *shm_ptr = mmap(0, shm_frames_buffer, PROT_WRITE, MAP_SHARED, shm_fd, 0);
-        if (shm_ptr == MAP_FAILED)
-        {
-            std::cerr << "Failed to map shared memory." << std::endl;
-            ::close(shm_fd);
-            return;
-        }
-
-        size_t total_patch_rgba_size = 0;
-        for (int i = 0; i < MAX_PATCHES_PER_BATCH; ++i)
-        {
-            total_patch_rgba_size += PATCH_SIZE * PATCH_SIZE * RGBA_CHANNELS;
-        }
-        if (m_patch_rgba_data_buffer.size() < total_patch_rgba_size)
-        {
-            m_patch_rgba_data_buffer.resize(total_patch_rgba_size);
-        }
-        size_t shm_size_pred = PATCH_SIZE * PATCH_SIZE * RGB_CHANNELS * MAX_PATCHES_PER_BATCH + sysconf(_SC_PAGESIZE); // Adjust for metadata
-
-        // Open predictions shared memory
-        int shm_fd_pred = shm_open(SHM_NAME_PREDICTIONS.c_str(), O_RDONLY, 0666);
-        if (shm_fd_pred == -1)
-        {
-            std::cerr << "Failed to open shared memory." << std::endl;
-            return;
-        }
-
-        // Map the entire shared memory region
-        void* shm_ptr_pred = mmap(nullptr, shm_size_pred, PROT_READ, MAP_SHARED, shm_fd_pred, 0);
-        if (shm_ptr_pred == MAP_FAILED) {
-            std::cerr << "Failed to map shared memory." << std::endl;
-            return;
-        }
 
         FrameData frame_data(nullptr, nullptr, ""); // Initialize FrameData with null pointers
-        std::vector<FrameOffsetInfo> frame_offsets;
-        std::vector<PatchPosition> patch_positions;
         m_session_anomaly_count = 0;
 
         // Get confidence threshold and pixel threshold from settings file
         double confidence_threshold = 0.5;
-
         auto detection_settings = SettingsService::get_settings("detection");
         if (!detection_settings.empty())
         {
@@ -6786,17 +6713,10 @@ void MainWindow::start_detection(int frame_width, int frame_height)
 
         while (m_is_running)
         {
-            // Record the start time
-            auto start_time = std::chrono::steady_clock::now();
+            m_logger->log("Enter start_detection loop");
 
             std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Prevent CPU overuse
-            frame_offsets.clear();
-            size_t offset = 0;
-            int num_frames_dequeued = 0;
-            int frame_width = 0;
-            int frame_height = 0;
-            uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
-
+            
             // make sure there are enough frames to process
             if (m_frame_queue.get_size() < FRAME_BATCH_SIZE)
             {
@@ -6804,6 +6724,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             }
 
             // sort by serial number of each frame
+            int num_frames_dequeued = 0;
             std::vector<FrameData> sorted_frames;
             while (!m_frame_queue.isEmpty() && num_frames_dequeued < FRAME_BATCH_SIZE)
             {
@@ -6818,21 +6739,14 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 return a.serial_number < b.serial_number;
             });
 
-            // Copy the frame data into the shared memory
+            // Convert Mono8 to RGB directly into the allocated RGB buffer
+            uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
             for (auto frame_data : sorted_frames)
             {
-                frame_width = frame_data.pMetadata->nWidth;
-                frame_height = frame_data.pMetadata->nHeight;
+                int frame_width = frame_data.pMetadata->nWidth;
+                int frame_height = frame_data.pMetadata->nHeight;
                 size_t frame_rgb_size = frame_width * frame_height * RGB_CHANNELS;
-                auto serial_number = frame_data.serial_number;
 
-                // Save the frame metadata
-                frame_offsets.push_back({ offset, frame_rgb_size, serial_number });
-
-                // Calculate the memory address to copy this frame
-                void* frame_ptr = static_cast<uint8_t*>(shm_ptr) + offset;
-
-                // Convert Mono8 to RGB directly into the allocated RGB buffer
                 uint8_t* current_rgb_frame = frame_rgb_data_ptr;
                 for (size_t i = 0; i < frame_width * frame_height; ++i)
                 {
@@ -6842,22 +6756,11 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                     current_rgb_frame[i * RGB_CHANNELS + 2] = gray; // Blue channel
                 }
 
-                // Copy the rgb frame data into the calculated memory location
-                std::memcpy(frame_ptr, current_rgb_frame, frame_rgb_size);
-
-                // Update offset for the next frame
-                offset += frame_rgb_size;
-                
                 // Update the pointer to the next RGB frame
                 frame_rgb_data_ptr += frame_rgb_size;
             }
 
-            if (frame_offsets.empty())
-            {
-                continue;
-            }
-
-            // Ensure thread safety
+            // Display the frames (via dispatcher to ensure thread safety)
             if (!m_images_dispatcher_connection.connected())
             {
                 m_images_dispatcher_connection = m_main_images_dispatcher.connect([this, &frame_width, &frame_height, &num_frames_dequeued]()
@@ -6918,269 +6821,135 @@ void MainWindow::start_detection(int frame_width, int frame_height)
 
             m_main_images_dispatcher.emit();
 
-            // Generate a transaction ID
-            m_trans_id = generate_transaction_id();
+            // Run inference
+            auto batch_patches = FrameUtils::build_batch(sorted_frames);
+            auto input_tensor = FrameUtils::create_input_tensor(batch_patches);
+            std::vector<Ort::Value> input_tensors;
+            input_tensors.push_back(std::move(input_tensor));
+            auto output_tensors = run_inference(input_tensors);
 
-            // Get current Datetime
-            std::string datetime = TimeUtils::get_current_time();
+            // Extract output tensors
+            auto anomaly_scores = output_tensors[0].GetTensorMutableData<float>();
+            auto pred_labels = output_tensors[1].GetTensorMutableData<float>();
+            auto anomaly_maps = output_tensors[2].GetTensorMutableData<float>();
+            auto pred_masks = output_tensors[3].GetTensorMutableData<float>();
 
-            // Send the command to the ws server
-            nlohmann::json json_data;
-            json_data["project_name"] = m_curr_project_name;
-            json_data["transaction_id"] = m_trans_id;
-            json_data["transaction_datetime"] = datetime;
-            json_data["transaction_type"] = "detection";
-            json_data["confidence_threshold"] = confidence_threshold;
-            json_data["frame_width"] = frame_width;
-            json_data["frame_height"] = frame_height;
-            for (const auto& info : frame_offsets)
+            Ort::TensorTypeAndShapeInfo anomaly_map_shape_info = output_tensors[2].GetTensorTypeAndShapeInfo();
+            std::vector<int64_t> anomaly_map_shape = anomaly_map_shape_info.GetShape();
+            int batch_size = anomaly_map_shape[0];
+            int anomaly_map_channels = anomaly_map_shape[1];
+            int anomaly_map_height = anomaly_map_shape[2];
+            int anomaly_map_width = anomaly_map_shape[3];
+
+            // Dislay prediction results (via dispatcher to ensure thread saftey)
+            if (!m_masks_dispatcher_connection.connected())
             {
-                json_data["frames"].push_back({
-                    {"offset", info.offset},
-                    {"frame_size", info.frame_size},
-                    {"serial_number", info.serial_number}
-                });
-            }
-            std::string frame_info_string = json_data.dump(); // Convert JSON to string
-            send_ws_message(frame_info_string);
-            
-            if (!m_is_running)
-            {
-                std::cout << "Break out the loop while waiting for a WS response" << std::endl;
-                break;
-            }
-
-            // Parse the JSON response
-            nlohmann::json response_json = nlohmann::json::parse(m_ws_response);
-
-            // Extract values from the JSON object
-            std::string res_trans_id = response_json["transaction_id"];
-            if (res_trans_id != m_trans_id)
-            {
-                std::cout << "Transaction ID mismatch" << std::endl;
-                continue;
-            }
-
-            std::string status = response_json["status"];
-            int total_anomalies = response_json["total_anomalies"];
-            int patch_size = response_json["patch_size"];
-
-            if (status == "complete")
-            {
-                if (total_anomalies > 0)
+                m_masks_dispatcher_connection = m_main_masks_dispatcher.connect([this, &frame_width, &batch_size, &anomaly_scores, &anomaly_maps, &anomaly_map_channels, &anomaly_map_height, &anomaly_map_width]()
                 {
-                    std::string digital_ouput;
-                    std::string line_number;
+                    m_masks_dispatcher_running = true;
 
-                    if (m_detection_digital_output_lbl)
-                    {
-                        digital_ouput = m_detection_digital_output_lbl->get_text();
-                    }
-                    if (m_detection_digital_output_line_number_lbl)
-                    {
-                        line_number = m_detection_digital_output_line_number_lbl->get_text();
-                    }
+                    // m_mask_pixbuf_rt_monitoring->fill(0x00000000);
 
-                    if (digital_ouput != "" && 
-                        line_number != "" && 
-                        m_connected_device_handles.find(digital_ouput) != m_connected_device_handles.end())
+                    // Load anomaly score threshold
+                    auto confidence_threshold = 0.5;
+                    auto detection_settings = SettingsService::get_settings("detection");
+                    if (!detection_settings.empty())
                     {
-                        void *device_handle = m_connected_device_handles[digital_ouput];
-                        // Select digital output
-                        int nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", line_number.c_str());
-                        if (nRet == MV_OK)
+                        if (detection_settings.contains("confidence_threshold"))
                         {
-                            // Trigger digital output
-                            int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
-                            if (nRet != MV_OK)
-                            {
-                                std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
-                                m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
-                            }
-                            else
-                            {
-                                std::cout << "Trigger digital output via software succeeded" << std::endl;
-                                m_logger->log("Trigger digital output via software succeeded");
-                            }
+                            confidence_threshold = detection_settings["confidence_threshold"];
                         }
                     }
-                    else
+
+                    for (int b = 0; b < batch_size; ++b)
                     {
-                        std::cerr << "Digital output source not found: " << digital_ouput << std::endl;
-                        m_logger->log("Digital output source not found: " + digital_ouput, Logger::ERROR);
-                    }
-
-                    // Read metadata (aligned offsets)
-                    char* metadata_start = static_cast<char*>(shm_ptr_pred) + (shm_size_pred - (total_anomalies * sizeof(uint32_t)));
-                    
-                    // Check alignment
-                    if (reinterpret_cast<uintptr_t>(metadata_start) % alignof(uint32_t) != 0) {
-                        std::cerr << "Metadata is not properly aligned for uint32_t!" << std::endl;
-                        return;
-                    }
-
-                    // Cast to uint32_t* safely
-                    uint32_t* metadata_ptr = reinterpret_cast<uint32_t*>(metadata_start);
-                    std::vector<uint32_t> offsets;
-
-                    // Read metadata into offsets
-                    for (int i = 0; i < total_anomalies; i++) {
-                        offsets.push_back(metadata_ptr[i]);
-                    }
-                    // Print the offsets
-                    // std::cout << "Offsets: ";
-                    // for (const auto& offset : offsets) {
-                    //     std::cout << offset << " ";
-                    // }
-                    // std::cout << std::endl;
-
-                    // Load and position each prediction
-                    auto predictions = response_json["predictions"];
-
-                    int predictions_per_row = frame_width / patch_size;
-                    if (frame_width % patch_size != 0)
-                    {
-                        predictions_per_row++; // Allow for an additional prediction if there's remaining space
-                    }
-
-                    int i = 0;
-                    uint8_t* patch_rgba_data_ptr = m_patch_rgba_data_buffer.data(); // Reset to the beginning of the buffer
-                    size_t patch_rgba_size = patch_size * patch_size * RGBA_CHANNELS;
-
-                    patch_positions.clear();
-
-                    for (uint32_t offset : offsets)
-                    {
-                        // This is the start of the i-th anomaly map in shared memory
-                        uint8_t* anomaly_map = static_cast<uint8_t*>(shm_ptr_pred) + offset;
-
-                        // Convert RGB to RGBA
-                        uint8_t* current_rgba_patch = patch_rgba_data_ptr;
-                        for (int pixel_idx = 0; pixel_idx < patch_size * patch_size; ++pixel_idx)
-                        {   
-                            // Source offsets:
-                            unsigned char r = anomaly_map[pixel_idx * 3 + 0];
-                            unsigned char g = anomaly_map[pixel_idx * 3 + 1];
-                            unsigned char b = anomaly_map[pixel_idx * 3 + 2];
-
-                            // Destination offsets:
-                            current_rgba_patch[pixel_idx * RGBA_CHANNELS + 0] = r;   
-                            current_rgba_patch[pixel_idx * RGBA_CHANNELS + 1] = g;   
-                            current_rgba_patch[pixel_idx * RGBA_CHANNELS + 2] = b;   
-                            current_rgba_patch[pixel_idx * RGBA_CHANNELS + 3] = 255; // fully opaque
-                        }
-
-                        // Update the pointer to the next patch
-                        patch_rgba_data_ptr += patch_rgba_size;
-
-                        // Calculate row and column based on the index
-                        int prediction_id = predictions[i++].get<int>();
-                        int row = prediction_id / predictions_per_row;
-                        int col = prediction_id % predictions_per_row;
-
-                        // Calculate position_x
-                        int position_x = col * patch_size; // Standard position in the row
-
-                        // Adjust position_x if this is the last column and it exceeds frame width
-                        if (col == predictions_per_row - 1 && position_x + patch_size > frame_width)
+                        if (anomaly_scores[b] < confidence_threshold)
                         {
-                            position_x = frame_width - patch_size;
+                            continue;
                         }
-
-                        // Calculate position_y
-                        int position_y = row * patch_size; // Each row is separated by the height of the patch
-
-                        patch_positions.emplace_back(position_x, position_y);
-                    }
-                }
-
-                // Ensure thread safety
-                if (!m_masks_dispatcher_connection.connected())
-                {
-                    m_masks_dispatcher_connection = m_main_masks_dispatcher.connect([this, &patch_positions, &patch_size, &total_anomalies]()
-                    {
-                        m_masks_dispatcher_running = true;
-                    
-                        m_mask_pixbuf_rt_monitoring->fill(0x00000000);
-
-                        if (total_anomalies > 0)
-                        {
-                            // Update # of detected anomalies label
-                            if (m_rt_monitoring_num_anomalies_lbl)
-                            {
-                                m_session_anomaly_count += total_anomalies;
-                                m_rt_monitoring_num_anomalies_lbl->set_text(std::to_string(m_session_anomaly_count));
-                            }
-
-                            uint8_t* data_ptr = m_patch_rgba_data_buffer.data();
-                            int row_stride = patch_size * RGBA_CHANNELS;                     
-                            int patch_idx = 0;
-
-                            for (auto patch_pos : patch_positions)
-                            {
-                                uint8_t* patch_data_ptr = data_ptr + (patch_idx * row_stride * patch_size);
-                                auto position_x = patch_pos.position_x;
-                                auto position_y = patch_pos.position_y;
-                                // std::cout << "position_x: " << position_x << " position_y: " << position_y << std::endl;
-
-                                // Create a Pixbuf from the aligned offset
-                                auto prediction_pixbuf = Gdk::Pixbuf::create_from_data(
-                                    patch_data_ptr,
-                                    Gdk::COLORSPACE_RGB,
-                                    true, // Has alpha
-                                    8,    // 8 bits per channel
-                                    patch_size,
-                                    patch_size,
-                                    row_stride
-                                );
-
-                                if (!prediction_pixbuf)
-                                {
-                                    std::cerr << "Failed to load prediction image" << std::endl;
-                                    continue;
-                                }
-                                else
-                                {
-                                    std::cout << "prediction_pixbuf created" << std::endl;
-                                }
-
-                                // Update mask pixel buf
-                                // update_mask_color(prediction_pixbuf);
-                                update_mask_alpha(prediction_pixbuf, this->m_mask_alpha * 255);
-
-                                // Copy the prediction image into m_mask_pixbuf_rt_monitoring at the specified position
-                                prediction_pixbuf->Gdk::Pixbuf::copy_area(
-                                    0,
-                                    0,
-                                    prediction_pixbuf->get_width(),
-                                    prediction_pixbuf->get_height(),
-                                    this->m_mask_pixbuf_rt_monitoring,
-                                    position_x,
-                                    position_y
-                                );
-                                prediction_pixbuf.reset();
-
-                                patch_idx++;
-                            }
-                        }
+                
+                        std::cout << "Anomaly Score: " << anomaly_scores[b] << std::endl;
                         
-                        // Redraw the drawing area
-                        this->m_rt_monitoring_drawing_area->queue_draw();
+                        // Extract only the first channel
+                        float* anomaly_map = anomaly_maps + (b * anomaly_map_channels * anomaly_map_height * anomaly_map_width);
 
-                        m_masks_dispatcher_running = false;
-                    });
-                }
+                        // Resize anomaly map
+                        cv::Mat anomaly_map_mat(anomaly_map_height, anomaly_map_width, CV_32F, anomaly_map);
+                        cv::Mat anomaly_map_resized;
+                        cv::resize(anomaly_map_mat, anomaly_map_resized, cv::Size(PATCH_SIZE, PATCH_SIZE), 0, 0, cv::INTER_CUBIC);
+
+                        // Find min and max values
+                        float* anomaly_map_end = anomaly_map + anomaly_map_channels * anomaly_map_height * anomaly_map_width;
+                        float min_val = *std::min_element(anomaly_map, anomaly_map_end);
+                        float max_val = *std::max_element(anomaly_map, anomaly_map_end);
+
+                        // Normalize
+                        cv::Mat anomaly_map_norm;
+                        if (max_val - min_val > 1e-8) {
+                            anomaly_map_norm = (anomaly_map_resized - min_val) / (max_val - min_val);
+                        } else {
+                            anomaly_map_norm = anomaly_map_resized.clone();
+                        }
+
+                        // Convert to 8-bit grayscale
+                        anomaly_map_norm.convertTo(anomaly_map_norm, CV_8U, 255.0);
+
+                        // Apply colormap
+                        cv::Mat anomaly_map_colored;
+                        cv::applyColorMap(anomaly_map_norm, anomaly_map_colored, cv::COLORMAP_JET);
+
+                        // Convert BGR (OpenCV default) to RGB for GTK display
+                        cv::cvtColor(anomaly_map_colored, anomaly_map_colored, cv::COLOR_BGR2RGB);
+
+                        // Copy the prediction image into m_mask_pixbuf_toolkit at the specified position
+                        auto prediction_pixbuf = Gdk::Pixbuf::create_from_data(
+                            anomaly_map_colored.data,
+                            Gdk::COLORSPACE_RGB,
+                            false, // No alpha channel
+                            8, // Bits per channel
+                            PATCH_SIZE, 
+                            PATCH_SIZE,
+                            PATCH_SIZE * 3 // Rowstride (each row has width * 3 bytes)
+                        );
+
+                        int predictions_per_row = frame_width / PATCH_SIZE;
+                        int row = b / predictions_per_row;
+                        int col = b % predictions_per_row;
+                        int position_x = col * PATCH_SIZE;
+                        int position_y = row * PATCH_SIZE;
+
+                        prediction_pixbuf->Gdk::Pixbuf::copy_area(
+                            0,
+                            0,
+                            PATCH_SIZE,
+                            PATCH_SIZE,
+                            m_mask_pixbuf_rt_monitoring,
+                            position_x,
+                            position_y
+                        );
+                    }
+
+                    update_mask_alpha(m_mask_pixbuf_rt_monitoring, m_mask_alpha * 255);
+
+                    // Redraw the drawing area
+                    this->m_rt_monitoring_drawing_area->queue_draw();
+
+                    m_masks_dispatcher_running = false;
+                });
             }
 
             m_main_masks_dispatcher.emit();
 
             // Calculate the time difference (in seconds) since the last detection
-            auto end_time = std::chrono::steady_clock::now();
-            double elapsed_time = std::chrono::duration<double>(end_time - last_detection_time).count();
-            last_detection_time = end_time;
+            auto now = std::chrono::steady_clock::now();
+            double elapsed_time = std::chrono::duration<double>(now - last_detection_time).count();
+            std::cout << "Elapsed time: " << elapsed_time << std::endl;
 
             // Calculate FPS for the current detection
             double current_fps = (elapsed_time > 0) ? (1.0 / elapsed_time) : 0.0;
+            
+            // Update last detection time
+            last_detection_time = now;
 
             // Update the FPS records in a thread-safe way
             {
@@ -7188,9 +6957,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 m_detection_rate_records[record_index] = current_fps; // Update the current index
                 record_index = (record_index + 1) % m_detection_rate_records.size(); // Move to the next index
             }
-
-            // Reset transaction ID for future use.
-            m_trans_id = "";
         }
 
         // Clean up
@@ -7198,23 +6964,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-
-        frame_offsets.clear();
-        patch_positions.clear();
-
-        std::cout << "Clean up shared memory object" << std::endl;
-        if (munmap(shm_ptr, shm_frames_buffer) == -1) // Unmap the shared memory
-        {
-            std::cerr << "Failed to unmap shared memory." << std::endl;
-        }
-        ::close(shm_fd);
-
-        std::cout << "Clean up predictions shared memory object" << std::endl;
-        if (munmap(shm_ptr_pred, shm_size_pred) == -1)
-        {
-            std::cerr << "Failed to unmap shared memory." << std::endl;
-        }
-        ::close(shm_fd_pred);
 
         m_image_pixbuf_rt_monitoring->fill(0x000000); // Fill with black
         m_mask_pixbuf_rt_monitoring->fill(0x00000000); // Fill with black
@@ -7781,9 +7530,6 @@ std::vector<Ort::Value> MainWindow::run_inference(std::vector<Ort::Value>& input
         // Print input tensor values
         // print_tensor_values(input_tensors[0], "Input Tensor");
         
-        // Ort::AllocatorWithDefaultOptions allocator;
-        // Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeCPU);
-
         // Create input names
         std::vector<const char*> input_names = {"input"};
 
