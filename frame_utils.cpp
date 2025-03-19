@@ -27,10 +27,19 @@ std::vector<std::vector<float>> FrameUtils::build_batch(const std::vector<FrameD
                 cv::cvtColor(gray_img, img, cv::COLOR_GRAY2RGB);
                 break;
             }
+            case PixelType_Gvsp_RGB8_Packed: {
+                img = cv::Mat(height, width, CV_8UC3, frame.pData);
+                break;
+            }
             default:
                 std::cerr << "Unsupported pixel format!" << std::endl;
                 continue;  // Skip this frame if the format is unsupported
         }
+
+        // Convert BGR (OpenCV default) to RGB for model
+        // Note that default color format in OpenCV is often referred to as RGB but it is actually BGR:
+        // cv::COLOR_GRAY2RGB = COLOR_GRAY2BGR
+        cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
 
         // Normalize (convert to float [0,1])
         img.convertTo(img, CV_32F, 1.0 / 255.0);
@@ -91,64 +100,6 @@ Ort::Value FrameUtils::create_input_tensor(const std::vector<std::vector<float>>
     );
 }
 
-// Ort::Value FrameUtils::create_input_tensor(uint8_t* pData, int frame_width, int frame_height, int patch_size) {
-//     const int num_channels = 3; // Model expects RGB
-//     cv::Mat image(frame_height, frame_width, CV_8UC3, pData);
-//     cv::Mat image_float;
-    
-//     // Normalize to [0,1] range
-//     image.convertTo(image_float, CV_32F, 1.0 / 255.0);
-
-//     std::vector<std::vector<float>> batch_patches;
-    
-//     // Split into PATCH_SIZE x PATCH_SIZE patches
-//     for (int y = 0; y < frame_height; y += patch_size) {
-//         for (int x = 0; x < frame_width; x += patch_size) {
-//             // Ensure patch does not go out of bounds
-//             if (x + patch_size > frame_width || y + patch_size > frame_height) continue;
-
-//             // Extract patch
-//             cv::Mat patch = image_float(cv::Rect(x, y, patch_size, patch_size));
-
-//             // Convert HWC -> CHW
-//             std::vector<float> patch_data(patch_size * patch_size * num_channels);
-//             std::vector<cv::Mat> chw_channels(num_channels);
-//             cv::split(patch, chw_channels);
-
-//             for (int c = 0; c < num_channels; ++c) {
-//                 std::memcpy(patch_data.data() + c * patch_size * patch_size,
-//                             chw_channels[c].data,
-//                             patch_size * patch_size * sizeof(float));
-//             }
-
-//             batch_patches.push_back(std::move(patch_data));
-//         }
-//     }
-
-//     // Flatten patches into a single vector
-//     int batch_size = batch_patches.size();
-//     std::vector<float> input_tensor_values;
-//     input_tensor_values.reserve(batch_size * num_channels * patch_size * patch_size);
-//     for (const auto& patch : batch_patches) {
-//         input_tensor_values.insert(input_tensor_values.end(), patch.begin(), patch.end());
-//     }
-
-//     // Define input tensor shape (N, C, H, W)
-//     std::array<int64_t, 4> input_shape = {batch_size, num_channels, patch_size, patch_size};
-
-//     // Create ONNX Tensor
-//     Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeCPU);
-//     // Ort::MemoryInfo memory_info("Cuda", OrtAllocatorType::OrtDeviceAllocator, 0, OrtMemTypeDefault);
-
-//     return Ort::Value::CreateTensor<float>(
-//         memory_info,
-//         input_tensor_values.data(),
-//         input_tensor_values.size(),
-//         input_shape.data(),
-//         input_shape.size()
-//     );
-// }
-
 Ort::Value FrameUtils::create_input_tensor(uint8_t* pData, MvGvspPixelType pixel_type, int frame_width, int frame_height, int patch_size) {
     cv::Mat img;
 
@@ -158,34 +109,29 @@ Ort::Value FrameUtils::create_input_tensor(uint8_t* pData, MvGvspPixelType pixel
             // Load as a single-channel image (because it's a raw Bayer pattern)
             cv::Mat bayer_img(frame_height, frame_width, CV_8UC1, pData);
             // Convert Bayer pattern to RGB using OpenCV's demosaicing
-            // Note that default color format in OpenCV is often referred to as RGB but it is actually BGR:
-            // cv::COLOR_BayerGR2RGB = COLOR_BayerGB2BGR
             cv::cvtColor(bayer_img, img, cv::COLOR_BayerGB2RGB);
-            // Convert BGR (OpenCV default) to RGB for model
-            cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
             break;
         }
         case PixelType_Gvsp_Mono8: {
             // If the format is Mono8 (grayscale), convert to cv::Mat (1 channel)
             cv::Mat gray_img = cv::Mat(frame_height, frame_width, CV_8UC1, pData);
             // Convert to RGB (3 channels) for the model
-            // Note that default color format in OpenCV is often referred to as RGB but it is actually BGR:
-            // cv::COLOR_GRAY2RGB = COLOR_GRAY2BGR
             cv::cvtColor(gray_img, img, cv::COLOR_GRAY2RGB);
-            // Convert BGR (OpenCV default) to RGB for model
-            cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
             break;
         }
         case PixelType_Gvsp_RGB8_Packed: {
             img = cv::Mat(frame_height, frame_width, CV_8UC3, pData);
-            // Convert BGR (OpenCV default) to RGB for model
-            cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
             break;
         }
         default:
             std::cerr << "Unsupported pixel format!" << std::endl;
             throw;
     }
+
+    // Convert BGR (OpenCV default) to RGB for model
+    // Note that default color format in OpenCV is often referred to as RGB but it is actually BGR:
+    // cv::COLOR_GRAY2RGB = COLOR_GRAY2BGR
+    cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
 
     // Normalize (convert to float [0,1])
     img.convertTo(img, CV_32F, 1.0 / 255.0);

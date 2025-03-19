@@ -6053,10 +6053,10 @@ void MainWindow::on_snap_clicked()
     // Initialize the mask pixbuf
     m_mask_pixbuf_toolkit = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, frame_height);
 
-    if (m_frame_rgb_data_buffer.size() < frame_rgb_size)
-    {
-        m_frame_rgb_data_buffer.resize(frame_rgb_size);
-    }
+    // if (m_frame_rgb_data_buffer.size() < frame_rgb_size)
+    // {
+    //     m_frame_rgb_data_buffer.resize(frame_rgb_size);
+    // }
 
     // Convert Mono8 to RGB directly into the allocated RGB buffer
     // uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data();
@@ -6778,21 +6778,44 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 return a.serial_number < b.serial_number;
             });
 
-            // Convert Mono8 to RGB directly into the allocated RGB buffer
+            // Convert frames to RGB directly into the allocated RGB buffer for GTK display
             uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
             for (auto frame_data : sorted_frames)
             {
                 int frame_width = frame_data.pMetadata->nWidth;
                 int frame_height = frame_data.pMetadata->nHeight;
+                auto pixel_type = frame_data.pMetadata->enPixelType;
                 size_t frame_rgb_size = frame_width * frame_height * RGB_CHANNELS;
-
                 uint8_t* current_rgb_frame = frame_rgb_data_ptr;
-                for (size_t i = 0; i < frame_width * frame_height; ++i)
+
+                switch (pixel_type)
                 {
-                    uint8_t gray = frame_data.pData[i];
-                    current_rgb_frame[i * RGB_CHANNELS + 0] = gray; // Red channel
-                    current_rgb_frame[i * RGB_CHANNELS + 1] = gray; // Green channel
-                    current_rgb_frame[i * RGB_CHANNELS + 2] = gray; // Blue channel
+                    case PixelType_Gvsp_Mono8: {
+                        for (size_t i = 0; i < frame_width * frame_height; ++i)
+                        {
+                            uint8_t gray = frame_data.pData[i];
+                            current_rgb_frame[i * RGB_CHANNELS + 0] = gray; // Red channel
+                            current_rgb_frame[i * RGB_CHANNELS + 1] = gray; // Green channel
+                            current_rgb_frame[i * RGB_CHANNELS + 2] = gray; // Blue channel
+                        }
+                        break;
+                    }
+                    case PixelType_Gvsp_BayerGB8: {
+                        // Convert BayerGB8 to RGB using OpenCV
+                        cv::Mat bayer_img(frame_height, frame_width, CV_8UC1, frame_data.pData);
+                        cv::Mat rgb_img;
+                        cv::cvtColor(bayer_img, rgb_img, cv::COLOR_BayerGB2RGB);
+                        // Convert BGR (OpenCV default) to RGB for GTK display
+                        // Note that default color format in OpenCV is often referred to as RGB but it is actually BGR:
+                        // cv::COLOR_BayerGR2RGB = COLOR_BayerGB2BGR
+                        cv::cvtColor(rgb_img, rgb_img, cv::COLOR_BGR2RGB);
+                        // Copy RGB data into the allocated buffer
+                        std::memcpy(current_rgb_frame, rgb_img.data, frame_rgb_size);
+                        break;
+                    }
+                    default:
+                        std::cerr << "Unsupported pixel format!" << std::endl;
+                        throw;
                 }
 
                 // Update the pointer to the next RGB frame
