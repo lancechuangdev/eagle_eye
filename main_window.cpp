@@ -3690,44 +3690,50 @@ void MainWindow::snap_and_display(void *device_handle)
 
     auto frame_width = stImageInfo.nWidth;
     auto frame_height = stImageInfo.nHeight;
-    size_t frame_rgb_size = frame_width * frame_height * RGB_CHANNELS;
+    auto pixel_type = stImageInfo.enPixelType;
+    cv::Mat img;
 
-    if (m_frame_rgb_data_buffer.size() < frame_rgb_size)
+    switch(pixel_type)
     {
-        m_frame_rgb_data_buffer.resize(frame_rgb_size);
+        case PixelType_Gvsp_BayerGB8: {
+            // Load as a single-channel image (because it's a raw Bayer pattern)
+            cv::Mat bayer_img(frame_height, frame_width, CV_8UC1, pData);
+            // Convert Bayer pattern to RGB using OpenCV's demosaicing
+            cv::cvtColor(bayer_img, img, cv::COLOR_BayerGB2RGB);
+            break;
+        }
+        case PixelType_Gvsp_Mono8: {
+            // If the format is Mono8 (grayscale), convert to cv::Mat (1 channel)
+            cv::Mat gray_img = cv::Mat(frame_height, frame_width, CV_8UC1, pData);
+            // Convert to RGB (3 channels) for the model
+            cv::cvtColor(gray_img, img, cv::COLOR_GRAY2RGB);
+            break;
+        }
+        default:
+            std::cerr << "Unsupported pixel format!" << std::endl;
+            throw;
     }
 
-    // Convert Mono8 to RGB directly into the allocated RGB buffer
-    uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data();
-    for (size_t i = 0; i < frame_width * frame_height; ++i)
-    {
-        uint8_t gray = pData[i];
-        frame_rgb_data_ptr[i * RGB_CHANNELS + 0] = gray; // Red channel
-        frame_rgb_data_ptr[i * RGB_CHANNELS + 1] = gray; // Green channel
-        frame_rgb_data_ptr[i * RGB_CHANNELS + 2] = gray; // Blue channel
-    }
-
-    // Reset image pixel buffer
-    if (m_image_pixbuf_settings)
-    {
-        m_image_pixbuf_settings.reset();
-    }
+    // Convert BGR (OpenCV default) to RGB for GTK display
+    // Note that default color format in OpenCV is often referred to as RGB but it is actually BGR:
+    // cv::COLOR_BayerGR2RGB = COLOR_BayerGB2BGR
+    cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
 
     int row_stride = frame_width * RGB_CHANNELS;
     m_image_pixbuf_settings = Gdk::Pixbuf::create_from_data(
-        m_frame_rgb_data_buffer.data(), // Pointer to the current frame's RGB data
-        Gdk::COLORSPACE_RGB,            // Gdk::Pixbuf expects RGB data
-        false,                          // No alpha channel
-        8,                              // 8 bits per channel
-        frame_width,
-        frame_height,
-        row_stride
+        img.data,            // Pointer to the current frame's RGB data
+        Gdk::COLORSPACE_RGB, // Gdk::Pixbuf expects RGB data
+        false,               // No alpha channel
+        8,                   // 8 bits per channel
+        img.cols,
+        img.rows,
+        img.step             // Row stride (bytes per row)
     );
 
     // Queue the frame for diaplay
     if (m_image_pixbuf_settings)
     {
-        m_settings_display_area->set_size_request(frame_width, frame_height);
+        m_settings_display_area->set_size_request(img.cols, img.rows);
         m_settings_display_area->queue_draw();
     }
 
@@ -4097,44 +4103,49 @@ void MainWindow::on_connect_clicked(const std::string& sn)
 
     auto frame_width = stImageInfo.nWidth;
     auto frame_height = stImageInfo.nHeight;
-    size_t frame_rgb_size = frame_width * frame_height * RGB_CHANNELS;
-
-    if (m_frame_rgb_data_buffer.size() < frame_rgb_size)
+    auto pixel_type = stImageInfo.enPixelType;
+    
+    cv::Mat img;
+    switch(pixel_type)
     {
-        m_frame_rgb_data_buffer.resize(frame_rgb_size);
+        case PixelType_Gvsp_BayerGB8: {
+            // Load as a single-channel image (because it's a raw Bayer pattern)
+            cv::Mat bayer_img(frame_height, frame_width, CV_8UC1, pData);
+            // Convert Bayer pattern to RGB using OpenCV's demosaicing
+            cv::cvtColor(bayer_img, img, cv::COLOR_BayerGB2RGB);
+            break;
+        }
+        case PixelType_Gvsp_Mono8: {
+            // If the format is Mono8 (grayscale), convert to cv::Mat (1 channel)
+            cv::Mat gray_img = cv::Mat(frame_height, frame_width, CV_8UC1, pData);
+            // Convert to RGB (3 channels) for the model
+            cv::cvtColor(gray_img, img, cv::COLOR_GRAY2RGB);
+            break;
+        }
+        default:
+            std::cerr << "Unsupported pixel format!" << std::endl;
+            throw;
     }
 
-    // Convert Mono8 to RGB directly into the allocated RGB buffer
-    uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data();
-    for (size_t i = 0; i < frame_width * frame_height; ++i)
-    {
-        uint8_t gray = pData[i];
-        frame_rgb_data_ptr[i * RGB_CHANNELS + 0] = gray; // Red channel
-        frame_rgb_data_ptr[i * RGB_CHANNELS + 1] = gray; // Green channel
-        frame_rgb_data_ptr[i * RGB_CHANNELS + 2] = gray; // Blue channel
-    }
+    // Convert BGR (OpenCV default) to RGB for GTK display
+    // Note that default color format in OpenCV is often referred to as RGB but it is actually BGR:
+    // cv::COLOR_BayerGR2RGB = COLOR_BayerGB2BGR
+    cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
 
-    // Reset image pixel buffer
-    if (m_image_pixbuf_settings)
-    {
-        m_image_pixbuf_settings.reset();
-    }
-
-    int row_stride = frame_width * RGB_CHANNELS;
     m_image_pixbuf_settings = Gdk::Pixbuf::create_from_data(
-        m_frame_rgb_data_buffer.data(), // Pointer to the current frame's RGB data
-        Gdk::COLORSPACE_RGB,            // Gdk::Pixbuf expects RGB data
-        false,                          // No alpha channel
-        8,                              // 8 bits per channel
-        frame_width,
-        frame_height,
-        row_stride
+        img.data,            // Pointer to the current frame's RGB data
+        Gdk::COLORSPACE_RGB, // Gdk::Pixbuf expects RGB data
+        false,               // No alpha channel
+        8,                   // 8 bits per channel
+        img.cols, 
+        img.rows, 
+        img.step             // Row stride (bytes per row)
     );
 
     // Queue the frame for diaplay
     if (m_image_pixbuf_settings)
     {
-        m_settings_display_area->set_size_request(frame_width, frame_height);
+        m_settings_display_area->set_size_request(img.cols, img.rows);
         m_settings_display_area->queue_draw();
     }
 
@@ -6053,42 +6064,13 @@ void MainWindow::on_snap_clicked()
     // Initialize the mask pixbuf
     m_mask_pixbuf_toolkit = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, frame_height);
 
-    // if (m_frame_rgb_data_buffer.size() < frame_rgb_size)
-    // {
-    //     m_frame_rgb_data_buffer.resize(frame_rgb_size);
-    // }
-
-    // Convert Mono8 to RGB directly into the allocated RGB buffer
-    // uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data();
-    // for (size_t i = 0; i < frame_width * frame_height; ++i)
-    // {
-    //     uint8_t gray = pData[i];
-    //     frame_rgb_data_ptr[i * RGB_CHANNELS + 0] = gray; // Red channel
-    //     frame_rgb_data_ptr[i * RGB_CHANNELS + 1] = gray; // Green channel
-    //     frame_rgb_data_ptr[i * RGB_CHANNELS + 2] = gray; // Blue channel
-    // }
-
-    // int row_stride = frame_width * RGB_CHANNELS;
-    // m_image_pixbuf_toolkit = Gdk::Pixbuf::create_from_data(
-    //     m_frame_rgb_data_buffer.data(), // Pointer to the current frame's RGB data
-    //     Gdk::COLORSPACE_RGB,            // Gdk::Pixbuf expects RGB data
-    //     false,                          // No alpha channel
-    //     8,                              // 8 bits per channel
-    //     frame_width,
-    //     frame_height,
-    //     row_stride
-    // );
-
     cv::Mat img;
-
     switch(pixel_type)
     {
         case PixelType_Gvsp_BayerGB8: {
             // Load as a single-channel image (because it's a raw Bayer pattern)
             cv::Mat bayer_img(frame_height, frame_width, CV_8UC1, pData);
             // Convert Bayer pattern to RGB using OpenCV's demosaicing
-            // Note that default color format in OpenCV is often referred to as RGB but it is actually BGR:
-            // cv::COLOR_BayerGR2RGB = COLOR_BayerGB2BGR,
             cv::cvtColor(bayer_img, img, cv::COLOR_BayerGB2RGB);
             break;
         }
@@ -6105,6 +6087,8 @@ void MainWindow::on_snap_clicked()
     }
 
     // Convert BGR (OpenCV default) to RGB for GTK display
+    // Note that default color format in OpenCV is often referred to as RGB but it is actually BGR:
+    // cv::COLOR_BayerGR2RGB = COLOR_BayerGB2BGR
     cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
 
     m_image_pixbuf_toolkit = Gdk::Pixbuf::create_from_data(
@@ -6779,6 +6763,9 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             });
 
             // Convert frames to RGB directly into the allocated RGB buffer for GTK display
+            // The memory backing frame_data.pData is owned by camera SDK, it could be freed or overwritten while image dispatcher running.
+            // So need to copy it before running dispatcher. 
+            // It seems only required when running detection continously, not for snapping a single frame.
             uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
             for (auto frame_data : sorted_frames)
             {
