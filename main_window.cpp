@@ -6047,6 +6047,7 @@ void MainWindow::on_snap_clicked()
 
     auto frame_width = stImageInfo.nWidth;
     auto frame_height = stImageInfo.nHeight;
+    auto pixel_type = stImageInfo.enPixelType;
     size_t frame_rgb_size = frame_width * frame_height * RGB_CHANNELS;
 
     // Initialize the mask pixbuf
@@ -6058,29 +6059,67 @@ void MainWindow::on_snap_clicked()
     }
 
     // Convert Mono8 to RGB directly into the allocated RGB buffer
-    uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data();
-    for (size_t i = 0; i < frame_width * frame_height; ++i)
+    // uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data();
+    // for (size_t i = 0; i < frame_width * frame_height; ++i)
+    // {
+    //     uint8_t gray = pData[i];
+    //     frame_rgb_data_ptr[i * RGB_CHANNELS + 0] = gray; // Red channel
+    //     frame_rgb_data_ptr[i * RGB_CHANNELS + 1] = gray; // Green channel
+    //     frame_rgb_data_ptr[i * RGB_CHANNELS + 2] = gray; // Blue channel
+    // }
+
+    // int row_stride = frame_width * RGB_CHANNELS;
+    // m_image_pixbuf_toolkit = Gdk::Pixbuf::create_from_data(
+    //     m_frame_rgb_data_buffer.data(), // Pointer to the current frame's RGB data
+    //     Gdk::COLORSPACE_RGB,            // Gdk::Pixbuf expects RGB data
+    //     false,                          // No alpha channel
+    //     8,                              // 8 bits per channel
+    //     frame_width,
+    //     frame_height,
+    //     row_stride
+    // );
+
+    cv::Mat img;
+
+    switch(pixel_type)
     {
-        uint8_t gray = pData[i];
-        frame_rgb_data_ptr[i * RGB_CHANNELS + 0] = gray; // Red channel
-        frame_rgb_data_ptr[i * RGB_CHANNELS + 1] = gray; // Green channel
-        frame_rgb_data_ptr[i * RGB_CHANNELS + 2] = gray; // Blue channel
+        case PixelType_Gvsp_BayerGB8: {
+            // Load as a single-channel image (because it's a raw Bayer pattern)
+            cv::Mat bayer_img(frame_height, frame_width, CV_8UC1, pData);
+            // Convert Bayer pattern to RGB using OpenCV's demosaicing
+            // Note that default color format in OpenCV is often referred to as RGB but it is actually BGR:
+            // cv::COLOR_BayerGR2RGB = COLOR_BayerGB2BGR,
+            cv::cvtColor(bayer_img, img, cv::COLOR_BayerGB2RGB);
+            break;
+        }
+        case PixelType_Gvsp_Mono8: {
+            // If the format is Mono8 (grayscale), convert to cv::Mat (1 channel)
+            cv::Mat gray_img = cv::Mat(frame_height, frame_width, CV_8UC1, pData);
+            // Convert to RGB (3 channels) for the model
+            cv::cvtColor(gray_img, img, cv::COLOR_GRAY2RGB);
+            break;
+        }
+        default:
+            std::cerr << "Unsupported pixel format!" << std::endl;
+            throw;
     }
 
-    int row_stride = frame_width * RGB_CHANNELS;
+    // Convert BGR (OpenCV default) to RGB for GTK display
+    cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
+
     m_image_pixbuf_toolkit = Gdk::Pixbuf::create_from_data(
-        m_frame_rgb_data_buffer.data(), // Pointer to the current frame's RGB data
-        Gdk::COLORSPACE_RGB,            // Gdk::Pixbuf expects RGB data
-        false,                          // No alpha channel
-        8,                              // 8 bits per channel
-        frame_width,
-        frame_height,
-        row_stride
+        img.data, 
+        Gdk::COLORSPACE_RGB, 
+        false,         // No alpha channel
+        8,             // Bits per channel
+        img.cols, 
+        img.rows, 
+        img.step       // Row stride (bytes per row)
     );
 
     // Create input tensors
     std::vector<Ort::Value> input_tensors;
-    auto input_tensor = FrameUtils::create_input_tensor(frame_rgb_data_ptr, frame_width, frame_height, PATCH_SIZE);    
+    auto input_tensor = FrameUtils::create_input_tensor(pData, pixel_type, frame_width, frame_height, PATCH_SIZE);    
     input_tensors.push_back(std::move(input_tensor));
     
     // Run inference
@@ -6112,12 +6151,12 @@ void MainWindow::on_snap_clicked()
 
     for (int b = 0; b < batch_size; ++b)
     {
+        std::cout << "Anomaly Score: " << anomaly_scores[b] << std::endl;
+
         if (anomaly_scores[b] < confidence_threshold)
         {
             continue;
         }
-
-        std::cout << "Anomaly Score: " << anomaly_scores[b] << std::endl;
 
         // Extract only the first channel
         float* anomaly_map = anomaly_maps + (b * anomaly_map_channels * anomaly_map_height * anomaly_map_width);
@@ -6213,7 +6252,7 @@ void MainWindow::on_toolkit_test_clicked()
 
     // Create input tensors
     std::vector<Ort::Value> input_tensors;
-    auto input_tensor = FrameUtils::create_input_tensor(pData, frame_width, frame_height, PATCH_SIZE);
+    auto input_tensor = FrameUtils::create_input_tensor(pData, PixelType_Gvsp_RGB8_Packed, frame_width, frame_height, PATCH_SIZE);
     input_tensors.push_back(std::move(input_tensor));
     
     // Run inference
@@ -6245,12 +6284,12 @@ void MainWindow::on_toolkit_test_clicked()
 
     for (int b = 0; b < batch_size; ++b)
     {
+        std::cout << "Anomaly Score: " << anomaly_scores[b] << std::endl;
+
         if (anomaly_scores[b] < confidence_threshold)
         {
             continue;
         }
-
-        std::cout << "Anomaly Score: " << anomaly_scores[b] << std::endl;
 
         // Extract only the first channel
         float* anomaly_map = anomaly_maps + (b * anomaly_map_channels * anomaly_map_height * anomaly_map_width);
@@ -6839,37 +6878,77 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             int batch_size = anomaly_map_shape[0];
             int anomaly_map_channels = anomaly_map_shape[1];
             int anomaly_map_height = anomaly_map_shape[2];
-            int anomaly_map_width = anomaly_map_shape[3];
+            int anomaly_map_width = anomaly_map_shape[3];            
+            int num_anomalies_beyond_threshold = std::count_if(
+                anomaly_scores, anomaly_scores + batch_size,
+                [&](float score) {
+                    std::cout << "Anomaly Score: " << score << std::endl;
+                    return score >= confidence_threshold;
+                }
+            );
+
+            if (num_anomalies_beyond_threshold > 0)
+            {
+                std::string digital_ouput;
+                std::string line_number;
+
+                if (m_detection_digital_output_lbl)
+                {
+                    digital_ouput = m_detection_digital_output_lbl->get_text();
+                }
+                if (m_detection_digital_output_line_number_lbl)
+                {
+                    line_number = m_detection_digital_output_line_number_lbl->get_text();
+                }
+
+                if (digital_ouput != "" && 
+                    line_number != "" && 
+                    m_connected_device_handles.find(digital_ouput) != m_connected_device_handles.end())
+                {
+                    void *device_handle = m_connected_device_handles[digital_ouput];
+                    // Select digital output
+                    int nRet = MV_CC_SetEnumValueByString(device_handle, "LineSelector", line_number.c_str());
+                    if (nRet == MV_OK)
+                    {
+                        // Trigger digital output
+                        int nRet = MV_CC_SetCommandValue(device_handle, "LineTriggerSoftware");
+                        if (nRet != MV_OK)
+                        {
+                            std::cerr << "Error to send command LineTriggerSoftware. Error code: " << nRet << std::endl;
+                            m_logger->log("Error on MV_CC_SetCommandValue(LineTriggerSoftware). Error code: " + std::to_string(nRet), Logger::ERROR);
+                        }
+                        else
+                        {
+                            std::cout << "Trigger digital output via software succeeded" << std::endl;
+                            m_logger->log("Trigger digital output via software succeeded");
+                        }
+                    }
+                }
+                else
+                {
+                    std::cerr << "Digital output source not found: " << digital_ouput << std::endl;
+                    m_logger->log("Digital output source not found: " + digital_ouput, Logger::ERROR);
+                }
+            }
 
             // Dislay prediction results (via dispatcher to ensure thread saftey)
             if (!m_masks_dispatcher_connection.connected())
             {
-                m_masks_dispatcher_connection = m_main_masks_dispatcher.connect([this, &frame_width, &batch_size, &anomaly_scores, &anomaly_maps, &anomaly_map_channels, &anomaly_map_height, &anomaly_map_width]()
+                m_masks_dispatcher_connection = m_main_masks_dispatcher.connect([this, &frame_width, &batch_size, &anomaly_scores, &anomaly_maps, &anomaly_map_channels, &anomaly_map_height, &anomaly_map_width, &num_anomalies_beyond_threshold, &confidence_threshold]()
                 {
                     m_masks_dispatcher_running = true;
 
                     // m_mask_pixbuf_rt_monitoring->fill(0x00000000);
 
-                    // Load anomaly score threshold
-                    auto confidence_threshold = 0.5;
-                    auto detection_settings = SettingsService::get_settings("detection");
-                    if (!detection_settings.empty())
-                    {
-                        if (detection_settings.contains("confidence_threshold"))
-                        {
-                            confidence_threshold = detection_settings["confidence_threshold"];
-                        }
-                    }
-
                     for (int b = 0; b < batch_size; ++b)
                     {
+                        std::cout << "Anomaly Score: " << anomaly_scores[b] << std::endl;
+
                         if (anomaly_scores[b] < confidence_threshold)
                         {
                             continue;
                         }
-                
-                        std::cout << "Anomaly Score: " << anomaly_scores[b] << std::endl;
-                        
+                                                
                         // Extract only the first channel
                         float* anomaly_map = anomaly_maps + (b * anomaly_map_channels * anomaly_map_height * anomaly_map_width);
 
@@ -6930,6 +7009,13 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                     }
 
                     update_mask_alpha(m_mask_pixbuf_rt_monitoring, m_mask_alpha * 255);
+
+                    // Update # of detected anomalies label
+                    if (m_rt_monitoring_num_anomalies_lbl)
+                    {
+                        m_session_anomaly_count += num_anomalies_beyond_threshold;
+                        m_rt_monitoring_num_anomalies_lbl->set_text(std::to_string(m_session_anomaly_count));
+                    }
 
                     // Redraw the drawing area
                     this->m_rt_monitoring_drawing_area->queue_draw();
