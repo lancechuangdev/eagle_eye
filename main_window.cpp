@@ -4660,50 +4660,10 @@ void MainWindow::on_window_shown()
     load_recent_projects();
     load_detection_settings();
     clear_camera_settings();
-
-    // Set up websocket callbacks
-    m_ws_client.on_connect([this]() {
-        std::cout << "Successfully connected to the WebSocket server!" << std::endl;
-        m_is_ws_connected = true;
-    });
-    m_ws_client.on_disconnect([this]() {
-        std::cout << "Disconnected from the WebSocket server." << std::endl;
-        m_is_ws_connected = false;
-    });
-    m_ws_client.on_message_received([this](const std::string &message) {
-        std::cout << "Received message: " << message << std::endl;
-
-        nlohmann::json response_json = nlohmann::json::parse(message);
-        std::string res_trans_id = response_json["transaction_id"];
-        if (res_trans_id != m_trans_id)
-        {
-            std::cout << "Transaction ID mismatch" << std::endl;
-            return;
-        }
-
-        // Lock the mutex before modifying shared resource
-        {
-            std::lock_guard<std::mutex> lock(m_ws_response_mutex);
-            m_ws_response = message;
-            m_ws_response_ready = true;
-        }
-
-        // Notify one waiting thread that the condition is met
-        m_ws_response_cv.notify_one();
-    });
-    
-    // Connect to the WebSocket server in a separate thread
-    std::thread([this]() {
-        std::string uri = "ws://localhost:9001";
-        m_ws_client.connect(uri);
-    }).detach();  // Detach the thread so it runs independently
 }
 
 bool MainWindow::on_window_delete(GdkEventAny* event)
 {
-    // Disconnect from the WebSocket server
-    m_ws_client.disconnect();
-
     // Stop process camera events
     m_stop_processing_camera_event.store(true);
 
@@ -6546,7 +6506,7 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
                 break;
             }
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Prevent CPU overuse
+            std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Prevent CPU overuse
 
             // make sure there are enough frames to process
             if (m_frame_queue.get_size() < FRAME_BATCH_SIZE)
@@ -6736,8 +6696,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
 
         while (m_is_running)
         {
-            m_logger->log("Enter start_detection loop");
-
             std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Prevent CPU overuse
             
             // make sure there are enough frames to process
@@ -6753,122 +6711,20 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             {
                 if (m_frame_queue.dequeue(frame_data))
                 {
-                    sorted_frames.push_back(frame_data);
-                    num_frames_dequeued++;
+                    int frame_width = frame_data.pMetadata->nWidth;
+                    int frame_height = frame_data.pMetadata->nHeight;
+                    auto pixel_type = frame_data.pMetadata->enPixelType;
+                    if (frame_width >= PATCH_SIZE && frame_height >= PATCH_SIZE)
+                    {
+                        sorted_frames.push_back(frame_data);
+                        num_frames_dequeued++;    
+                    }
                 }
             }
             std::sort(sorted_frames.begin(), sorted_frames.end(), [](const FrameData& a, const FrameData& b)
             {
                 return a.serial_number < b.serial_number;
             });
-
-            // Convert frames to RGB directly into the allocated RGB buffer for GTK display
-            // The memory backing frame_data.pData is owned by camera SDK, it could be freed or overwritten while image dispatcher running.
-            // So need to copy it before running dispatcher. 
-            // It seems only required when running detection continously, not for snapping a single frame.
-            uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
-            for (auto frame_data : sorted_frames)
-            {
-                int frame_width = frame_data.pMetadata->nWidth;
-                int frame_height = frame_data.pMetadata->nHeight;
-                auto pixel_type = frame_data.pMetadata->enPixelType;
-                size_t frame_rgb_size = frame_width * frame_height * RGB_CHANNELS;
-                uint8_t* current_rgb_frame = frame_rgb_data_ptr;
-
-                switch (pixel_type)
-                {
-                    case PixelType_Gvsp_Mono8: {
-                        for (size_t i = 0; i < frame_width * frame_height; ++i)
-                        {
-                            uint8_t gray = frame_data.pData[i];
-                            current_rgb_frame[i * RGB_CHANNELS + 0] = gray; // Red channel
-                            current_rgb_frame[i * RGB_CHANNELS + 1] = gray; // Green channel
-                            current_rgb_frame[i * RGB_CHANNELS + 2] = gray; // Blue channel
-                        }
-                        break;
-                    }
-                    case PixelType_Gvsp_BayerGB8: {
-                        // Convert BayerGB8 to RGB using OpenCV
-                        cv::Mat bayer_img(frame_height, frame_width, CV_8UC1, frame_data.pData);
-                        cv::Mat rgb_img;
-                        cv::cvtColor(bayer_img, rgb_img, cv::COLOR_BayerGB2RGB);
-                        // Convert BGR (OpenCV default) to RGB for GTK display
-                        // Note that default color format in OpenCV is often referred to as RGB but it is actually BGR:
-                        // cv::COLOR_BayerGR2RGB = COLOR_BayerGB2BGR
-                        cv::cvtColor(rgb_img, rgb_img, cv::COLOR_BGR2RGB);
-                        // Copy RGB data into the allocated buffer
-                        std::memcpy(current_rgb_frame, rgb_img.data, frame_rgb_size);
-                        break;
-                    }
-                    default:
-                        std::cerr << "Unsupported pixel format!" << std::endl;
-                        throw;
-                }
-
-                // Update the pointer to the next RGB frame
-                frame_rgb_data_ptr += frame_rgb_size;
-            }
-
-            // Display the frames (via dispatcher to ensure thread safety)
-            if (!m_images_dispatcher_connection.connected())
-            {
-                m_images_dispatcher_connection = m_main_images_dispatcher.connect([this, &frame_width, &frame_height, &num_frames_dequeued]()
-                {
-                    m_images_dispatcher_running = true;
-
-                    int total_height = frame_height * num_frames_dequeued;
-                    int current_y = 0;
-                    int row_stride = frame_width * RGB_CHANNELS;
-                    uint8_t* data_ptr = m_frame_rgb_data_buffer.data();
-                    
-                    for (int i = 0; i < num_frames_dequeued; ++i)
-                    {
-                        // Get a pointer to the RGB data for the current frame in the buffer.
-                        uint8_t* frame_data_ptr = data_ptr + (i * row_stride * frame_height);
-
-                        auto image_pixbuf = Gdk::Pixbuf::create_from_data(
-                            frame_data_ptr,     // Pointer to the current frame's RGB data
-                            Gdk::COLORSPACE_RGB,// Gdk::Pixbuf expects RGB data
-                            false,              // No alpha channel
-                            8,                  // 8 bits per channel
-                            frame_width,
-                            frame_height,
-                            row_stride          // Row stride
-                        );
-
-                        if (image_pixbuf)
-                        {
-                            image_pixbuf->copy_area(
-                                0,
-                                0,
-                                frame_width,
-                                frame_height,
-                                this->m_image_pixbuf_rt_monitoring,
-                                0,
-                                current_y
-                            );
-                            current_y += frame_height;
-                        }
-                    }
-
-                    // Get the current size of the drawing area
-                    int current_width = 0, current_height = 0;
-                    this->m_rt_monitoring_drawing_area->get_size_request(current_width, current_height);
-
-                    // Check if resizing is necessary
-                    if (current_width != frame_width || current_height != total_height)
-                    {
-                        this->m_rt_monitoring_drawing_area->set_size_request(frame_width, total_height);
-                    }
-                    
-                    // Redraw the drawing area
-                    this->m_rt_monitoring_drawing_area->queue_draw();
-
-                    m_images_dispatcher_running = false;
-                });
-            }
-
-            m_main_images_dispatcher.emit();
 
             // Run inference
             auto batch_patches = FrameUtils::build_batch(sorted_frames);
@@ -6897,6 +6753,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 }
             );
 
+            // Trigger digital output
             if (num_anomalies_beyond_threshold > 0)
             {
                 std::string digital_ouput;
@@ -6941,26 +6798,224 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 }
             }
 
+            std::filesystem::path transaction_folder;
+
+            // Create and save transaction json to file
+            if (num_anomalies_beyond_threshold > 0)
+            {
+                auto transaction_id = generate_transaction_id();
+
+                std::filesystem::path transaction_folder = AppPaths::Project_Detection_Results_Path(m_curr_project_name) / transaction_id;
+                std::filesystem::create_directories(transaction_folder);
+    
+                // Create frames JSON array
+                nlohmann::json frames_json = nlohmann::json::array();
+                for (int i = 0; i < num_frames_dequeued; ++i) {
+                    frames_json.push_back({
+                        {"frame_id", i},
+                        {"file_name", transaction_folder / ("frame_" + std::to_string(i) + ".png")}
+                    });
+                }
+
+                // Create predictions JSON array
+                nlohmann::json predictions_json = nlohmann::json::array();
+                for (int i = 0; i < batch_size; ++i) {
+                    if (anomaly_scores[i] < confidence_threshold)
+                    {
+                        predictions_json.push_back({
+                            {"prediction_id", i},
+                            {"anomaly_score", anomaly_scores[i]},
+                        });
+                    }
+                    else
+                    {
+                        predictions_json.push_back({
+                            {"prediction_id", i},
+                            {"anomaly_score", anomaly_scores[i]},
+                            {"file_name", transaction_folder / ("prediction_" + std::to_string(i) + ".png")}
+                        });
+                    }
+                }
+
+                nlohmann::json transaction_json = {
+                    {"transaction_id", transaction_id},
+                    {"transaction_datetime", TimeUtils::get_current_time()},
+                    {"patch_size", PATCH_SIZE},
+                    {"confidence_threshold", confidence_threshold},
+                    {"frame_width", frame_width},
+                    {"frame_height", frame_height},
+                    {"num_frames", num_frames_dequeued},
+                    {"num_patches", batch_size},
+                    {"total_anomalies", num_anomalies_beyond_threshold},
+                    {"predictions", predictions_json},
+                    {"frames", frames_json}
+                };
+                
+                // Write JSON to the file
+                std::filesystem::path transaction_file = transaction_folder / "transaction_data.json";
+                std::ofstream ofs(transaction_file);
+                if (!ofs.is_open())
+                {
+                    std::cerr << "Failed to open file: " << transaction_file << std::endl;
+                    return false;
+                }
+                ofs << transaction_json.dump(4); // Pretty-print with 4 spaces
+                ofs.close();
+
+                std::cout << "Transaction file created successfully: " << transaction_file << std::endl;
+            }
+
+            // Convert frames to RGB directly into the allocated RGB buffer for GTK display
+            // The memory backing frame_data.pData is owned by camera SDK, it could be freed or overwritten while image dispatcher running.
+            // So need to copy it before running dispatcher. 
+            // It seems only required when running detection continously, not for snapping a single frame.
+            uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
+            for (auto frame_data : sorted_frames)
+            {
+                int frame_width = frame_data.pMetadata->nWidth;
+                int frame_height = frame_data.pMetadata->nHeight;
+                auto pixel_type = frame_data.pMetadata->enPixelType;
+                size_t frame_rgb_size = frame_width * frame_height * RGB_CHANNELS;
+                uint8_t* current_rgb_frame = frame_rgb_data_ptr;
+
+                switch (pixel_type)
+                {
+                    case PixelType_Gvsp_Mono8: {
+                        for (size_t i = 0; i < frame_width * frame_height; ++i)
+                        {
+                            uint8_t gray = frame_data.pData[i];
+                            current_rgb_frame[i * RGB_CHANNELS + 0] = gray; // Red channel
+                            current_rgb_frame[i * RGB_CHANNELS + 1] = gray; // Green channel
+                            current_rgb_frame[i * RGB_CHANNELS + 2] = gray; // Blue channel
+                        }
+                        break;
+                    }
+                    case PixelType_Gvsp_BayerGB8: {
+                        // Convert BayerGB8 to RGB using OpenCV
+                        cv::Mat bayer_img(frame_height, frame_width, CV_8UC1, frame_data.pData);
+                        cv::Mat rgb_img;
+                        cv::cvtColor(bayer_img, rgb_img, cv::COLOR_BayerGB2RGB);
+                        // Convert BGR (OpenCV default) to RGB for GTK display
+                        // Note that default color format in OpenCV is often referred to as RGB but it is actually BGR:
+                        // cv::COLOR_BayerGR2RGB = COLOR_BayerGB2BGR
+                        cv::cvtColor(rgb_img, rgb_img, cv::COLOR_BGR2RGB);
+                        // Copy RGB data into the allocated buffer
+                        std::memcpy(current_rgb_frame, rgb_img.data, frame_rgb_size);
+                        break;
+                    }
+                    default:
+                        std::cerr << "Unsupported pixel format!" << std::endl;
+                        // throw;
+                }
+
+                // Update the pointer to the next RGB frame
+                frame_rgb_data_ptr += frame_rgb_size;
+            }
+
+            // Display the frames (via dispatcher to ensure thread safety)
+            if (!m_images_dispatcher_connection.connected())
+            {
+                m_images_dispatcher_connection = m_main_images_dispatcher.connect([this, &frame_width, &frame_height, &num_frames_dequeued, &num_anomalies_beyond_threshold, &transaction_folder]()
+                {
+                    m_images_dispatcher_running = true;
+
+                    int total_height = frame_height * num_frames_dequeued;
+                    int current_y = 0;
+                    int row_stride = frame_width * RGB_CHANNELS;
+                    uint8_t* data_ptr = m_frame_rgb_data_buffer.data();
+                    std::vector<std::future<void>> save_futures; // Store async tasks for saving images
+                    
+                    for (int i = 0; i < num_frames_dequeued; ++i)
+                    {
+                        // Get a pointer to the RGB data for the current frame in the buffer.
+                        uint8_t* frame_data_ptr = data_ptr + (i * row_stride * frame_height);
+
+                        auto image_pixbuf = Gdk::Pixbuf::create_from_data(
+                            frame_data_ptr,     // Pointer to the current frame's RGB data
+                            Gdk::COLORSPACE_RGB,// Gdk::Pixbuf expects RGB data
+                            false,              // No alpha channel
+                            8,                  // 8 bits per channel
+                            frame_width,
+                            frame_height,
+                            row_stride          // Row stride
+                        );
+
+                        if (image_pixbuf)
+                        {
+                            image_pixbuf->copy_area(
+                                0,
+                                0,
+                                frame_width,
+                                frame_height,
+                                this->m_image_pixbuf_rt_monitoring,
+                                0,
+                                current_y
+                            );
+                            current_y += frame_height;
+
+                            // Save frames to files
+                            // if (num_anomalies_beyond_threshold > 0)
+                            // {
+                            //     try {
+                            //         image_pixbuf->save(transaction_folder / ("frame_" + std::to_string(i) + ".png"), "png");
+                            //     } catch (const Glib::Error& ex) {
+                            //         std::cerr << "Failed to save image: " << ex.what() << std::endl;
+                            //     }
+                            // }
+
+                            // Save frames asynchronously to avoid blocking the UI
+                            if (num_anomalies_beyond_threshold > 0)
+                            {
+                                std::string file_path = (transaction_folder / ("frame_" + std::to_string(i) + ".png")).string();
+                                save_futures.push_back(std::async(std::launch::async, [image_pixbuf, file_path]()
+                                {
+                                    try {
+                                        image_pixbuf->save(file_path, "png");
+                                    } catch (const Glib::Error& ex) {
+                                        std::cerr << "Failed to save image: " << ex.what() << std::endl;
+                                    }
+                                }));
+                            }
+                        }
+                    }
+
+                    // Get the current size of the drawing area
+                    // int current_width = 0, current_height = 0;
+                    // this->m_rt_monitoring_drawing_area->get_size_request(current_width, current_height);
+
+                    // // Check if resizing is necessary
+                    // if (current_width != frame_width || current_height != total_height)
+                    // {
+                    //     this->m_rt_monitoring_drawing_area->set_size_request(frame_width, total_height);
+                    // }
+                    
+                    // Redraw the drawing area
+                    this->m_rt_monitoring_drawing_area->queue_draw();
+
+                    m_images_dispatcher_running = false;
+                });
+            }
+
+            m_main_images_dispatcher.emit();
+
             // Dislay prediction results (via dispatcher to ensure thread saftey)
             if (!m_masks_dispatcher_connection.connected())
             {
-                m_masks_dispatcher_connection = m_main_masks_dispatcher.connect([this, &frame_width, &batch_size, &anomaly_scores, &anomaly_maps, &anomaly_map_channels, &anomaly_map_height, &anomaly_map_width, &num_anomalies_beyond_threshold, &confidence_threshold]()
+                m_masks_dispatcher_connection = m_main_masks_dispatcher.connect([this, &frame_width, &batch_size, &anomaly_scores, &anomaly_maps, &anomaly_map_channels, &anomaly_map_height, &anomaly_map_width, &num_anomalies_beyond_threshold, &confidence_threshold, &transaction_folder]()
                 {
                     m_masks_dispatcher_running = true;
 
-                    // m_mask_pixbuf_rt_monitoring->fill(0x00000000);
-
-                    for (int b = 0; b < batch_size; ++b)
+                    for (int i = 0; i < batch_size; ++i)
                     {
-                        std::cout << "Anomaly Score: " << anomaly_scores[b] << std::endl;
+                        std::cout << "Anomaly Score: " << anomaly_scores[i] << std::endl;
 
-                        if (anomaly_scores[b] < confidence_threshold)
+                        if (anomaly_scores[i] < confidence_threshold)
                         {
                             continue;
                         }
                                                 
                         // Extract only the first channel
-                        float* anomaly_map = anomaly_maps + (b * anomaly_map_channels * anomaly_map_height * anomaly_map_width);
+                        float* anomaly_map = anomaly_maps + (i * anomaly_map_channels * anomaly_map_height * anomaly_map_width);
 
                         // Resize anomaly map
                         cv::Mat anomaly_map_mat(anomaly_map_height, anomaly_map_width, CV_32F, anomaly_map);
@@ -6980,7 +7035,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                             anomaly_map_norm = anomaly_map_resized.clone();
                         }
 
-                        // Convert to 8-bit grayscale
+                        // Convert to 8-bit
                         anomaly_map_norm.convertTo(anomaly_map_norm, CV_8U, 255.0);
 
                         // Apply colormap
@@ -7002,8 +7057,8 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                         );
 
                         int predictions_per_row = frame_width / PATCH_SIZE;
-                        int row = b / predictions_per_row;
-                        int col = b % predictions_per_row;
+                        int row = i / predictions_per_row;
+                        int col = i % predictions_per_row;
                         int position_x = col * PATCH_SIZE;
                         int position_y = row * PATCH_SIZE;
 
@@ -7016,6 +7071,13 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                             position_x,
                             position_y
                         );
+
+                        // Save anomaly maps to files
+                        // try {
+                        //     prediction_pixbuf->save(transaction_folder / ("prediction_" + std::to_string(i) + ".png"), "png");
+                        // } catch (const Glib::Error& ex) {
+                        //     std::cerr << "Failed to save image: " << ex.what() << std::endl;
+                        // }
                     }
 
                     update_mask_alpha(m_mask_pixbuf_rt_monitoring, m_mask_alpha * 255);
@@ -7034,8 +7096,11 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 });
             }
 
-            m_main_masks_dispatcher.emit();
-
+            if (num_anomalies_beyond_threshold > 0)
+            {
+                m_main_masks_dispatcher.emit();
+            }
+            
             // Calculate the time difference (in seconds) since the last detection
             auto now = std::chrono::steady_clock::now();
             double elapsed_time = std::chrono::duration<double>(now - last_detection_time).count();
@@ -7164,49 +7229,6 @@ void MainWindow::stop_detection()
     // retention_manager.enforce_daily_limit();
 
     add_runtime_event("Detection Stopped");
-}
-
-void MainWindow::send_ws_message(std::string message)
-{
-    if (m_is_ws_connected)
-    {
-        std::cout << "sending a ws message: " << message << std::endl;
-        m_logger->log("sending a ws message: " + message);
-        m_ws_client.send_message(message);
-
-        // wait until receive the response
-        std::unique_lock<std::mutex> lock(m_ws_response_mutex);
-        auto timeout_duration = std::chrono::milliseconds(DETECTION_TIMEOUT_MS);
-        if (m_ws_response_cv.wait_for(lock, timeout_duration, [this]{ return m_ws_response_ready; }))
-        {
-            // Response received within timeout
-            std::cout << "receiving a ws response: " << m_ws_response << std::endl;
-            m_logger->log("receiving a ws response: " + m_ws_response);
-        }
-        else
-        {
-            // Timeout occurred
-            std::cerr << "Timeout waiting for ws response" << std::endl;
-            m_logger->log("Timeout waiting for ws response", Logger::ERROR);
-
-            // Create a JSON object
-            nlohmann::json json_obj;
-            
-            // Add the key-value pair
-            json_obj["transaction_id"] = "N/A";
-
-            // Convert to a JSON string
-            m_ws_response = json_obj.dump();
-        }
-
-        // Reset the condition for future use if needed
-        m_ws_response_ready = false;
-    }
-    else
-    {
-        std::cerr << "Failed to send a message, ws is not connected" << std::endl;
-        m_logger->log("Failed to send a message, ws is not connected", Logger::ERROR);
-    }
 }
 
 // void MainWindow::save_tmp_image(unsigned char *pData, MV_FRAME_OUT_INFO_EX frameInfo, void *deviceHandle)

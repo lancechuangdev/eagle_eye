@@ -229,23 +229,6 @@ protected:
     bool on_settings_display_area_scroll_event(GdkEventScroll *scroll_event);
 
 private:
-    struct FrameOffsetInfo
-    {
-        size_t offset;
-        size_t frame_size;
-        std::string serial_number;
-    };
-
-    struct PatchPosition
-    {
-        int position_x;
-        int position_y;
-
-        // Constructor for easy initialization
-        PatchPosition(int x, int y)
-            : position_x(x), position_y(y) {}
-    };
-
     struct CaptureCallbackData
     {
         MainWindow *main_window_ptr;
@@ -287,13 +270,6 @@ private:
     std::unordered_map<std::string, std::thread> m_capturing_threads;
     std::thread m_processing_thread;
     std::thread m_warmup_thread;
-    WebSocketClient m_ws_client;
-    bool m_is_ws_connected;
-    std::string m_ws_response;
-    std::mutex m_ws_response_mutex;
-    std::condition_variable m_ws_response_cv;
-    std::string m_trans_id;
-    bool m_ws_response_ready = false; // Condition to wait on
     size_t m_session_anomaly_count;
     std::vector<std::pair<std::chrono::system_clock::time_point, std::chrono::system_clock::time_point>> m_session_times;
 
@@ -394,9 +370,8 @@ private:
     void on_event_dispatch(); // Called when dispatcher emits a signal
     void add_runtime_event(const std::string &message, const std::string &color="");
     void clear_runtime_events();
-    void send_ws_message(std::string message);
     std::string generate_transaction_id();
-    void update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf);
+    // void update_mask_color(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf);
     void update_mask_alpha(Glib::RefPtr<Gdk::Pixbuf> mask_pixbuf, gint32 alpha);
     std::string convert_to_ip_address_str(uint32_t ip);
     void set_button_icon(Gtk::Button* button, const Glib::ustring& resource_path);
