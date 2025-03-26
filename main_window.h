@@ -11,15 +11,16 @@
 #include <chrono>
 #include <thread>
 #include <future>
+#include <queue>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 #include <onnxruntime_cxx_api.h>
 
 #include "MvCameraControl.h"
 #include "frame_queue.h"
+#include "pixbuf_queue.h"
 #include "logger.h"
 #include "file_utils.h"
-#include "web_socket_client.h"
 
 class MainWindow : public Gtk::Window
 {
@@ -267,6 +268,7 @@ private:
     std::mutex m_cam_event_queue_mutex;
 
     FrameQueue m_frame_queue;
+    PixbufQueue m_pixbuf_queue;
     std::unordered_map<std::string, std::thread> m_capturing_threads;
     std::thread m_processing_thread;
     std::thread m_warmup_thread;
@@ -402,6 +404,7 @@ private:
     std::vector<Ort::Value> run_inference(std::vector<Ort::Value>& input_tensors);
     void print_tensor_shape(const Ort::Value& tensor, const std::string& tensor_name);
     void print_tensor_values(const Ort::Value& tensor, const std::string& name);
+    void save_pixbuf(Glib::RefPtr<Gdk::Pixbuf> pixbuf, const std::string& file_path);
 };
 
 #endif

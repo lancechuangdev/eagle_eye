@@ -8,7 +8,7 @@
 class FrameQueue {
 public:
     // Constructor to set the capacity
-    FrameQueue(size_t capacity);
+    explicit FrameQueue(size_t capacity);
 
     // Enqueue data into the queue
     void enqueue(FrameData frameData);

@@ -11,6 +11,9 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     : Gtk::Window(obj),
       m_builder(refBuilder),
       m_frame_queue(2),
+      m_pixbuf_queue(100, [this](Glib::RefPtr<Gdk::Pixbuf> pixbuf, const std::string& filePath) {
+        this->save_pixbuf(pixbuf, filePath);
+      }),
       m_logger(logger),
       m_main_images_dispatcher(),
       m_main_masks_dispatcher()
@@ -3711,7 +3714,7 @@ void MainWindow::snap_and_display(void *device_handle)
         }
         default:
             std::cerr << "Unsupported pixel format!" << std::endl;
-            throw;
+            // throw;
     }
 
     // Convert BGR (OpenCV default) to RGB for GTK display
@@ -4124,7 +4127,7 @@ void MainWindow::on_connect_clicked(const std::string& sn)
         }
         default:
             std::cerr << "Unsupported pixel format!" << std::endl;
-            throw;
+            // throw;
     }
 
     // Convert BGR (OpenCV default) to RGB for GTK display
@@ -6043,7 +6046,7 @@ void MainWindow::on_snap_clicked()
         }
         default:
             std::cerr << "Unsupported pixel format!" << std::endl;
-            throw;
+            // throw;
     }
 
     // Convert BGR (OpenCV default) to RGB for GTK display
@@ -6662,6 +6665,8 @@ void MainWindow::start_detection(int frame_width, int frame_height)
         m_mask_pixbuf_rt_monitoring = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, frame_width, frame_height * FRAME_BATCH_SIZE);
     }
 
+    m_pixbuf_queue.start_worker();
+
     // Start the frame processing thread
     m_processing_thread = std::thread([this, frame_width, frame_height]()
     {
@@ -6693,6 +6698,8 @@ void MainWindow::start_detection(int frame_width, int frame_height)
 
         size_t record_index = 0; 
         auto last_detection_time = std::chrono::steady_clock::now();
+        std::string transaction_id;
+        std::filesystem::path transaction_folder;
 
         while (m_is_running)
         {
@@ -6727,6 +6734,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             });
 
             // Run inference
+            if (!m_is_running) break;
             auto batch_patches = FrameUtils::build_batch(sorted_frames);
             auto input_tensor = FrameUtils::create_input_tensor(batch_patches);
             std::vector<Ort::Value> input_tensors;
@@ -6754,6 +6762,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             );
 
             // Trigger digital output
+            if (!m_is_running) break;
             if (num_anomalies_beyond_threshold > 0)
             {
                 std::string digital_ouput;
@@ -6798,14 +6807,13 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 }
             }
 
-            std::filesystem::path transaction_folder;
-
             // Create and save transaction json to file
+            if (!m_is_running) break;
             if (num_anomalies_beyond_threshold > 0)
             {
-                auto transaction_id = generate_transaction_id();
+                transaction_id = generate_transaction_id();
 
-                std::filesystem::path transaction_folder = AppPaths::Project_Detection_Results_Path(m_curr_project_name) / transaction_id;
+                transaction_folder = AppPaths::Project_Detection_Results_Path(m_curr_project_name) / transaction_id;
                 std::filesystem::create_directories(transaction_folder);
     
                 // Create frames JSON array
@@ -6869,6 +6877,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             // The memory backing frame_data.pData is owned by camera SDK, it could be freed or overwritten while image dispatcher running.
             // So need to copy it before running dispatcher. 
             // It seems only required when running detection continously, not for snapping a single frame.
+            if (!m_is_running) break;
             uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
             for (auto frame_data : sorted_frames)
             {
@@ -6912,19 +6921,33 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 frame_rgb_data_ptr += frame_rgb_size;
             }
 
+            std::function<std::filesystem::path()> get_transaction_folder = [&]() { return transaction_folder; };
+            std::function<int()> get_num_frames_dequeued = [&]() { return num_frames_dequeued; };
+            std::function<int()> get_num_anomalies_beyond_threshold = [&]() { return num_anomalies_beyond_threshold; };
+            
+            // // Use std::shared_ptr to hold mutable values
+            // std::shared_ptr<int> num_frames_dequeued_ptr = std::make_shared<int>(num_frames_dequeued);
+            // std::shared_ptr<int> num_anomalies_beyond_threshold_ptr = std::make_shared<int>(num_anomalies_beyond_threshold);
+            // std::shared_ptr<std::filesystem::path> transaction_folder_ptr = std::make_shared<std::filesystem::path>(transaction_folder);
+
             // Display the frames (via dispatcher to ensure thread safety)
             if (!m_images_dispatcher_connection.connected())
             {
-                m_images_dispatcher_connection = m_main_images_dispatcher.connect([this, &frame_width, &frame_height, &num_frames_dequeued, &num_anomalies_beyond_threshold, &transaction_folder]()
+                m_images_dispatcher_connection = m_main_images_dispatcher.connect([this, &frame_width, &frame_height, get_num_frames_dequeued, get_num_anomalies_beyond_threshold, get_transaction_folder]()
                 {
                     m_images_dispatcher_running = true;
+
+                    int num_frames_dequeued = get_num_frames_dequeued();
+                    int num_anomalies_beyond_threshold = get_num_anomalies_beyond_threshold();
+                    std::filesystem::path transaction_folder = get_transaction_folder();            
+                    std::string transaction_id = transaction_folder.filename().string();
 
                     int total_height = frame_height * num_frames_dequeued;
                     int current_y = 0;
                     int row_stride = frame_width * RGB_CHANNELS;
                     uint8_t* data_ptr = m_frame_rgb_data_buffer.data();
-                    std::vector<std::future<void>> save_futures; // Store async tasks for saving images
                     
+                    std::vector<std::pair<Glib::RefPtr<Gdk::Pixbuf>, std::string>> items_to_enqueue;
                     for (int i = 0; i < num_frames_dequeued; ++i)
                     {
                         // Get a pointer to the RGB data for the current frame in the buffer.
@@ -6954,29 +6977,18 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                             current_y += frame_height;
 
                             // Save frames to files
-                            // if (num_anomalies_beyond_threshold > 0)
-                            // {
-                            //     try {
-                            //         image_pixbuf->save(transaction_folder / ("frame_" + std::to_string(i) + ".png"), "png");
-                            //     } catch (const Glib::Error& ex) {
-                            //         std::cerr << "Failed to save image: " << ex.what() << std::endl;
-                            //     }
-                            // }
-
-                            // Save frames asynchronously to avoid blocking the UI
                             if (num_anomalies_beyond_threshold > 0)
                             {
-                                std::string file_path = (transaction_folder / ("frame_" + std::to_string(i) + ".png")).string();
-                                save_futures.push_back(std::async(std::launch::async, [image_pixbuf, file_path]()
-                                {
-                                    try {
-                                        image_pixbuf->save(file_path, "png");
-                                    } catch (const Glib::Error& ex) {
-                                        std::cerr << "Failed to save image: " << ex.what() << std::endl;
-                                    }
-                                }));
+                                std::string file_path = (transaction_folder / (transaction_id + "_frame_" + std::to_string(i) + ".png")).string();
+                                std::cout << "file_path: " << file_path << std::endl;
+                                items_to_enqueue.emplace_back(image_pixbuf, file_path);
                             }
                         }
+                    }
+
+                    if (!items_to_enqueue.empty())
+                    {
+                        m_pixbuf_queue.enqueue(items_to_enqueue);
                     }
 
                     // Get the current size of the drawing area
@@ -6996,7 +7008,10 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 });
             }
 
-            m_main_images_dispatcher.emit();
+            if (m_is_running)
+            {
+                m_main_images_dispatcher.emit();
+            }
 
             // Dislay prediction results (via dispatcher to ensure thread saftey)
             if (!m_masks_dispatcher_connection.connected())
@@ -7004,6 +7019,8 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 m_masks_dispatcher_connection = m_main_masks_dispatcher.connect([this, &frame_width, &batch_size, &anomaly_scores, &anomaly_maps, &anomaly_map_channels, &anomaly_map_height, &anomaly_map_width, &num_anomalies_beyond_threshold, &confidence_threshold, &transaction_folder]()
                 {
                     m_masks_dispatcher_running = true;
+
+                    std::vector<std::pair<Glib::RefPtr<Gdk::Pixbuf>, std::string>> items_to_enqueue;
 
                     for (int i = 0; i < batch_size; ++i)
                     {
@@ -7073,11 +7090,15 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                         );
 
                         // Save anomaly maps to files
-                        // try {
-                        //     prediction_pixbuf->save(transaction_folder / ("prediction_" + std::to_string(i) + ".png"), "png");
-                        // } catch (const Glib::Error& ex) {
-                        //     std::cerr << "Failed to save image: " << ex.what() << std::endl;
-                        // }
+                        std::string transaction_id = transaction_folder.filename().string();
+                        std::string file_path = (transaction_folder / (transaction_id + "_prediction_" + std::to_string(i) + ".png")).string();
+                        items_to_enqueue.emplace_back(prediction_pixbuf, file_path);
+                    }
+
+                    // Save anomaly maps to files
+                    if (!items_to_enqueue.empty())
+                    {
+                        m_pixbuf_queue.enqueue(items_to_enqueue);
                     }
 
                     update_mask_alpha(m_mask_pixbuf_rt_monitoring, m_mask_alpha * 255);
@@ -7096,7 +7117,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 });
             }
 
-            if (num_anomalies_beyond_threshold > 0)
+            if (m_is_running && num_anomalies_beyond_threshold > 0)
             {
                 m_main_masks_dispatcher.emit();
             }
@@ -7224,6 +7245,8 @@ void MainWindow::stop_detection()
     {
         m_masks_dispatcher_connection.disconnect();
     }
+
+    m_pixbuf_queue.stop_worker();
 
     // RetentionManager retention_manager;
     // retention_manager.enforce_daily_limit();
@@ -7728,4 +7751,16 @@ void MainWindow::print_tensor_values(const Ort::Value& tensor, const std::string
     }
 
     std::cout << "]" << std::endl;
+}
+
+void MainWindow::save_pixbuf(Glib::RefPtr<Gdk::Pixbuf> pixbuf, const std::string& file_path)
+{
+    if (pixbuf) {
+        try {
+            pixbuf->save(file_path, "png");
+            std::cout << "Saved: " << file_path << std::endl;
+        } catch (const Glib::Error& e) {
+            std::cerr << "Error saving Pixbuf: " << e.what() << std::endl;
+        }
+    }
 }
