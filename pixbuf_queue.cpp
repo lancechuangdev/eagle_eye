@@ -12,7 +12,7 @@ PixbufQueue::~PixbufQueue() {
     stop_worker();
 }
 
-void PixbufQueue::enqueue(const std::vector<std::pair<Glib::RefPtr<Gdk::Pixbuf>, std::string>>& items) {
+void PixbufQueue::enqueue(const std::vector<std::pair<cv::Mat, std::string>>& items) {
     {
         std::lock_guard<std::mutex> lock(mutex);
         for (const auto& item : items) {
@@ -44,7 +44,7 @@ void PixbufQueue::stop_worker() {
     }
 
     // Process remaining items after worker thread exits
-    std::vector<std::pair<Glib::RefPtr<Gdk::Pixbuf>, std::string>> remaining_tasks;
+    std::vector<std::pair<cv::Mat, std::string>> remaining_tasks;
     {
         std::lock_guard<std::mutex> lock(mutex);
         while (!queue.empty()) {
@@ -68,7 +68,7 @@ void PixbufQueue::stop_worker() {
 
 void PixbufQueue::worker_loop() {
     while (!stop_flag) {
-        std::vector<std::pair<Glib::RefPtr<Gdk::Pixbuf>, std::string>> tasks;
+        std::vector<std::pair<cv::Mat, std::string>> tasks;
         {
             std::unique_lock<std::mutex> lock(mutex);
             queue_available_cv.wait(lock, [this] { return !queue.empty() || stop_flag; });
@@ -88,119 +88,7 @@ void PixbufQueue::worker_loop() {
             future.get();
         }
     }
-    // while (true) {
-    //     std::pair<Glib::RefPtr<Gdk::Pixbuf>, std::string> task;
-
-    //     {
-    //         std::unique_lock<std::mutex> lock(mutex);
-    //         queue_available_cv.wait(lock, [this] { return !queue.empty() || stop_flag; });
-
-    //         if (stop_flag && queue.empty()) {
-    //             return;
-    //         }
-
-    //         task = queue.front();
-    //         queue.pop();
-    //     }
-
-    //     // Call the user-defined processing function
-    //     worker_func(task.first, task.second);
-    // }
-
-    // while (!stop_flag) {
-    //     std::pair<Glib::RefPtr<Gdk::Pixbuf>, std::string> task;
-    //     bool has_task = false;
-
-    //     {
-    //         std::lock_guard<std::mutex> lock(mutex);
-    //         if (!queue.empty()) {
-    //             task = queue.front();
-    //             queue.pop();
-    //             has_task = true;
-    //         }
-    //     }
-
-    //     if (has_task) {
-    //         std::cout << "[" << get_timestamp() << "] invoke worker_func: " + task.second << std::endl;
-    //         // worker_func(task.first, task.second);
-    //         // Run worker_func asynchronously without blocking the loop
-    //         std::async(std::launch::async, worker_func, task.first, task.second);
-    //         // try {
-    //         //     auto pixbuf = task.first;
-    //         //     auto file_path = task.second;
-    //         //     std::cout << "[" << get_timestamp() << "] Start saving: " << file_path << std::endl;
-    //         //     pixbuf->save(file_path, "png");
-    //         //     std::cout << "[" << get_timestamp() << "] End saving: " << file_path << std::endl;
-    //         // } catch (const Glib::Error& e) {
-    //         //     std::cerr << "Error saving Pixbuf: " << e.what() << std::endl;
-    //         // }
-    //     } else {
-    //         // Sleep briefly to prevent busy-waiting
-    //         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    //     }
-    // }
 }
-
-// #include <boost/lockfree/queue.hpp>
-// #include <glibmm/refptr.h>
-// #include <gdkmm/pixbuf.h>
-// #include <thread>
-// #include <atomic>
-// #include <iostream>
-
-// class PixbufQueue {
-// public:
-//     using WorkerFunction = std::function<void(Glib::RefPtr<Gdk::Pixbuf>, std::string)>;
-
-//     PixbufQueue(size_t cap, WorkerFunction workerFunc)
-//         : queue(cap), stop_flag(false), worker_func(std::move(workerFunc)) {
-//         start_worker();
-//     }
-
-//     ~PixbufQueue() {
-//         stop_worker();
-//     }
-
-//     void enqueue(const Glib::RefPtr<Gdk::Pixbuf>& pixbuf, const std::string& filePath) {
-//         if (!queue.push({pixbuf, filePath})) {
-//             std::cerr << "Queue is full, dropping frame: " << filePath << std::endl;
-//         }
-//     }
-
-//     void start_worker() {
-//         stop_flag = false;
-//         worker_thread = std::thread(&PixbufQueue::worker_loop, this);
-//     }
-
-//     void stop_worker() {
-//         stop_flag = true;
-//         if (worker_thread.joinable()) {
-//             worker_thread.join();
-//         }
-//     }
-
-// private:
-//     struct Task {
-//         Glib::RefPtr<Gdk::Pixbuf> pixbuf;
-//         std::string filePath;
-//     };
-
-//     boost::lockfree::queue<Task> queue;  // Lock-free queue
-//     std::atomic<bool> stop_flag;         // Atomic stop flag
-//     WorkerFunction worker_func;
-//     std::thread worker_thread;
-
-//     void worker_loop() {
-//         while (!stop_flag) {
-//             Task task;
-//             if (queue.pop(task)) {
-//                 worker_func(task.pixbuf, task.filePath);
-//             } else {
-//                 std::this_thread::sleep_for(std::chrono::milliseconds(5)); // Prevent busy-waiting
-//             }
-//         }
-//     }
-// };
 
 std::string PixbufQueue::get_timestamp()
 {

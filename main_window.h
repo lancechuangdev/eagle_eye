@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 #include <onnxruntime_cxx_api.h>
+#include <opencv2/opencv.hpp>
 
 #include "MvCameraControl.h"
 #include "frame_queue.h"
@@ -404,7 +405,7 @@ private:
     std::vector<Ort::Value> run_inference(std::vector<Ort::Value>& input_tensors);
     void print_tensor_shape(const Ort::Value& tensor, const std::string& tensor_name);
     void print_tensor_values(const Ort::Value& tensor, const std::string& name);
-    void save_pixbuf(Glib::RefPtr<Gdk::Pixbuf> pixbuf, const std::string& file_path);
+    void save_pixbuf(const cv::Mat& pixbuf, const std::string& file_path);
 };
 
 #endif

@@ -7,22 +7,21 @@
 #include <condition_variable>
 #include <thread>
 #include <functional>
-#include <gdkmm.h>
-#include <glibmm.h>
+#include <opencv2/opencv.hpp>
 
 class PixbufQueue {
 public:
-    using WorkerFunction = std::function<void(Glib::RefPtr<Gdk::Pixbuf>, const std::string&)>;
+    using WorkerFunction = std::function<void(const cv::Mat&, const std::string&)>;
 
     explicit PixbufQueue(size_t capacity, WorkerFunction workerFunc);
     ~PixbufQueue();
 
-    void enqueue(const std::vector<std::pair<Glib::RefPtr<Gdk::Pixbuf>, std::string>>& items);
+    void enqueue(const std::vector<std::pair<cv::Mat, std::string>>& items);
     void start_worker();
     void stop_worker();
 
 private:
-    std::queue<std::pair<Glib::RefPtr<Gdk::Pixbuf>, std::string>> queue;
+    std::queue<std::pair<cv::Mat, std::string>> queue;
     size_t capacity;
     std::mutex mutex;
     std::condition_variable queue_available_cv;

@@ -11,7 +11,7 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     : Gtk::Window(obj),
       m_builder(refBuilder),
       m_frame_queue(2),
-      m_pixbuf_queue(100, [this](Glib::RefPtr<Gdk::Pixbuf> pixbuf, const std::string& filePath) {
+      m_pixbuf_queue(20, [this](const cv::Mat& pixbuf, const std::string& filePath) {
         this->save_pixbuf(pixbuf, filePath);
       }),
       m_logger(logger),
@@ -6925,11 +6925,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             std::function<int()> get_num_frames_dequeued = [&]() { return num_frames_dequeued; };
             std::function<int()> get_num_anomalies_beyond_threshold = [&]() { return num_anomalies_beyond_threshold; };
             
-            // // Use std::shared_ptr to hold mutable values
-            // std::shared_ptr<int> num_frames_dequeued_ptr = std::make_shared<int>(num_frames_dequeued);
-            // std::shared_ptr<int> num_anomalies_beyond_threshold_ptr = std::make_shared<int>(num_anomalies_beyond_threshold);
-            // std::shared_ptr<std::filesystem::path> transaction_folder_ptr = std::make_shared<std::filesystem::path>(transaction_folder);
-
             // Display the frames (via dispatcher to ensure thread safety)
             if (!m_images_dispatcher_connection.connected())
             {
@@ -6947,7 +6942,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                     int row_stride = frame_width * RGB_CHANNELS;
                     uint8_t* data_ptr = m_frame_rgb_data_buffer.data();
                     
-                    std::vector<std::pair<Glib::RefPtr<Gdk::Pixbuf>, std::string>> items_to_enqueue;
+                    std::vector<std::pair<cv::Mat, std::string>> items_to_enqueue;
                     for (int i = 0; i < num_frames_dequeued; ++i)
                     {
                         // Get a pointer to the RGB data for the current frame in the buffer.
@@ -6975,14 +6970,16 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                                 current_y
                             );
                             current_y += frame_height;
+                        }
 
-                            // Save frames to files
-                            if (num_anomalies_beyond_threshold > 0)
-                            {
-                                std::string file_path = (transaction_folder / (transaction_id + "_frame_" + std::to_string(i) + ".png")).string();
-                                std::cout << "file_path: " << file_path << std::endl;
-                                items_to_enqueue.emplace_back(image_pixbuf, file_path);
-                            }
+                        if (num_anomalies_beyond_threshold > 0)
+                        {
+                            cv::Mat frame_mat(frame_height, frame_width, CV_8UC3, frame_data_ptr);
+                            cv::Mat frame_bgr;
+                            cv::cvtColor(frame_mat, frame_bgr, cv::COLOR_RGB2BGR);
+
+                            std::string file_path = (transaction_folder / (transaction_id + "_frame_" + std::to_string(i) + ".png")).string();
+                            items_to_enqueue.emplace_back(frame_bgr, file_path);
                         }
                     }
 
@@ -6990,16 +6987,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                     {
                         m_pixbuf_queue.enqueue(items_to_enqueue);
                     }
-
-                    // Get the current size of the drawing area
-                    // int current_width = 0, current_height = 0;
-                    // this->m_rt_monitoring_drawing_area->get_size_request(current_width, current_height);
-
-                    // // Check if resizing is necessary
-                    // if (current_width != frame_width || current_height != total_height)
-                    // {
-                    //     this->m_rt_monitoring_drawing_area->set_size_request(frame_width, total_height);
-                    // }
                     
                     // Redraw the drawing area
                     this->m_rt_monitoring_drawing_area->queue_draw();
@@ -7020,7 +7007,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 {
                     m_masks_dispatcher_running = true;
 
-                    std::vector<std::pair<Glib::RefPtr<Gdk::Pixbuf>, std::string>> items_to_enqueue;
+                    std::vector<std::pair<cv::Mat, std::string>> items_to_enqueue;
 
                     for (int i = 0; i < batch_size; ++i)
                     {
@@ -7092,7 +7079,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                         // Save anomaly maps to files
                         std::string transaction_id = transaction_folder.filename().string();
                         std::string file_path = (transaction_folder / (transaction_id + "_prediction_" + std::to_string(i) + ".png")).string();
-                        items_to_enqueue.emplace_back(prediction_pixbuf, file_path);
+                        items_to_enqueue.emplace_back(anomaly_map_colored, file_path);
                     }
 
                     // Save anomaly maps to files
@@ -7753,14 +7740,16 @@ void MainWindow::print_tensor_values(const Ort::Value& tensor, const std::string
     std::cout << "]" << std::endl;
 }
 
-void MainWindow::save_pixbuf(Glib::RefPtr<Gdk::Pixbuf> pixbuf, const std::string& file_path)
+void MainWindow::save_pixbuf(const cv::Mat& pixbuf, const std::string& file_path)
 {
-    if (pixbuf) {
+    if (!pixbuf.empty()) {
         try {
-            pixbuf->save(file_path, "png");
+            cv::imwrite(file_path, pixbuf);  // Corrected `cv2.imwrite` to `cv::imwrite`
             std::cout << "Saved: " << file_path << std::endl;
-        } catch (const Glib::Error& e) {
-            std::cerr << "Error saving Pixbuf: " << e.what() << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "Error saving image: " << e.what() << std::endl;
         }
+    } else {
+        std::cerr << "Error: Attempted to save an empty image." << std::endl;
     }
 }
