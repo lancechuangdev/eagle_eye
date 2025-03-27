@@ -6921,21 +6921,12 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 frame_rgb_data_ptr += frame_rgb_size;
             }
 
-            std::function<std::filesystem::path()> get_transaction_folder = [&]() { return transaction_folder; };
-            std::function<int()> get_num_frames_dequeued = [&]() { return num_frames_dequeued; };
-            std::function<int()> get_num_anomalies_beyond_threshold = [&]() { return num_anomalies_beyond_threshold; };
-            
             // Display the frames (via dispatcher to ensure thread safety)
             if (!m_images_dispatcher_connection.connected())
             {
-                m_images_dispatcher_connection = m_main_images_dispatcher.connect([this, &frame_width, &frame_height, get_num_frames_dequeued, get_num_anomalies_beyond_threshold, get_transaction_folder]()
+                m_images_dispatcher_connection = m_main_images_dispatcher.connect([this, &frame_width, &frame_height, &num_frames_dequeued, &num_anomalies_beyond_threshold, &transaction_folder]()
                 {
                     m_images_dispatcher_running = true;
-
-                    int num_frames_dequeued = get_num_frames_dequeued();
-                    int num_anomalies_beyond_threshold = get_num_anomalies_beyond_threshold();
-                    std::filesystem::path transaction_folder = get_transaction_folder();            
-                    std::string transaction_id = transaction_folder.filename().string();
 
                     int total_height = frame_height * num_frames_dequeued;
                     int current_y = 0;
@@ -6977,7 +6968,8 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                             cv::Mat frame_mat(frame_height, frame_width, CV_8UC3, frame_data_ptr);
                             cv::Mat frame_bgr;
                             cv::cvtColor(frame_mat, frame_bgr, cv::COLOR_RGB2BGR);
-
+                            
+                            std::string transaction_id = transaction_folder.filename().string();
                             std::string file_path = (transaction_folder / (transaction_id + "_frame_" + std::to_string(i) + ".png")).string();
                             items_to_enqueue.emplace_back(frame_bgr, file_path);
                         }
