@@ -2,6 +2,7 @@
 #include <fcntl.h>      // For AT_FDCWD and AT_NO_AUTOMOUNT
 #include <fstream>  // For std::ifstream
 #include "file_utils.h"
+#include "time_utils.h"
 
 std::string FileUtils::getGladeFilePath()
 {
@@ -322,28 +323,7 @@ std::optional<std::chrono::system_clock::time_point> FileUtils::get_transaction_
         }
         std::string datetime_str = json["transaction_datetime"];
 
-        // Step 1: Parse the date and time part into a std::tm structure
-        std::tm tm = {};
-        std::istringstream ss(datetime_str.substr(0, 19)); // Exclude milliseconds for now
-        ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-
-        if (ss.fail()) {
-            throw std::runtime_error("Failed to parse datetime string");
-        }
-
-        // Step 2: Convert std::tm to std::time_t
-        std::time_t time_t_value = std::mktime(&tm);
-
-        // Step 3: Convert std::time_t to std::chrono::system_clock::time_point
-        std::chrono::system_clock::time_point tp = std::chrono::system_clock::from_time_t(time_t_value);
-
-        // Step 4: Add fractional seconds (e.g., milliseconds)
-        if (datetime_str.size() > 19) {
-            auto milliseconds = std::stoi(datetime_str.substr(20));
-            tp += std::chrono::milliseconds(milliseconds);
-        }
-
-        return tp;
+        return TimeUtils::parse_time(datetime_str);
     }
     catch (const std::exception& e)
     {

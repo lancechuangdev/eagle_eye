@@ -866,16 +866,11 @@ void MainWindow::on_report_refresh_clicked()
             // Populating the detection results list box with rows
             for (const auto &result_folder : results)
             {
-                auto trans_file_path = result_folder / "transaction_data.json";
-
-                if (is_warmup_transaction(trans_file_path.string()))
-                {
-                    continue;
-                }
-
                 auto row_box = Gtk::make_managed<Gtk::Box>(Gtk::ORIENTATION_HORIZONTAL);
                 auto trans_id = result_folder.filename().string();
                 auto trans_label = Gtk::make_managed<Gtk::Label>(trans_id);
+                auto trans_file_path = result_folder / "transaction_data.json";
+
                 if (is_transaction_valid(trans_file_path.string()))
                 {
                     trans_label->get_style_context()->remove_class("gray-text");
@@ -1038,32 +1033,7 @@ bool MainWindow::on_report_display_area_motion_notify_event(GdkEventMotion *moti
     return true;
 }
 
-bool MainWindow::is_warmup_transaction(const std::string &transaction_path)
-{
-    bool is_warmup_transaction = false;
-
-    // Attempt to load the JSON data from the file
-    auto json_data_optional = FileUtils::get_json(transaction_path);
-    if (!json_data_optional.has_value())
-    {
-        std::cerr << "Failed to load JSON data from path: " << transaction_path << std::endl;
-        return false; // Return false if the JSON could not be loaded
-    }
-
-    const auto &json_data = json_data_optional.value();
-    if (json_data.contains("transaction_type"))
-    {
-        const auto type = json_data["transaction_type"];
-        is_warmup_transaction = type == "warmup";
-    }
-    else
-    {
-        std::cerr << "The 'transaction_type' field is missing in the JSON data." << std::endl;
-    }
-
-    return is_warmup_transaction;
-}
-
+// "valid" means the transaction detects anomalies 
 bool MainWindow::is_transaction_valid(const std::string &transaction_path)
 {
     // Attempt to load the JSON data from the file
@@ -1087,14 +1057,8 @@ bool MainWindow::is_transaction_valid(const std::string &transaction_path)
             // Check each prediction
             for (const auto &prediction : predictions)
             {
-                if (prediction.contains("remark") && prediction["remark"] == "FP")
+                if (prediction.contains("remark") && prediction["remark"] == "TP")
                 {
-                    // Skip false positives
-                    continue;
-                }
-                else
-                {
-                    // If any prediction is not "FP", return true
                     return true;
                 }
             }
@@ -1988,8 +1952,22 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
     for (const auto &prediction : json_data["predictions"])
     {
         int prediction_id = prediction["prediction_id"].get<int>();
+
+        // Check if "file_name" key exists before accessing it
+        if (!prediction.contains("file_name"))
+        {
+            continue;
+        }
+
         std::string filename = prediction["file_name"].get<std::string>();
         
+        // Check if the file exists before loading
+        if (!std::filesystem::exists(filename))
+        {
+            std::cerr << "Error: File does not exist: " << filename << std::endl;
+            continue;
+        }
+
         // Load the prediction image
         auto prediction_pixbuf = Gdk::Pixbuf::create_from_file(filename);
         if (!prediction_pixbuf)
@@ -2361,8 +2339,22 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
     for (const auto &prediction : json_data["predictions"])
     {
         int prediction_id = prediction["prediction_id"].get<int>();
+
+        // Check if "file_name" key exists before accessing it
+        if (!prediction.contains("file_name"))
+        {
+            continue;
+        }
+
         std::string filename = prediction["file_name"].get<std::string>();
         
+        // Check if the file exists before loading
+        if (!std::filesystem::exists(filename))
+        {
+            std::cerr << "Error: File does not exist: " << filename << std::endl;
+            continue;
+        }
+
         // Load the prediction image
         auto prediction_pixbuf = Gdk::Pixbuf::create_from_file(filename);
         if (!prediction_pixbuf)
@@ -6699,7 +6691,15 @@ void MainWindow::start_detection(int frame_width, int frame_height)
         size_t record_index = 0; 
         auto last_detection_time = std::chrono::steady_clock::now();
         std::string transaction_id;
+        int num_anomalies_beyond_threshold = 0;
+        int num_frames_dequeued = 0;
         std::filesystem::path transaction_folder;
+        int batch_size = 0;
+        int anomaly_map_channels = 0;
+        int anomaly_map_height = 0;
+        int anomaly_map_width = 0;       
+        float* anomaly_scores; // [batch_size]
+        float* anomaly_maps; // [batch_size, channels, height, width]
 
         while (m_is_running)
         {
@@ -6712,8 +6712,8 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             }
 
             // sort by serial number of each frame
-            int num_frames_dequeued = 0;
             std::vector<FrameData> sorted_frames;
+            num_frames_dequeued = 0;
             while (!m_frame_queue.isEmpty() && num_frames_dequeued < FRAME_BATCH_SIZE)
             {
                 if (m_frame_queue.dequeue(frame_data))
@@ -6742,18 +6742,18 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             auto output_tensors = run_inference(input_tensors);
 
             // Extract output tensors
-            auto anomaly_scores = output_tensors[0].GetTensorMutableData<float>();
-            auto pred_labels = output_tensors[1].GetTensorMutableData<float>();
-            auto anomaly_maps = output_tensors[2].GetTensorMutableData<float>();
-            auto pred_masks = output_tensors[3].GetTensorMutableData<float>();
+            anomaly_scores = output_tensors[0].GetTensorMutableData<float>();
+            // auto pred_labels = output_tensors[1].GetTensorMutableData<float>();
+            anomaly_maps = output_tensors[2].GetTensorMutableData<float>();
+            // auto pred_masks = output_tensors[3].GetTensorMutableData<float>();
 
             Ort::TensorTypeAndShapeInfo anomaly_map_shape_info = output_tensors[2].GetTensorTypeAndShapeInfo();
             std::vector<int64_t> anomaly_map_shape = anomaly_map_shape_info.GetShape();
-            int batch_size = anomaly_map_shape[0];
-            int anomaly_map_channels = anomaly_map_shape[1];
-            int anomaly_map_height = anomaly_map_shape[2];
-            int anomaly_map_width = anomaly_map_shape[3];            
-            int num_anomalies_beyond_threshold = std::count_if(
+            batch_size = anomaly_map_shape[0];
+            anomaly_map_channels = anomaly_map_shape[1];
+            anomaly_map_height = anomaly_map_shape[2];
+            anomaly_map_width = anomaly_map_shape[3];       
+            num_anomalies_beyond_threshold = std::count_if(
                 anomaly_scores, anomaly_scores + batch_size,
                 [&](float score) {
                     std::cout << "Anomaly Score: " << score << std::endl;
@@ -6812,7 +6812,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             if (num_anomalies_beyond_threshold > 0)
             {
                 transaction_id = generate_transaction_id();
-
                 transaction_folder = AppPaths::Project_Detection_Results_Path(m_curr_project_name) / transaction_id;
                 std::filesystem::create_directories(transaction_folder);
     
@@ -6821,7 +6820,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 for (int i = 0; i < num_frames_dequeued; ++i) {
                     frames_json.push_back({
                         {"frame_id", i},
-                        {"file_name", transaction_folder / ("frame_" + std::to_string(i) + ".png")}
+                        {"file_name", transaction_folder / (transaction_id + "_frame_" + std::to_string(i) + ".png")}
                     });
                 }
 
@@ -6833,6 +6832,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                         predictions_json.push_back({
                             {"prediction_id", i},
                             {"anomaly_score", anomaly_scores[i]},
+                            {"remark", "TN"}
                         });
                     }
                     else
@@ -6840,7 +6840,8 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                         predictions_json.push_back({
                             {"prediction_id", i},
                             {"anomaly_score", anomaly_scores[i]},
-                            {"file_name", transaction_folder / ("prediction_" + std::to_string(i) + ".png")}
+                            {"file_name", transaction_folder / (transaction_id + "_prediction_" + std::to_string(i) + ".png")},
+                            {"remark", "TP"}
                         });
                     }
                 }

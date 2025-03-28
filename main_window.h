@@ -130,7 +130,7 @@ protected:
     Gtk::Spinner *m_load_detection_results_spinner;
     Gtk::ListBox *m_detection_results_listbox;
     Gtk::Box *m_detection_patches_box;
-    Gtk::Label *m_current_selected_patch_in_explorer_lbl;
+    Gtk::Label *m_current_selected_patch_in_explorer_lbl = nullptr;
     Gtk::DrawingArea *m_detection_results_display_area;
     Gtk::ComboBoxText *m_recent_detection_results_selector_cbox;
     Gtk::Button *m_detection_results_refresh_btn;
@@ -396,7 +396,6 @@ private:
     void update_track_positions(double speed);
     std::vector<std::tuple<std::string, std::chrono::system_clock::time_point, double>> track_position(double speed);
     bool is_transaction_valid(const std::string &transaction_path);
-    bool is_warmup_transaction(const std::string &transaction_path);
     void create_csv_file(const std::string &file_name);
     void start_listening_for_start_signal();
     void stop_listening_for_start_signal();
