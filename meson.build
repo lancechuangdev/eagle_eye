@@ -20,12 +20,17 @@ mvcam_inc_dir = join_paths(mvcam_runenv, '../include')
 mvcam_lib_dir = join_paths(mvcam_runenv, '64')
 
 # ONNX Runtime GPU Dependency
+cuda_lib_dir = '/usr/local/cuda-12.8/lib64'
 onnxruntime_dir = '/home/boris-alienware/Downloads/onnxruntime-linux-x64-gpu-1.20.1'
 onnxruntime_inc_dir = include_directories(join_paths(onnxruntime_dir, 'include'))
 onnxruntime_lib_dir = join_paths(onnxruntime_dir, 'lib')
 onnxruntime_dep = declare_dependency(
     include_directories: onnxruntime_inc_dir,
-    link_args: ['-L' + onnxruntime_lib_dir, '-lonnxruntime']
+    link_args: [
+        '-L' + onnxruntime_lib_dir,
+        '-lonnxruntime',
+        '-Wl,-rpath,' + onnxruntime_lib_dir, # This ensures that at runtime, the executable can find libonnxruntime.so without needing LD_LIBRARY_PATH
+    ]
 )
 
 # -------------------------------
@@ -52,7 +57,9 @@ executable('ee',
     link_args: [
         '-Wl,-rpath=' + mvcam_lib_dir,
         '-L' + mvcam_lib_dir,
-        '-lMvCameraControl'
+        '-lMvCameraControl',
+        '-L' + cuda_lib_dir,  # Ensure CUDA libraries are found
+        '-lcublas', '-lcudart' # Explicitly link CUDA dependencies
     ]
 )
 
@@ -63,6 +70,12 @@ executable('ee',
 # Install application data files
 install_data(
     ['ui.glade', 'style.css', 'model.ckpt', 'model.onnx'],
+    install_dir: join_paths(get_option('prefix'), 'share', 'eagle_eye')
+)
+
+# Install all ONNX runtime files
+install_subdir(
+    'onnxruntime-linux-x64-gpu-1.20.1',
     install_dir: join_paths(get_option('prefix'), 'share', 'eagle_eye')
 )
 

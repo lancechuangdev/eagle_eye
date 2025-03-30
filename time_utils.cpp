@@ -73,37 +73,17 @@ std::string TimeUtils::get_time_hours_ago(int hours)
 
 std::chrono::system_clock::time_point TimeUtils::parse_time(const std::string& datetime_str)
 {
-    // std::istringstream time_stream(time_str);
+    std::istringstream time_stream(datetime_str);
 
-    // // Step 1: Parse the main date and time components (excluding milliseconds)
-    // std::tm tm = {};
-    // char dot; // To consume the dot before milliseconds
-    // int milliseconds;
-    // time_stream >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S") >> dot >> milliseconds;
-
-    // if (time_stream.fail())
-    // {
-    //     throw std::runtime_error("Failed to parse time string: " + time_str);
-    // }
-
-    // // Step 2: Convert std::tm to std::time_t
-    // std::time_t time_t = std::mktime(&tm);
-
-    // // Step 3: Convert std::time_t to std::chrono::time_point
-    // auto time_point = std::chrono::system_clock::from_time_t(time_t);
-
-    // // Step 4: Add the milliseconds to the time_point
-    // time_point += std::chrono::milliseconds(milliseconds);
-
-    // return time_point;
-    
-    // Step 1: Parse the date and time part into a std::tm structure
+    // Step 1: Parse the main date and time components (excluding milliseconds)
     std::tm tm = {};
-    std::istringstream ss(datetime_str.substr(0, 19)); // Exclude milliseconds for now
-    ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+    char dot; // To consume the dot before milliseconds
+    int milliseconds;
+    time_stream >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S") >> dot >> milliseconds;
 
-    if (ss.fail()) {
-        throw std::runtime_error("Failed to parse datetime string");
+    if (time_stream.fail())
+    {
+        throw std::runtime_error("Failed to parse time string: " + datetime_str);
     }
 
     // Step 2-1: Let mktime determine if DST is in effect
@@ -120,16 +100,13 @@ std::chrono::system_clock::time_point TimeUtils::parse_time(const std::string& d
     // Step 2-3: Recalculate time_t after applying DST correction
     time_t_value = std::mktime(&local_tm);
 
-    // Step 3: Convert std::time_t to std::chrono::system_clock::time_point
-    std::chrono::system_clock::time_point tp = std::chrono::system_clock::from_time_t(time_t_value);
+    // Step 3: Convert std::time_t to std::chrono::time_point
+    auto time_point = std::chrono::system_clock::from_time_t(time_t_value);
 
-    // Step 4: Add fractional seconds (e.g., milliseconds)
-    if (datetime_str.size() > 19) {
-        auto milliseconds = std::stoi(datetime_str.substr(20));
-        tp += std::chrono::milliseconds(milliseconds);
-    }
+    // Step 4: Add the milliseconds to the time_point
+    time_point += std::chrono::milliseconds(milliseconds);
 
-    return tp;
+    return time_point;
 }
 
 std::string TimeUtils::get_time_interval(std::chrono::system_clock::time_point current_time_point, std::chrono::system_clock::time_point previous_time_point)

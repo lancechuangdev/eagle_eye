@@ -17,5 +17,7 @@ Depends:
     libboost-all-dev, 
     libssl-dev, 
     nlohmann-json3-dev, 
-    libwebsocketpp-dev
+    libc6,
+    libcublas-12-8 | cuda-cublas-12-8,
+    cuda-cudart-12-8
 Description: A tool for deep scanning using MVS SDK.
