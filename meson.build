@@ -10,8 +10,6 @@ gnome = import('gnome')
 # Core dependencies
 gtkmm_dep = dependency('gtkmm-3.0', version: '>= 3.24.0')
 opencv_dep = dependency('opencv4', required: true)
-boost_dep = dependency('boost', required: true)
-openssl_dep = dependency('openssl', required: true)
 json_dep = dependency('nlohmann_json', required: true)
 
 # Camera SDK paths
@@ -61,7 +59,7 @@ executable('ee',
     [resource_target, 'main.cpp', 'main_window.cpp', 'app_paths.cpp', 'frame_queue.cpp', 'pixbuf_queue.cpp', 'file_utils.cpp', 'frame_utils.cpp','time_utils.cpp', 'logger.cpp', 'retention_manager.cpp', 'settings_service.cpp'],
     install: true,
     install_dir: join_paths(get_option('prefix'), 'bin', 'eagle_eye'),
-    dependencies: [gtkmm_dep, opencv_dep, boost_dep, openssl_dep, json_dep, cuda_dep, onnxruntime_dep],
+    dependencies: [gtkmm_dep, opencv_dep, json_dep, cuda_dep, onnxruntime_dep],
     include_directories: [mvcam_inc_dir, onnxruntime_inc_dir],
     link_args: [
         '-Wl,-rpath=' + mvcam_lib_dir,

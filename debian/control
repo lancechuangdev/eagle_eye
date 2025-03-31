@@ -14,10 +14,7 @@ Depends:
     libpangomm-1.4-dev, 
     libatkmm-1.6-dev, 
     libgtkmm-3.0-dev (>= 3.24.0), 
-    libboost-all-dev, 
-    libssl-dev, 
     nlohmann-json3-dev, 
-    libc6,
-    libcublas-12-8 | cuda-cublas-12-8,
+    libcublas-12-8,
     cuda-cudart-12-8
 Description: A tool for deep scanning using MVS SDK.
