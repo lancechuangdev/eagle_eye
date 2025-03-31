@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+
+CONFIG_DIR=".config/eagle_eye/engine_cache"
+
+case "$1" in
+    remove|purge)
+        # Remove engine_cache for all existing users
+        for user in $(awk -F':' '{ if ($3 >= 1000 && $3 < 60000) print $1 }' /etc/passwd); do
+            home_dir=$(eval echo ~$user)
+            cache_path="$home_dir/$CONFIG_DIR"
+            if [ -d "$cache_path" ]; then
+                rm -rf "$cache_path"
+                echo "Removed $cache_path for user $user"
+            fi
+        done
+        ;;
+esac
+
+exit 0
