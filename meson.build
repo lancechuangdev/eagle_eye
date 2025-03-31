@@ -19,9 +19,18 @@ mvcam_runenv = '/opt/MVS/lib'
 mvcam_inc_dir = join_paths(mvcam_runenv, '../include')
 mvcam_lib_dir = join_paths(mvcam_runenv, '64')
 
-# ONNX Runtime GPU Dependency
+# Cuda and tensorrt Dependencies
 cuda_lib_dir = '/usr/local/cuda-12.8/lib64'
-onnxruntime_dir = '/home/boris-alienware/Downloads/onnxruntime-linux-x64-gpu-1.20.1'
+tensorrt_lib_dir = '/usr/lib/python3.10/dist-packages/tensorrt:/usr/lib/python3.12/dist-packages/tensorrt'
+cuda_dep = declare_dependency(
+    link_args: [
+        '-Wl,-rpath,' + cuda_lib_dir,
+        '-Wl,-rpath,' + tensorrt_lib_dir
+    ]
+)
+
+# ONNX Runtime GPU Dependency
+onnxruntime_dir = '/home/boris-alienware/projects/onnxruntime-linux-x64-gpu-1.20.1'
 onnxruntime_inc_dir = include_directories(join_paths(onnxruntime_dir, 'include'))
 onnxruntime_lib_dir = join_paths(onnxruntime_dir, 'lib')
 onnxruntime_dep = declare_dependency(
@@ -52,7 +61,7 @@ executable('ee',
     [resource_target, 'main.cpp', 'main_window.cpp', 'app_paths.cpp', 'frame_queue.cpp', 'pixbuf_queue.cpp', 'file_utils.cpp', 'frame_utils.cpp','time_utils.cpp', 'logger.cpp', 'retention_manager.cpp', 'settings_service.cpp'],
     install: true,
     install_dir: join_paths(get_option('prefix'), 'bin', 'eagle_eye'),
-    dependencies: [gtkmm_dep, opencv_dep, boost_dep, openssl_dep, json_dep, onnxruntime_dep],
+    dependencies: [gtkmm_dep, opencv_dep, boost_dep, openssl_dep, json_dep, cuda_dep, onnxruntime_dep],
     include_directories: [mvcam_inc_dir, onnxruntime_inc_dir],
     link_args: [
         '-Wl,-rpath=' + mvcam_lib_dir,
