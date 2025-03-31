@@ -400,7 +400,7 @@ private:
     void start_listening_for_start_signal();
     void stop_listening_for_start_signal();
     void process_camera_event();
-    void setup_onnx_session(const std::string& model_path);
+    void setup_onnx_session(bool enable_cache);
     std::vector<Ort::Value> run_inference(std::vector<Ort::Value>& input_tensors);
     void print_tensor_shape(const Ort::Value& tensor, const std::string& tensor_name);
     void print_tensor_values(const Ort::Value& tensor, const std::string& name);

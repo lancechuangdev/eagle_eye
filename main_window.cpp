@@ -37,7 +37,7 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     set_window_title(APP_NAME);
 
     // Set up ONNX session
-    setup_onnx_session(MODEL_PATH);
+    setup_onnx_session(true);
 
     m_builder->get_widget("start_signal_test_btn", m_start_signal_test_btn);
     if (m_start_signal_test_btn)
@@ -7566,7 +7566,7 @@ bool MainWindow::on_detection_display_area_motion_notify_event(GdkEventMotion *m
     return true;
 }
 
-void MainWindow::setup_onnx_session(const std::string& model_path) {
+void MainWindow::setup_onnx_session(bool enable_cache) {
     try {
         // Initialize ONNX Runtime environment
         static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ONNXRuntimeModel");
@@ -7581,36 +7581,51 @@ void MainWindow::setup_onnx_session(const std::string& model_path) {
         }
 
         // Define key-value pairs for TensorRT options
+        OrtStatus* status;
 
-        // const char* trt_keys[] = {
-        //     "device_id",
-        //     "trt_max_workspace_size",
-        //     "trt_fp16_enable",
-        //     "trt_engine_cache_enable",
-        //     "trt_engine_cache_path"
-        // };
-        // const char* trt_values[] = {
-        //     "0", // Use GPU 0
-        //     "4294967296", // Allocate 4GB GPU memory
-        //     "1", // Enable FP16 precision
-        //     "1", // Enable TensorRT engine caching
-        //     MODEL_CACHE_PATH.c_str() // Cache directory path
-        // };
-        // Set TensorRT provider options
-        // OrtStatus* status = Ort::GetApi().UpdateTensorRTProviderOptions(trt_options, trt_keys, trt_values, 5);
+        if (enable_cache)
+        {
+            // Ensure cache directory exists
+            if (!std::filesystem::exists(AppPaths::MODEL_CACHE_PATH)) {
+                try {
+                    std::filesystem::create_directories(AppPaths::MODEL_CACHE_PATH);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error creating cache directory: " << e.what() << std::endl;
+                }
+            }
 
-        const char* trt_keys[] = {
-            "device_id",
-            "trt_fp16_enable",
-        };
-        const char* trt_values[] = {
-            "0", // Use GPU 0
-            "1", // Enable FP16 precision
-        };
+            const char* trt_keys[] = {
+                "device_id",
+                "trt_max_workspace_size",
+                "trt_fp16_enable",
+                "trt_engine_cache_enable",
+                "trt_engine_cache_path"
+            };
+            const char* trt_values[] = {
+                "0", // Use GPU 0
+                "4294967296", // Allocate 4GB GPU memory
+                "1", // Enable FP16 precision
+                "1", // Enable TensorRT engine caching
+                AppPaths::MODEL_CACHE_PATH.c_str() // Cache directory path
+            };
+            // Set TensorRT provider options
+            status = Ort::GetApi().UpdateTensorRTProviderOptions(trt_options, trt_keys, trt_values, 5);
+        }
+        else
+        {
+            const char* trt_keys[] = {
+                "device_id",
+                "trt_fp16_enable",
+            };
+            const char* trt_values[] = {
+                "0", // Use GPU 0
+                "1", // Enable FP16 precision
+            };
+    
+            // Set TensorRT provider options
+            status = Ort::GetApi().UpdateTensorRTProviderOptions(trt_options, trt_keys, trt_values, 2);
+        }
 
-        // Set TensorRT provider options
-        OrtStatus* status = Ort::GetApi().UpdateTensorRTProviderOptions(trt_options, trt_keys, trt_values, 2);
-        
         if (status != nullptr) {
             std::cerr << "Error creating TensorRT Provider Options: " 
                     << Ort::GetApi().GetErrorMessage(status) << std::endl;
@@ -7632,7 +7647,7 @@ void MainWindow::setup_onnx_session(const std::string& model_path) {
         session_options.SetLogSeverityLevel(ORT_LOGGING_LEVEL_VERBOSE);
 
         // Create and assign ONNX session to m_onnx_session
-        m_onnx_session = std::make_unique<Ort::Session>(env, model_path.c_str(), session_options);
+        m_onnx_session = std::make_unique<Ort::Session>(env, AppPaths::MODEL_PATH.c_str(), session_options);
 
         std::cout << "ONNX Runtime session initialized with TensorRT execution providers." << std::endl;
     } catch (const Ort::Exception& e) {

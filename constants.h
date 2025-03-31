@@ -21,10 +21,6 @@ const int RGBA_CHANNELS = 4;
 // Patch-related constants
 const int PATCH_SIZE = 512; // The patch_size that detection expects.
 
-// Model-related constants
-const std::string MODEL_PATH = "/usr/local/share/eagle_eye/model.onnx";
-// const std::string MODEL_CACHE_PATH = "/usr/local/share/eagle_eye/engine_cache";
-
 // Project-related constants
 const std::string TEMP_PROJECT_NAME = "ad-hoc";
 

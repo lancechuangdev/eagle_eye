@@ -14,3 +14,5 @@ std::filesystem::path AppPaths::Project_Detection_Results_Path(const std::string
 {
     return AppPaths::Project_Path(project_name) / "detection_results";
 }
+const std::string AppPaths::MODEL_PATH = "/usr/local/share/eagle_eye/model.onnx";
+const std::filesystem::path AppPaths::MODEL_CACHE_PATH = AppPaths::getHomePath() / ".config" / "eagle_eye" / "engine_cache";

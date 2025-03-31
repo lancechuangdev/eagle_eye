@@ -16,6 +16,8 @@ public:
     static const std::filesystem::path Projects_Path;
     static std::filesystem::path Project_Detection_Results_Path(const std::string &project_name);
     static std::filesystem::path Project_Path(const std::string &project_name);
+    static const std::string MODEL_PATH;
+    static const std::filesystem::path MODEL_CACHE_PATH;
     
 private:
     static std::filesystem::path getHomePath() {
