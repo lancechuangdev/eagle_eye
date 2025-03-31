@@ -76,6 +76,7 @@
         "*.ipp": "cpp",
         "forward_list": "cpp",
         "filesystem": "cpp",
-        "ranges": "cpp"
+        "ranges": "cpp",
+        "unordered_set": "cpp"
     }
 }

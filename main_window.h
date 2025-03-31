@@ -348,8 +348,8 @@ private:
     std::vector<double> m_detection_rate_records;
     std::mutex m_detection_rate_mutex;
 
-    // Ort::Session m_onnx_session;
-    std::unique_ptr<Ort::Session> m_onnx_session;
+    std::unique_ptr<Ort::Session> m_onnx_detection_session;
+    std::unique_ptr<Ort::Session> m_onnx_toolkit_session;
 
     void set_window_title(const std::string &title);
     bool create_project(const std::string &project_name);
@@ -400,8 +400,9 @@ private:
     void start_listening_for_start_signal();
     void stop_listening_for_start_signal();
     void process_camera_event();
-    void setup_onnx_session(bool enable_cache);
-    std::vector<Ort::Value> run_inference(std::vector<Ort::Value>& input_tensors);
+    void setup_onnx_detection_session(bool enable_cache);
+    void setup_onnx_toolkit_session();
+    std::vector<Ort::Value> run_inference(const std::unique_ptr<Ort::Session>& session, std::vector<Ort::Value>& input_tensors);
     void print_tensor_shape(const Ort::Value& tensor, const std::string& tensor_name);
     void print_tensor_values(const Ort::Value& tensor, const std::string& name);
     void save_pixbuf(const cv::Mat& pixbuf, const std::string& file_path);

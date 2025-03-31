@@ -37,7 +37,8 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     set_window_title(APP_NAME);
 
     // Set up ONNX session
-    setup_onnx_session(true);
+    setup_onnx_detection_session(true);
+    setup_onnx_toolkit_session();
 
     m_builder->get_widget("start_signal_test_btn", m_start_signal_test_btn);
     if (m_start_signal_test_btn)
@@ -6062,7 +6063,7 @@ void MainWindow::on_snap_clicked()
     input_tensors.push_back(std::move(input_tensor));
     
     // Run inference
-    auto output_tensors = run_inference(input_tensors);
+    auto output_tensors = run_inference(m_onnx_toolkit_session, input_tensors);
     
     // Extract output tensors
     auto anomaly_scores = output_tensors[0].GetTensorMutableData<float>();
@@ -6195,7 +6196,7 @@ void MainWindow::on_toolkit_test_clicked()
     input_tensors.push_back(std::move(input_tensor));
     
     // Run inference
-    auto output_tensors = run_inference(input_tensors);
+    auto output_tensors = run_inference(m_onnx_toolkit_session, input_tensors);
 
     // Extract output tensors
     auto anomaly_scores = output_tensors[0].GetTensorMutableData<float>();
@@ -6529,7 +6530,7 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
             auto input_tensor = FrameUtils::create_input_tensor(batch_patches);
             std::vector<Ort::Value> input_tensors;
             input_tensors.push_back(std::move(input_tensor));
-            run_inference(input_tensors);
+            run_inference(m_onnx_detection_session, input_tensors);
             
             count++;
         }
@@ -6739,7 +6740,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             auto input_tensor = FrameUtils::create_input_tensor(batch_patches);
             std::vector<Ort::Value> input_tensors;
             input_tensors.push_back(std::move(input_tensor));
-            auto output_tensors = run_inference(input_tensors);
+            auto output_tensors = run_inference(m_onnx_detection_session, input_tensors);
 
             // Extract output tensors
             anomaly_scores = output_tensors[0].GetTensorMutableData<float>();
@@ -7566,7 +7567,7 @@ bool MainWindow::on_detection_display_area_motion_notify_event(GdkEventMotion *m
     return true;
 }
 
-void MainWindow::setup_onnx_session(bool enable_cache) {
+void MainWindow::setup_onnx_detection_session(bool enable_cache) {
     try {
         // Initialize ONNX Runtime environment
         static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ONNXRuntimeModel");
@@ -7646,8 +7647,8 @@ void MainWindow::setup_onnx_session(bool enable_cache) {
         // Set log verbosity level
         session_options.SetLogSeverityLevel(ORT_LOGGING_LEVEL_VERBOSE);
 
-        // Create and assign ONNX session to m_onnx_session
-        m_onnx_session = std::make_unique<Ort::Session>(env, AppPaths::MODEL_PATH.c_str(), session_options);
+        // Create and assign ONNX session to m_onnx_detection_session
+        m_onnx_detection_session = std::make_unique<Ort::Session>(env, AppPaths::MODEL_PATH.c_str(), session_options);
 
         std::cout << "ONNX Runtime session initialized with TensorRT execution providers." << std::endl;
     } catch (const Ort::Exception& e) {
@@ -7659,7 +7660,67 @@ void MainWindow::setup_onnx_session(bool enable_cache) {
     }
 }
 
-std::vector<Ort::Value> MainWindow::run_inference(std::vector<Ort::Value>& input_tensors)
+void MainWindow::setup_onnx_toolkit_session() {
+    try {
+        // Initialize ONNX Runtime environment
+        static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ONNXRuntimeModel");
+
+        // Create session options
+        Ort::SessionOptions session_options;
+
+        // Enable TensorRT Execution Provider
+        OrtTensorRTProviderOptionsV2* trt_options = nullptr;
+        if (Ort::GetApi().CreateTensorRTProviderOptions(&trt_options) != nullptr) {
+            std::cerr << "Failed to create TensorRT provider options!" << std::endl;
+        }
+
+        // Define key-value pairs for TensorRT options
+        const char* trt_keys[] = {
+            "device_id",
+            "trt_fp16_enable",
+        };
+        const char* trt_values[] = {
+            "0", // Use GPU 0
+            "1", // Enable FP16 precision
+        };
+
+        // Set TensorRT provider options
+        OrtStatus* status = Ort::GetApi().UpdateTensorRTProviderOptions(trt_options, trt_keys, trt_values, 2);
+
+        if (status != nullptr) {
+            std::cerr << "Error creating TensorRT Provider Options: " 
+                    << Ort::GetApi().GetErrorMessage(status) << std::endl;
+            Ort::GetApi().ReleaseStatus(status);
+        }
+
+        // Append TensorRT provider to session options
+        status = Ort::GetApi().SessionOptionsAppendExecutionProvider_TensorRT_V2(session_options, trt_options);
+        if (status != nullptr) {
+            std::cerr << "Failed to append TensorRT execution provider: " 
+                    << Ort::GetApi().GetErrorMessage(status) << std::endl;
+            Ort::GetApi().ReleaseStatus(status);
+        }
+
+        // Free TensorRT options (ONLY ONCE)
+        Ort::GetApi().ReleaseTensorRTProviderOptions(trt_options);
+
+        // Set log verbosity level
+        session_options.SetLogSeverityLevel(ORT_LOGGING_LEVEL_VERBOSE);
+
+        // Create and assign ONNX session to m_onnx_detection_session
+        m_onnx_toolkit_session = std::make_unique<Ort::Session>(env, AppPaths::MODEL_PATH.c_str(), session_options);
+
+        std::cout << "ONNX Runtime session initialized with TensorRT execution providers." << std::endl;
+    } catch (const Ort::Exception& e) {
+        std::cerr << "ONNX Runtime Error: " << e.what() << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Standard Exception: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "Unknown Exception!" << std::endl;
+    }
+}
+
+std::vector<Ort::Value> MainWindow::run_inference(const std::unique_ptr<Ort::Session>& session, std::vector<Ort::Value>& input_tensors)
 {
     try
     {
@@ -7674,7 +7735,7 @@ std::vector<Ort::Value> MainWindow::run_inference(std::vector<Ort::Value>& input
 
         std::cout << "Running ONNX inference..." << std::endl;
         auto start_time = std::chrono::high_resolution_clock::now();
-        auto output_tensors = m_onnx_session->Run(
+        auto output_tensors = session->Run(
             Ort::RunOptions{nullptr}, 
             input_names.data(), 
             input_tensors.data(), 
