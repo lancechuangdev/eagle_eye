@@ -99,8 +99,6 @@ protected:
     Gtk::Stack *m_toolkit_stack;
     Gtk::RadioButton *m_toolkit_anomaly_detection_rbtn;
     Gtk::RadioButton *m_toolkit_digital_io_rbtn;
-    Gtk::Button *m_check_service_status_btn;
-    Gtk::Label *m_service_status_lbl;
     Gtk::ComboBoxText *m_toolkit_digital_output_source_cbox;
     Gtk::ComboBoxText *m_toolkit_digital_output_line_number_cbox;
     Gtk::Switch *m_toolkit_strobe_enable_switch;
@@ -196,7 +194,6 @@ protected:
     void on_stop_listening_for_start_signal_clicked();
     void on_save_camera_settings_clicked();
     void on_toolkit_toggled();
-    void on_check_service_status_clicked();
     void on_settings_toggled();
     void on_cancel_detection_settings_clicked();
     void on_save_detection_settings_clicked();

@@ -464,14 +464,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         m_toolkit_digital_io_rbtn->signal_toggled().connect(sigc::mem_fun(*this, &MainWindow::on_toolkit_toggled));
     }
 
-    m_builder->get_widget("check_service_status_btn", m_check_service_status_btn);
-    if (m_check_service_status_btn)
-    {
-        m_check_service_status_btn->signal_clicked().connect(sigc::mem_fun(*this, &MainWindow::on_check_service_status_clicked));
-    }
-
-    m_builder->get_widget("service_status_lbl", m_service_status_lbl);
-
     m_builder->get_widget("toolkit_digital_output_source_cbox", m_toolkit_digital_output_source_cbox);
 
     m_builder->get_widget("toolkit_digital_output_line_number_cbox", m_toolkit_digital_output_line_number_cbox);
@@ -3465,48 +3457,6 @@ std::string MainWindow::run_command(const std::string& command)
     }
 
     return result;
-}
-
-void MainWindow::on_check_service_status_clicked()
-{
-    std::string command = "systemctl status eagle_eye_detection.service";
-
-    try
-    {
-        std::string output = run_command(command);
-        std::cout << "Command Output:\n" << output << std::endl;
-
-        // Regular expression to match the status after 'Active:' (captures any status)
-        std::regex status_regex(R"(Active:\s*(\S.*))");
-        std::smatch matches;
-        std::string status = "status unknown";
-        
-        if (std::regex_search(output, matches, status_regex))
-        {
-            status = matches[1];
-        }
-
-        std::cout << status << std::endl;
-        m_service_status_lbl->set_text(status);
-        
-        // Remove previous style classes
-        m_service_status_lbl->get_style_context()->remove_class("green-text");
-        m_service_status_lbl->get_style_context()->remove_class("red-text");
-
-        // Apply new style based on status
-        if (status.find("active (running)") != std::string::npos)
-        {
-            m_service_status_lbl->get_style_context()->add_class("green-text");
-        }
-        else if (status.find("inactive (dead)") != std::string::npos)
-        {
-            m_service_status_lbl->get_style_context()->add_class("red-text");
-        }
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "Error executing command: " << e.what() << std::endl;
-    }
 }
 
 void MainWindow::on_save_camera_settings_clicked()
