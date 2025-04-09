@@ -6642,15 +6642,10 @@ void MainWindow::start_detection(int frame_width, int frame_height)
         size_t record_index = 0; 
         auto last_detection_time = std::chrono::steady_clock::now();
         std::string transaction_id;
+        std::filesystem::path transaction_folder;
         int num_anomalies_beyond_threshold = 0;
         int num_frames_dequeued = 0;
-        std::filesystem::path transaction_folder;
-        int batch_size = 0;
-        int anomaly_map_channels = 0;
-        int anomaly_map_height = 0;
-        int anomaly_map_width = 0;       
-        float* anomaly_scores; // [batch_size]
-        float* anomaly_maps; // [batch_size, channels, height, width]
+        std::vector<AnomalyMapItem> copied_anomaly_maps;
 
         while (m_is_running)
         {
@@ -6684,8 +6679,9 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 return a.serial_number < b.serial_number;
             });
 
-            // Run inference
             if (!m_is_running) break;
+            
+            // Run inference
             auto batch_patches = FrameUtils::build_batch(sorted_frames);
             auto input_tensor = FrameUtils::create_input_tensor(batch_patches);
             std::vector<Ort::Value> input_tensors;
@@ -6693,17 +6689,25 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             auto output_tensors = run_inference(m_onnx_detection_session, input_tensors);
 
             // Extract output tensors
-            anomaly_scores = output_tensors[0].GetTensorMutableData<float>();
+            float* anomaly_scores = output_tensors[0].GetTensorMutableData<float>(); // [batch_size]
             // auto pred_labels = output_tensors[1].GetTensorMutableData<float>();
-            anomaly_maps = output_tensors[2].GetTensorMutableData<float>();
+            float* anomaly_maps = output_tensors[2].GetTensorMutableData<float>(); // [batch_size, channels, height, width]
             // auto pred_masks = output_tensors[3].GetTensorMutableData<float>();
 
             Ort::TensorTypeAndShapeInfo anomaly_map_shape_info = output_tensors[2].GetTensorTypeAndShapeInfo();
             std::vector<int64_t> anomaly_map_shape = anomaly_map_shape_info.GetShape();
-            batch_size = anomaly_map_shape[0];
-            anomaly_map_channels = anomaly_map_shape[1];
-            anomaly_map_height = anomaly_map_shape[2];
-            anomaly_map_width = anomaly_map_shape[3];       
+
+            std::cout << "Anomaly Map Shape: [";
+            for (size_t i = 0; i < anomaly_map_shape.size(); ++i) {
+                std::cout << anomaly_map_shape[i];
+                if (i + 1 < anomaly_map_shape.size()) std::cout << ", ";
+            }
+            std::cout << "]" << std::endl;
+
+            int batch_size = anomaly_map_shape[0];
+            int anomaly_map_channels = anomaly_map_shape[1];
+            int anomaly_map_height = anomaly_map_shape[2];
+            int anomaly_map_width = anomaly_map_shape[3];       
             num_anomalies_beyond_threshold = std::count_if(
                 anomaly_scores, anomaly_scores + batch_size,
                 [&](float score) {
@@ -6711,6 +6715,63 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                     return score >= confidence_threshold;
                 }
             );
+
+            // Create transaction folder
+            if (num_anomalies_beyond_threshold > 0)
+            {
+                transaction_id = generate_transaction_id();
+                transaction_folder = AppPaths::Project_Detection_Results_Path(m_curr_project_name) / transaction_id;
+                std::filesystem::create_directories(transaction_folder);
+            }
+
+            // Copy anomaly map data into structs
+            copied_anomaly_maps.clear();
+            if (num_anomalies_beyond_threshold > 0)
+            {
+                size_t map_size = anomaly_map_height * anomaly_map_width * anomaly_map_channels;
+                int predictions_per_row = frame_width / PATCH_SIZE;
+                
+                for (int i = 0; i < batch_size; ++i)
+                {
+                    float* src = anomaly_maps + i * map_size;
+
+                    if (!src) 
+                    {
+                        std::cerr << "Null pointer for anomaly_map[" << i << "]" << std::endl;
+                        continue;
+                    }
+
+                    // Handle invalid maps or channels
+                    if (anomaly_map_height <= 0 || anomaly_map_width <= 0 || 
+                        anomaly_map_height > 10000 || anomaly_map_width > 10000 ||
+                        anomaly_map_channels != 1)
+                    {
+                        std::cerr << "Invalid anomaly map size: " 
+                                << anomaly_map_height << "x" << anomaly_map_width
+                                << ", channels: " << anomaly_map_channels << std::endl;
+                        continue;
+                    }
+
+                    // Copy into cv::Mat (CV_32F, single-channel)
+                    cv::Mat map(anomaly_map_height, anomaly_map_width, CV_32F);
+                    std::memcpy(map.data, src, map_size * sizeof(float));
+                
+                    // Build filename
+                    std::string transaction_id = transaction_folder.filename().string();
+                    std::string file_path = (transaction_folder / (transaction_id + "_prediction_" + std::to_string(i) + ".png")).string();
+                
+                    int row = i / predictions_per_row;
+                    int col = i % predictions_per_row;
+                
+                    copied_anomaly_maps.push_back({
+                        map,
+                        anomaly_scores[i],
+                        file_path,
+                        col * PATCH_SIZE,
+                        row * PATCH_SIZE
+                    });
+                }
+            }
 
             // Trigger digital output
             if (!m_is_running) break;
@@ -6758,14 +6819,11 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 }
             }
 
-            // Create and save transaction json to file
             if (!m_is_running) break;
+
+            // Save transaction json to file
             if (num_anomalies_beyond_threshold > 0)
             {
-                transaction_id = generate_transaction_id();
-                transaction_folder = AppPaths::Project_Detection_Results_Path(m_curr_project_name) / transaction_id;
-                std::filesystem::create_directories(transaction_folder);
-    
                 // Create frames JSON array
                 nlohmann::json frames_json = nlohmann::json::array();
                 for (int i = 0; i < num_frames_dequeued; ++i) {
@@ -6825,11 +6883,12 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 std::cout << "Transaction file created successfully: " << transaction_file << std::endl;
             }
 
+            if (!m_is_running) break;
+
             // Convert frames to RGB directly into the allocated RGB buffer for GTK display
             // The memory backing frame_data.pData is owned by camera SDK, it could be freed or overwritten while image dispatcher running.
             // So need to copy it before running dispatcher. 
             // It seems only required when running detection continously, not for snapping a single frame.
-            if (!m_is_running) break;
             uint8_t* frame_rgb_data_ptr = m_frame_rgb_data_buffer.data(); // Reset to the beginning of the buffer
             for (auto frame_data : sorted_frames)
             {
@@ -6947,103 +7006,73 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             // Dislay prediction results (via dispatcher to ensure thread saftey)
             if (!m_masks_dispatcher_connection.connected())
             {
-                m_masks_dispatcher_connection = m_main_masks_dispatcher.connect([this, &frame_width, &batch_size, &anomaly_scores, &anomaly_maps, &anomaly_map_channels, &anomaly_map_height, &anomaly_map_width, &num_anomalies_beyond_threshold, &confidence_threshold, &transaction_folder]()
+                m_masks_dispatcher_connection = m_main_masks_dispatcher.connect([this, &copied_anomaly_maps, &confidence_threshold]()
                 {
                     m_masks_dispatcher_running = true;
 
                     std::vector<std::pair<cv::Mat, std::string>> items_to_enqueue;
 
-                    for (int i = 0; i < batch_size; ++i)
+                    for (const auto& item : copied_anomaly_maps)
                     {
-                        std::cout << "Anomaly Score: " << anomaly_scores[i] << std::endl;
-
-                        if (anomaly_scores[i] < confidence_threshold)
-                        {
+                        if (item.score < confidence_threshold) {
                             continue;
                         }
-                                                
-                        // Extract only the first channel
-                        float* anomaly_map = anomaly_maps + (i * anomaly_map_channels * anomaly_map_height * anomaly_map_width);
 
-                        // Resize anomaly map
-                        cv::Mat anomaly_map_mat(anomaly_map_height, anomaly_map_width, CV_32F, anomaly_map);
-                        cv::Mat anomaly_map_resized;
-                        cv::resize(anomaly_map_mat, anomaly_map_resized, cv::Size(PATCH_SIZE, PATCH_SIZE), 0, 0, cv::INTER_CUBIC);
-
-                        // Find min and max values
-                        float* anomaly_map_end = anomaly_map + anomaly_map_channels * anomaly_map_height * anomaly_map_width;
-                        float min_val = *std::min_element(anomaly_map, anomaly_map_end);
-                        float max_val = *std::max_element(anomaly_map, anomaly_map_end);
-
-                        // Normalize
-                        cv::Mat anomaly_map_norm;
-                        if (max_val - min_val > 1e-8) {
-                            anomaly_map_norm = (anomaly_map_resized - min_val) / (max_val - min_val);
-                        } else {
-                            anomaly_map_norm = anomaly_map_resized.clone();
+                        if (item.map.empty()) {
+                            std::cerr << "Skipped empty anomaly map: " << item.filename << std::endl;
+                            continue;
                         }
 
-                        // Convert to 8-bit
-                        anomaly_map_norm.convertTo(anomaly_map_norm, CV_8U, 255.0);
+                        cv::Mat resized, normalized, colored;
+                        cv::resize(item.map, resized, cv::Size(PATCH_SIZE, PATCH_SIZE), 0, 0, cv::INTER_CUBIC);
 
-                        // Apply colormap
-                        cv::Mat anomaly_map_colored;
-                        cv::applyColorMap(anomaly_map_norm, anomaly_map_colored, cv::COLORMAP_JET);
+                        double min_val, max_val;
+                        cv::minMaxLoc(resized, &min_val, &max_val);
 
-                        // Convert BGR (OpenCV default) to RGB for GTK display
-                        cv::cvtColor(anomaly_map_colored, anomaly_map_colored, cv::COLOR_BGR2RGB);
+                        if (max_val - min_val > 1e-8) {
+                            normalized = (resized - min_val) / (max_val - min_val);
+                        } else {
+                            normalized = resized.clone();
+                        }
 
-                        // Copy the prediction image into m_mask_pixbuf_toolkit at the specified position
+                        normalized.convertTo(normalized, CV_8U, 255.0);
+                        cv::applyColorMap(normalized, colored, cv::COLORMAP_JET);
+                        cv::cvtColor(colored, colored, cv::COLOR_BGR2RGB);
+
                         auto prediction_pixbuf = Gdk::Pixbuf::create_from_data(
-                            anomaly_map_colored.data,
+                            colored.data,
                             Gdk::COLORSPACE_RGB,
-                            false, // No alpha channel
-                            8, // Bits per channel
-                            PATCH_SIZE, 
+                            false,
+                            8,
                             PATCH_SIZE,
-                            PATCH_SIZE * 3 // Rowstride (each row has width * 3 bytes)
+                            PATCH_SIZE,
+                            PATCH_SIZE * 3
                         );
 
-                        int predictions_per_row = frame_width / PATCH_SIZE;
-                        int row = i / predictions_per_row;
-                        int col = i % predictions_per_row;
-                        int position_x = col * PATCH_SIZE;
-                        int position_y = row * PATCH_SIZE;
-
-                        prediction_pixbuf->Gdk::Pixbuf::copy_area(
-                            0,
-                            0,
+                        prediction_pixbuf->copy_area(
+                            0, 0,
                             PATCH_SIZE,
                             PATCH_SIZE,
                             m_mask_pixbuf_rt_monitoring,
-                            position_x,
-                            position_y
+                            item.position_x,
+                            item.position_y
                         );
 
-                        // Save anomaly maps to files
-                        std::string transaction_id = transaction_folder.filename().string();
-                        std::string file_path = (transaction_folder / (transaction_id + "_prediction_" + std::to_string(i) + ".png")).string();
-                        items_to_enqueue.emplace_back(anomaly_map_colored, file_path);
+                        items_to_enqueue.emplace_back(colored, item.filename);
                     }
 
-                    // Save anomaly maps to files
-                    if (!items_to_enqueue.empty())
-                    {
+                    if (!items_to_enqueue.empty()) {
                         m_pixbuf_queue.enqueue(items_to_enqueue);
                     }
 
                     update_mask_alpha(m_mask_pixbuf_rt_monitoring, m_mask_alpha * 255);
 
-                    // Update # of detected anomalies label
-                    if (m_rt_monitoring_num_anomalies_lbl)
-                    {
-                        m_session_anomaly_count += num_anomalies_beyond_threshold;
+                    if (m_rt_monitoring_num_anomalies_lbl) {
+                        m_session_anomaly_count += static_cast<int>(items_to_enqueue.size());
                         m_rt_monitoring_num_anomalies_lbl->set_text(std::to_string(m_session_anomaly_count));
                     }
 
-                    // Redraw the drawing area
                     this->m_rt_monitoring_drawing_area->queue_draw();
-
                     m_masks_dispatcher_running = false;
                 });
             }
@@ -7772,3 +7801,28 @@ void MainWindow::save_pixbuf(const cv::Mat& pixbuf, const std::string& file_path
         std::cerr << "Error: Attempted to save an empty image." << std::endl;
     }
 }
+
+// void MainWindow::save_pixbuf(const cv::Mat& pixbuf, const std::string& file_path)
+// {
+//     if (!pixbuf.empty()) {
+//         if (pixbuf.cols > 0 && pixbuf.rows > 0 &&
+//             pixbuf.cols < 10000 && pixbuf.rows < 10000) // sanity limits
+//         {
+//             try {
+//                 std::cout << "Saving image: " << pixbuf.cols << "x" << pixbuf.rows
+//                           << ", channels: " << pixbuf.channels()
+//                           << ", path: " << file_path << std::endl;
+
+//                 cv::imwrite(file_path, pixbuf);
+//                 std::cout << "Saved: " << file_path << std::endl;
+//             } catch (const std::exception& e) {
+//                 std::cerr << "Error saving image: " << e.what() << std::endl;
+//             }
+//         } else {
+//             std::cerr << "Error: Image dimensions are too large or invalid: "
+//                       << pixbuf.cols << "x" << pixbuf.rows << std::endl;
+//         }
+//     } else {
+//         std::cerr << "Error: Attempted to save an empty image." << std::endl;
+//     }
+// }

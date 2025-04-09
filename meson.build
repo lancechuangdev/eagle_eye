@@ -19,7 +19,8 @@ mvcam_lib_dir = join_paths(mvcam_runenv, '64')
 
 # Cuda and tensorrt Dependencies
 cuda_lib_dir = '/usr/local/cuda-12.8/lib64'
-tensorrt_lib_dir = '/usr/lib/python3.10/dist-packages/tensorrt:/usr/lib/python3.12/dist-packages/tensorrt'
+#tensorrt_lib_dir = '/usr/lib/python3.10/dist-packages/tensorrt:/usr/lib/python3.12/dist-packages/tensorrt'
+tensorrt_lib_dir = '/usr/local/TensorRT-10.8.0.43/lib'
 cuda_dep = declare_dependency(
     link_args: [
         '-Wl,-rpath,' + cuda_lib_dir,
@@ -28,7 +29,7 @@ cuda_dep = declare_dependency(
 )
 
 # ONNX Runtime GPU Dependency
-onnxruntime_dir = '/home/boris-alienware/projects/onnxruntime-linux-x64-gpu-1.20.1'
+onnxruntime_dir = '/usr/local/onnxruntime-linux-x64-gpu-1.20.1'
 onnxruntime_inc_dir = include_directories(join_paths(onnxruntime_dir, 'include'))
 onnxruntime_lib_dir = join_paths(onnxruntime_dir, 'lib')
 onnxruntime_dep = declare_dependency(
@@ -77,12 +78,6 @@ executable('ee',
 # Install application data files
 install_data(
     ['ui.glade', 'style.css', 'model.ckpt', 'model.onnx'],
-    install_dir: join_paths(get_option('prefix'), 'share', 'eagle_eye')
-)
-
-# Install all ONNX runtime files
-install_subdir(
-    'onnxruntime-linux-x64-gpu-1.20.1',
     install_dir: join_paths(get_option('prefix'), 'share', 'eagle_eye')
 )
 

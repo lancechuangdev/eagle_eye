@@ -249,7 +249,14 @@ private:
         std::string event_name;
         int event_id;
     };
-    
+
+    struct AnomalyMapItem {
+        cv::Mat map;          // Single-channel
+        float score;          // Anomaly score
+        std::string filename; // Output file path
+        int position_x = 0;   // For Pixbuf placement
+        int position_y = 0;
+    };
 
     Glib::RefPtr<Gtk::Builder> m_builder;
     std::string m_curr_project_name;
