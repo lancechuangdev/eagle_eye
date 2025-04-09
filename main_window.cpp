@@ -6647,6 +6647,10 @@ void MainWindow::start_detection(int frame_width, int frame_height)
         int num_frames_dequeued = 0;
         std::vector<AnomalyMapItem> copied_anomaly_maps;
 
+        auto get_current_anomaly_maps = [&copied_anomaly_maps]() {
+            return copied_anomaly_maps;
+        };
+
         while (m_is_running)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Prevent CPU overuse
@@ -7001,18 +7005,19 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             if (m_is_running)
             {
                 m_main_images_dispatcher.emit();
-            }
+            }     
 
             // Dislay prediction results (via dispatcher to ensure thread saftey)
             if (!m_masks_dispatcher_connection.connected())
             {
-                m_masks_dispatcher_connection = m_main_masks_dispatcher.connect([this, &copied_anomaly_maps, &confidence_threshold]()
+                m_masks_dispatcher_connection = m_main_masks_dispatcher.connect([this, get_current_anomaly_maps, &confidence_threshold]()
                 {
                     m_masks_dispatcher_running = true;
 
+                    auto current_maps = get_current_anomaly_maps(); // Get fresh copy at time of emit
                     std::vector<std::pair<cv::Mat, std::string>> items_to_enqueue;
 
-                    for (const auto& item : copied_anomaly_maps)
+                    for (const auto& item : current_maps)
                     {
                         if (item.score < confidence_threshold) {
                             continue;
