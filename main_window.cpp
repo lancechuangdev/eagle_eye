@@ -5785,6 +5785,8 @@ void MainWindow::on_stop_clicked()
 {
     m_is_running = false;
 
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
     // Stop capture thead
     for (const auto& pair : m_connected_device_handles)
     {
@@ -6682,8 +6684,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             {
                 return a.serial_number < b.serial_number;
             });
-
-            if (!m_is_running) break;
             
             // Run inference
             auto batch_patches = FrameUtils::build_batch(sorted_frames);
@@ -6778,7 +6778,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
             }
 
             // Trigger digital output
-            if (!m_is_running) break;
             if (num_anomalies_beyond_threshold > 0)
             {
                 std::string digital_ouput;
@@ -6822,8 +6821,6 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                     m_logger->log("Digital output source not found: " + digital_ouput, Logger::ERROR);
                 }
             }
-
-            if (!m_is_running) break;
 
             // Save transaction json to file
             if (num_anomalies_beyond_threshold > 0)
@@ -6879,15 +6876,15 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 if (!ofs.is_open())
                 {
                     std::cerr << "Failed to open file: " << transaction_file << std::endl;
-                    return false;
                 }
-                ofs << transaction_json.dump(4); // Pretty-print with 4 spaces
-                ofs.close();
+                else
+                {
+                    ofs << transaction_json.dump(4); // Pretty-print with 4 spaces
+                    ofs.close();
+                }
 
                 std::cout << "Transaction file created successfully: " << transaction_file << std::endl;
             }
-
-            if (!m_is_running) break;
 
             // Convert frames to RGB directly into the allocated RGB buffer for GTK display
             // The memory backing frame_data.pData is owned by camera SDK, it could be freed or overwritten while image dispatcher running.
@@ -7002,10 +6999,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 });
             }
 
-            if (m_is_running)
-            {
-                m_main_images_dispatcher.emit();
-            }     
+            m_main_images_dispatcher.emit();
 
             // Dislay prediction results (via dispatcher to ensure thread saftey)
             if (!m_masks_dispatcher_connection.connected())
@@ -7082,7 +7076,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 });
             }
 
-            if (m_is_running && num_anomalies_beyond_threshold > 0)
+            if (num_anomalies_beyond_threshold > 0)
             {
                 m_main_masks_dispatcher.emit();
             }

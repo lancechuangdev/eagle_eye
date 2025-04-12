@@ -8,7 +8,7 @@
 const std::string APP_NAME = "Eagle Eye";
 
 // Detection-related constants
-const double CAPTURE_RATE = 100.0;
+const double CAPTURE_RATE = 20.0;
 const int WARMUP_NUM_ITERATIONS = 5;
 const int DETECTION_TIMEOUT_MS = 3000;
 const int FRAME_BATCH_SIZE = 2;

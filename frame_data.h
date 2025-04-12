@@ -1,6 +1,7 @@
 #ifndef EAGLE_EYE_FRAME_DATA_H
 #define EAGLE_EYE_FRAME_DATA_H
 
+#include <string>
 #include "MvCameraControl.h"
 
 struct FrameData {
