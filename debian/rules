@@ -5,7 +5,7 @@
 	dh $@
 
 override_dh_auto_configure:
-	meson setup builddir --prefix=/usr/local
+	MESON=$(shell which meson) && $$MESON setup builddir --prefix=/usr/local
 
 override_dh_auto_build:
 	ninja -C builddir
