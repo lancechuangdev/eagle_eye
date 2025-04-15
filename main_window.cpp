@@ -7022,8 +7022,8 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                             continue;
                         }
 
-                        cv::Mat resized, normalized, colored;
-                        cv::resize(item.map, resized, cv::Size(PATCH_SIZE, PATCH_SIZE), 0, 0, cv::INTER_CUBIC);
+                        cv::Mat resized, normalized, colored, colored_rgb;
+                        cv::resize(item.map, resized, cv::Size(PATCH_SIZE, PATCH_SIZE), 0, 0, cv::INTER_LINEAR);
 
                         double min_val, max_val;
                         cv::minMaxLoc(resized, &min_val, &max_val);
@@ -7036,10 +7036,10 @@ void MainWindow::start_detection(int frame_width, int frame_height)
 
                         normalized.convertTo(normalized, CV_8U, 255.0);
                         cv::applyColorMap(normalized, colored, cv::COLORMAP_JET);
-                        cv::cvtColor(colored, colored, cv::COLOR_BGR2RGB);
+                        cv::cvtColor(colored, colored_rgb, cv::COLOR_BGR2RGB);
 
                         auto prediction_pixbuf = Gdk::Pixbuf::create_from_data(
-                            colored.data,
+                            colored_rgb.data,
                             Gdk::COLORSPACE_RGB,
                             false,
                             8,
