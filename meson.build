@@ -92,3 +92,10 @@ install_data(
     'eagle_eye.desktop',
     install_dir: '/usr/share/applications'
 )
+
+# Install launcher shell script
+install_data(
+    'eagle_eye_launcher.sh',
+    install_dir: join_paths(get_option('prefix'), 'bin', 'eagle_eye'),
+    install_mode: ['rwxr-xr-x']
+)

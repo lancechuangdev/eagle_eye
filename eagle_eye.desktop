@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Eagle Eye
 Comment=A Fabric Anomaly Detection Application
-Exec=/usr/local/bin/eagle_eye/ee
+Exec=/usr/local/bin/eagle_eye/eagle_eye_launcher.sh
 Icon=/usr/share/icons/hicolor/512x512/apps/com.example.eagle_eye.png
 Terminal=false
 Type=Application
