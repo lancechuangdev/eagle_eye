@@ -37,7 +37,7 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     set_window_title(APP_NAME);
 
     // Set up ONNX session
-    setup_onnx_detection_session(true);
+    // setup_onnx_detection_session(true);
     setup_onnx_toolkit_session();
 
     m_builder->get_widget("start_signal_test_btn", m_start_signal_test_btn);
@@ -6439,6 +6439,8 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
     std::promise<void> warmup_promise;
     auto warmup_future = warmup_promise.get_future();
 
+    setup_onnx_detection_session(true);
+
     // Start the warm-up thread
     m_warmup_thread = std::thread([this, frame_width, frame_height, promise = std::move(warmup_promise)]() mutable
     {
@@ -6494,6 +6496,8 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
     // Wait for the warm-up to complete
     warmup_future.wait();
 
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
     // Send digital output signal once warm-up is completed
     std::string digital_ouput;
     std::string line_number;
@@ -6542,6 +6546,8 @@ void MainWindow::start_warmup(int frame_width, int frame_height)
 void MainWindow::start_detection(int frame_width, int frame_height)
 {
     add_runtime_event("Detection Starting");
+
+    setup_onnx_detection_session(true);
 
     auto now = std::chrono::system_clock::now();
     // Add a new session with the current time as the start and a placeholder for the end time
