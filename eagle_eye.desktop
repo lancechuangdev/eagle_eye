@@ -6,4 +6,4 @@ Icon=/usr/share/icons/hicolor/512x512/apps/com.example.eagle_eye.png
 Terminal=false
 Type=Application
 Categories=Application
-StartupWMClass=com.example.eagle_eye
+StartupWMClass=ee
