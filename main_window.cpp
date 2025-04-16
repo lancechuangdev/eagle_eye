@@ -558,10 +558,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     }
 
     m_builder->get_widget("recent_detection_results_selector_cbox", m_recent_detection_results_selector_cbox);
-    if (m_recent_detection_results_selector_cbox)
-    {
-        m_recent_detection_results_selector_cbox->signal_changed().connect(sigc::mem_fun(*this, &MainWindow::on_recent_detection_results_selector_changed));
-    }
 
     m_builder->get_widget("load_detection_results_spinner", m_load_detection_results_spinner);
     if (m_load_detection_results_spinner)
@@ -1689,11 +1685,6 @@ void MainWindow::load_recent_projects()
     }
 }
 
-void MainWindow::on_recent_detection_results_selector_changed()
-{
-    load_detection_results_async();
-}
-
 void MainWindow::on_detection_results_refresh_clicked()
 {
     load_detection_results_async();
@@ -1944,7 +1935,19 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
     
     for (const auto &prediction : json_data["predictions"])
     {
+        // Load prediction ID
+        if (!prediction.contains("prediction_id"))
+        {
+            continue;
+        }
         int prediction_id = prediction["prediction_id"].get<int>();
+
+        // Load anomaly score
+        if (!prediction.contains("anomaly_score"))
+        {
+            continue;
+        }
+        auto anomaly_score = prediction["anomaly_score"].get<double>();
 
         // Check if "file_name" key exists before accessing it
         if (!prediction.contains("file_name"))
@@ -2006,6 +2009,14 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
         auto label = Gtk::make_managed<Gtk::Label>("Patch ID: " + std::to_string(prediction_id));
         label->set_halign(Gtk::ALIGN_START); // Align text to the left
         item_box->pack_start(*label, Gtk::PACK_SHRINK);
+
+        // Create and add the anomaly score
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(2) << anomaly_score;
+        auto score_label = Gtk::make_managed<Gtk::Label>("Anomaly Score: " + ss.str());
+        // auto score_label = Gtk::make_managed<Gtk::Label>("Anomaly Score: " + std::to_string(anomaly_score));
+        score_label->set_halign(Gtk::ALIGN_START); // Align text to the left
+        item_box->pack_start(*score_label, Gtk::PACK_SHRINK);
 
         // Create and add the thumbnail
         const int thumbnail_width = 80;
@@ -2113,12 +2124,11 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
 
                 if (remark == "TP") // 'remark' does not exist or marked as True Positive, changing to False Positive
                 {
-                    bool is_images_dir_created = FileUtils::createSubdirectory(AppPaths::Dataset_Path.string(), "images");
-                    bool is_masks_dir_created = FileUtils::createSubdirectory(AppPaths::Dataset_Path.string(), "masks");
+                    bool is_images_dir_created = FileUtils::createSubdirectory(AppPaths::Project_Dataset_Path(m_curr_project_name).string(), "normal");
                     
-                    if (!is_images_dir_created || !is_masks_dir_created)
+                    if (!is_images_dir_created)
                     {
-                        throw std::runtime_error("Failed to create images or masks directory");
+                        throw std::runtime_error("Failed to create normal images directory");
                     }
 
                     // Ensure the patch coordinates and dimensions are within bounds
@@ -2132,17 +2142,7 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
                         // Save the patch to a file
                         if (patch_pixbuf)
                         {
-                            patch_pixbuf->save((AppPaths::Dataset_Path / "images" / filename).string(), "png");
-                            
-                            // Create a black mask pixbuf
-                            auto mask_pixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, patch_width, patch_height);
-                            mask_pixbuf->fill(0x000000);
-                            
-                            // Save the mask to a file
-                            if (mask_pixbuf)
-                            {
-                                mask_pixbuf->save((AppPaths::Dataset_Path / "masks" / filename).string(), "png");
-                            }
+                            patch_pixbuf->save((AppPaths::Project_Dataset_Path(m_curr_project_name) / "normal" / filename).string(), "png");
                         }
 
                         // Mark the patch as FP and update transaction json file
@@ -2160,8 +2160,8 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
                     // Mark the patch as TP and update transaction json file
                     update_patch_remark(trans_json_path, prediction_id, "TP");
 
-                    // Delete image/mask pair from Dataset path
-                    auto imagePath = AppPaths::Dataset_Path / "images" / filename;
+                    // Delete the image from normal dir
+                    auto imagePath = AppPaths::Project_Dataset_Path(m_curr_project_name) / "normal" / filename;
                     if (std::filesystem::exists(imagePath))
                     {
                         // Delete the image
@@ -2171,18 +2171,6 @@ void MainWindow::load_detection_result_in_report(std::string &detection_result_f
                     else
                     {
                         std::cerr << "File not found: " << imagePath << std::endl;
-                    }
-
-                    auto maskPath = AppPaths::Dataset_Path / "masks" / filename;
-                    if (std::filesystem::exists(maskPath))
-                    {
-                        // Delete the mask
-                        std::filesystem::remove(maskPath);
-                        std::cout << "File deleted: " << maskPath << std::endl;
-                    }
-                    else
-                    {
-                        std::cerr << "File not found: " << maskPath << std::endl;
                     }
 
                     set_button_icon(delete_button, "/com/example/eagle_eye/delete.svg");
@@ -2497,15 +2485,19 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
             {
                 std::string filename = transaction_id + "_patch_" + std::to_string(prediction_id) + ".png";
                 auto remark = get_patch_remark(trans_json_path, prediction_id);
+                auto project_name = "ad_hoc";
+
+                // Create the directory path
+                std::filesystem::path project_folder = AppPaths::Project_Path(project_name);
+                std::filesystem::create_directories(project_folder);
 
                 if (remark == "TP") // 'remark' does not exist or marked as True Positive, changing to False Positive
                 {
-                    bool is_images_dir_created = FileUtils::createSubdirectory(AppPaths::Dataset_Path.string(), "images");
-                    bool is_masks_dir_created = FileUtils::createSubdirectory(AppPaths::Dataset_Path.string(), "masks");
+                    bool is_images_dir_created = FileUtils::createSubdirectory(AppPaths::Project_Dataset_Path(project_name).string(), "normal");
                     
-                    if (!is_images_dir_created || !is_masks_dir_created)
+                    if (!is_images_dir_created)
                     {
-                        throw std::runtime_error("Failed to create images or masks directory");
+                        throw std::runtime_error("Failed to create normal images directory");
                     }
 
                     // Ensure the patch coordinates and dimensions are within bounds
@@ -2519,17 +2511,7 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
                         // Save the patch to a file
                         if (patch_pixbuf)
                         {
-                            patch_pixbuf->save((AppPaths::Dataset_Path / "images" / filename).string(), "png");
-                            
-                            // Create a black mask pixbuf
-                            auto mask_pixbuf = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, false, 8, patch_width, patch_height);
-                            mask_pixbuf->fill(0x000000);
-                            
-                            // Save the mask to a file
-                            if (mask_pixbuf)
-                            {
-                                mask_pixbuf->save((AppPaths::Dataset_Path / "masks" / filename).string(), "png");
-                            }
+                            patch_pixbuf->save((AppPaths::Project_Dataset_Path(project_name) / "normal" / filename).string(), "png");
                         }
 
                         // Mark the patch as FP and update transaction json file
@@ -2548,7 +2530,7 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
                     update_patch_remark(trans_json_path, prediction_id, "TP");
 
                     // Delete image/mask pair from Dataset path
-                    auto imagePath = AppPaths::Dataset_Path / "images" / filename;
+                    auto imagePath = AppPaths::Project_Dataset_Path(project_name) / "normal" / filename;
                     if (std::filesystem::exists(imagePath))
                     {
                         // Delete the image
@@ -2558,18 +2540,6 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
                     else
                     {
                         std::cerr << "File not found: " << imagePath << std::endl;
-                    }
-
-                    auto maskPath = AppPaths::Dataset_Path / "masks" / filename;
-                    if (std::filesystem::exists(maskPath))
-                    {
-                        // Delete the mask
-                        std::filesystem::remove(maskPath);
-                        std::cout << "File deleted: " << maskPath << std::endl;
-                    }
-                    else
-                    {
-                        std::cerr << "File not found: " << maskPath << std::endl;
                     }
 
                     set_button_icon(delete_button, "/com/example/eagle_eye/delete.svg");

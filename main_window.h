@@ -200,7 +200,6 @@ protected:
     void on_detection_result_selected(Gtk::ListBoxRow* row);
     bool on_detection_results_display_area_draw(const Cairo::RefPtr<Cairo::Context> &cr);
     void on_detection_results_refresh_clicked();
-    void on_recent_detection_results_selector_changed();
     void on_enable_masking_changed();
     void on_detection_digital_input_selection_changed();
     void on_detection_digital_output_selection_changed();
