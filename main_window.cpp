@@ -534,6 +534,8 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("settings_detection_digital_output_line_number_lbl", m_settings_detection_digital_output_line_number_lbl);
 
+    m_builder->get_widget("detection_rate_entry", m_detection_rate_entry);
+
     m_builder->get_widget("detection_sensitivity_scale", m_detection_sensitivity_scale);
     if (m_detection_sensitivity_scale)
     {
@@ -2728,16 +2730,13 @@ bool MainWindow::on_detection_results_display_area_draw(const Cairo::RefPtr<Cair
 void MainWindow::load_detection_settings()
 {
     std::string detection_camera;
-    auto detection_rate = 0;
     std::string digital_io_type;
     std::string digital_input;
     std::string digital_input_line_number;
     std::string digital_output;
     std::string digital_output_line_number;
+    auto detection_rate = 0;
     auto confidence_threshold = 0.5;
-    auto pixel_threshold = 0.1;
-    auto max_per_day = 1000;
-    auto days_to_retain = 30;
 
     auto detection_settings = SettingsService::get_settings("detection");
     if (!detection_settings.empty())
@@ -2745,11 +2744,6 @@ void MainWindow::load_detection_settings()
         if (detection_settings.contains("detection_camera"))
         {
             detection_camera = detection_settings["detection_camera"];
-        }
-
-        if (detection_settings.contains("detection_rate"))
-        {
-            detection_rate = detection_settings["detection_rate"];
         }
 
         if (detection_settings.contains("digital_input"))
@@ -2767,9 +2761,9 @@ void MainWindow::load_detection_settings()
             confidence_threshold = detection_settings["confidence_threshold"];
         }
 
-        if (detection_settings.contains("pixel_threshold"))
+        if (detection_settings.contains("detection_rate"))
         {
-            pixel_threshold = detection_settings["pixel_threshold"];
+            detection_rate = detection_settings["detection_rate"];
         }
     }
 
@@ -2871,6 +2865,10 @@ void MainWindow::load_detection_settings()
     {
         m_detection_sensitivity_scale->set_value(confidence_threshold);
     }
+    if (m_detection_rate_entry)
+    {
+        m_detection_rate_entry->set_text(std::to_string(detection_rate));
+    }
 }
 
 void MainWindow::on_cancel_detection_settings_clicked()
@@ -2898,6 +2896,20 @@ void MainWindow::on_save_detection_settings_clicked()
     {
         auto digital_output = m_select_detection_digital_output_cbox->get_active_text();
         new_settings["digital_output"] = digital_output;
+    }
+    if (m_detection_rate_entry)
+    {
+        auto detection_rate = std::stod(m_detection_rate_entry->get_text());
+        // Ensure detection rate is within the range of 10 to 30
+        if (detection_rate < 10)
+        {
+            detection_rate = 10;
+        }
+        else if (detection_rate > 30)
+        {
+            detection_rate = 30;
+        }
+        new_settings["detection_rate"] = detection_rate;
     }
     if (m_detection_sensitivity_scale)
     {
@@ -6326,7 +6338,23 @@ void MainWindow::start_capture(void *device_handle)
         // Start the frame acquisition thread
         auto capturing_thread = std::thread([this, device_handle]()
         {
-            const double frameIntervalMs = 1000.0 / CAPTURE_RATE;  // 30 FPS -> 33.33 ms interval
+            // Set the desired frame rate
+            double frame_rate = 0.0;  // Frames per second
+            auto detection_settings = SettingsService::get_settings("detection");
+            if (!detection_settings.empty())
+            {
+                if (detection_settings.contains("detection_rate"))
+                {
+                    frame_rate = detection_settings["detection_rate"];
+                }
+            }
+
+            // Calculate the interval between frames in milliseconds
+            // For example: 30 FPS -> 33.33 ms interval
+            // 1000 ms / 30 frames = 33.33 ms per frame
+            const double frameIntervalMs = 1000.0 / frame_rate;
+
+            // Initialize the last capture time
             auto lastCaptureTime = std::chrono::steady_clock::now();
 
             while (m_is_running)
