@@ -122,7 +122,7 @@ protected:
     Gtk::Label *m_settings_detection_digital_input_line_number_lbl;
     Gtk::ComboBoxText *m_select_detection_digital_output_cbox;
     Gtk::Label *m_settings_detection_digital_output_line_number_lbl;
-    Gtk::Entry *m_detection_rate_entry;
+    Gtk::SpinButton *m_detection_rate_sbtn;
     Gtk::Scale *m_detection_sensitivity_scale;
     Gtk::Button *m_cancel_detection_settings_btn;
     Gtk::Button *m_save_detection_settings_btn;

@@ -9,6 +9,7 @@ const std::string APP_NAME = "Eagle Eye";
 
 // Detection-related constants
 const int WARMUP_NUM_ITERATIONS = 5;
+const double DEFAULT_DETECTION_RATE = 20.0;
 const int DETECTION_TIMEOUT_MS = 3000;
 const int FRAME_BATCH_SIZE = 2;
 const int MAX_PATCHES_PER_BATCH = 50; // The max number of anomaly patches that detection model generates per batch.

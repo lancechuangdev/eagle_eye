@@ -530,7 +530,7 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
 
     m_builder->get_widget("settings_detection_digital_output_line_number_lbl", m_settings_detection_digital_output_line_number_lbl);
 
-    m_builder->get_widget("detection_rate_entry", m_detection_rate_entry);
+    m_builder->get_widget("detection_rate_sbtn", m_detection_rate_sbtn);
 
     m_builder->get_widget("detection_sensitivity_scale", m_detection_sensitivity_scale);
     if (m_detection_sensitivity_scale)
@@ -2731,7 +2731,7 @@ void MainWindow::load_detection_settings()
     std::string digital_input_line_number;
     std::string digital_output;
     std::string digital_output_line_number;
-    auto detection_rate = 0;
+    auto detection_rate = DEFAULT_DETECTION_RATE;
     auto confidence_threshold = 0.5;
 
     auto detection_settings = SettingsService::get_settings("detection");
@@ -2861,9 +2861,9 @@ void MainWindow::load_detection_settings()
     {
         m_detection_sensitivity_scale->set_value(confidence_threshold);
     }
-    if (m_detection_rate_entry)
+    if (m_detection_rate_sbtn)
     {
-        m_detection_rate_entry->set_text(std::to_string(detection_rate));
+        m_detection_rate_sbtn->set_value(detection_rate);
     }
 }
 
@@ -2893,19 +2893,9 @@ void MainWindow::on_save_detection_settings_clicked()
         auto digital_output = m_select_detection_digital_output_cbox->get_active_text();
         new_settings["digital_output"] = digital_output;
     }
-    if (m_detection_rate_entry)
+    if (m_detection_rate_sbtn)
     {
-        auto detection_rate = std::stod(m_detection_rate_entry->get_text());
-        // Ensure detection rate is within the range of 10 to 30
-        if (detection_rate < 10)
-        {
-            detection_rate = 10;
-        }
-        else if (detection_rate > 30)
-        {
-            detection_rate = 30;
-        }
-        new_settings["detection_rate"] = detection_rate;
+        new_settings["detection_rate"] = m_detection_rate_sbtn->get_value();
     }
     if (m_detection_sensitivity_scale)
     {
@@ -6341,7 +6331,7 @@ void MainWindow::start_capture(void *device_handle)
         auto capturing_thread = std::thread([this, device_handle]()
         {
             // Set the desired frame rate
-            double frame_rate = 0.0;  // Frames per second
+            double frame_rate = DEFAULT_DETECTION_RATE;  // Frames per second
             auto detection_settings = SettingsService::get_settings("detection");
             if (!detection_settings.empty())
             {
