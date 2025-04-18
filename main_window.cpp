@@ -36,10 +36,6 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
     // Set the window title
     set_window_title(APP_NAME);
 
-    // Set up ONNX session
-    // setup_onnx_detection_session(true);
-    setup_onnx_toolkit_session();
-
     m_builder->get_widget("start_signal_test_btn", m_start_signal_test_btn);
     if (m_start_signal_test_btn)
     {
@@ -5991,6 +5987,9 @@ void MainWindow::on_snap_clicked()
         img.step       // Row stride (bytes per row)
     );
 
+    // Set up ONNX session
+    setup_onnx_toolkit_session();
+
     // Create input tensors
     std::vector<Ort::Value> input_tensors;
     auto input_tensor = FrameUtils::create_input_tensor(pData, pixel_type, frame_width, frame_height, PATCH_SIZE);    
@@ -6123,6 +6122,9 @@ void MainWindow::on_toolkit_test_clicked()
 
     // Get the pointer to the image data (raw pixel data)
     uint8_t* pData = reinterpret_cast<uint8_t*>(m_image_pixbuf_toolkit->get_pixels());
+
+    // Set up ONNX session
+    setup_onnx_toolkit_session();
 
     // Create input tensors
     std::vector<Ort::Value> input_tensors;
