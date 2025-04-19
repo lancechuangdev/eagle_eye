@@ -124,6 +124,7 @@ protected:
     Gtk::Label *m_settings_detection_digital_output_line_number_lbl;
     Gtk::SpinButton *m_detection_rate_sbtn;
     Gtk::Scale *m_detection_sensitivity_scale;
+    Gtk::CheckButton *m_save_extra_normal_frames_cbtn;
     Gtk::Button *m_cancel_detection_settings_btn;
     Gtk::Button *m_save_detection_settings_btn;
     Gtk::Spinner *m_load_detection_results_spinner;

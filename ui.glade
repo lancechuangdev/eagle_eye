@@ -3711,9 +3711,8 @@ While higher values focus on clearer, more obvious anomalies, but could miss sub
                                   </packing>
                                 </child>
                                 <child>
-                                  <object class="GtkCheckButton">
+                                  <object class="GtkCheckButton" id="save_extra_normal_frames_cbtn">
                                     <property name="label" translatable="yes">Save Extra Normal Frames</property>
-                                    <property name="visible">True</property>
                                     <property name="can-focus">True</property>
                                     <property name="receives-default">False</property>
                                     <property name="draw-indicator">True</property>
@@ -3726,7 +3725,6 @@ While higher values focus on clearer, more obvious anomalies, but could miss sub
                                 </child>
                                 <child>
                                   <object class="GtkLabel">
-                                    <property name="visible">True</property>
                                     <property name="can-focus">False</property>
                                     <property name="halign">start</property>
                                     <property name="label" translatable="yes">Helps collect additional normal frames (under the specified sensitivity threshold) to train or improve models.</property>

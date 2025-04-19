@@ -543,6 +543,8 @@ MainWindow::MainWindow(BaseObjectType *obj, Glib::RefPtr<Gtk::Builder> const &re
         });
     }
 
+    m_builder->get_widget("save_extra_normal_frames_cbtn", m_save_extra_normal_frames_cbtn);
+
     m_builder->get_widget("cancel_detection_settings_btn", m_cancel_detection_settings_btn);
     if (m_cancel_detection_settings_btn)
     {
@@ -2230,6 +2232,7 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
     int frame_height;
     int num_frames;
     int total_height;
+    std::string project_name;
 
     try
     {
@@ -2240,6 +2243,7 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
         frame_width = json_data["frame_width"].get<int>();
         frame_height = json_data["frame_height"].get<int>();
         num_frames = json_data["num_frames"].get<int>();
+        project_name = json_data["project_name"].get<std::string>();
         total_height = frame_height * num_frames;
     }
     catch (const std::exception& e)
@@ -2325,17 +2329,17 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
             continue;
         }
 
-        std::string filename = prediction["file_name"].get<std::string>();
+        std::string file_path = prediction["file_name"].get<std::string>();
         
         // Check if the file exists before loading
-        if (!std::filesystem::exists(filename))
+        if (!std::filesystem::exists(file_path))
         {
-            std::cerr << "Error: File does not exist: " << filename << std::endl;
+            std::cerr << "Error: File does not exist: " << file_path << std::endl;
             continue;
         }
 
         // Load the prediction image
-        auto prediction_pixbuf = Gdk::Pixbuf::create_from_file(filename);
+        auto prediction_pixbuf = Gdk::Pixbuf::create_from_file(file_path);
         if (!prediction_pixbuf)
         {
             std::cerr << "Failed to load prediction image" << std::endl;
@@ -2460,42 +2464,52 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
         set_button_icon(view_button, "/com/example/eagle_eye/focus.svg");
         action_box->pack_start(*view_button, Gtk::PACK_SHRINK);
 
-        // Add "Delete" button
-        auto delete_button = Gtk::make_managed<Gtk::Button>();
-        delete_button->set_margin_top(5);
+        // Add action button
+        auto action_button = Gtk::make_managed<Gtk::Button>();
+        action_button->set_margin_top(5);
         
         // Load button icon
-        auto remark = prediction.value("remark", "TP");
-        if (remark == "FP") // Marked as False Positive, the available action is to revert it back to True Positive.
-        {
-            set_button_icon(delete_button, "/com/example/eagle_eye/confirm.svg");
-            update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 128);
-        }
-        else // 'remark' does not exist or was True Positive, the available action is to mark it as False Positive.
-        {
-            set_button_icon(delete_button, "/com/example/eagle_eye/delete.svg");
-            update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 255);
+        std::string filename = std::filesystem::path(file_path).filename().string();
+        size_t pos = filename.find("prediction");
+        if (pos != std::string::npos) {
+            filename.replace(pos, std::string("prediction").length(), "patch");
         }
 
-        delete_button->signal_clicked().connect([this, delete_button, trans_json_path, transaction_id, prediction_id, thumbnail, thumbnail_pixbuf, position_x, position_y, patch_width, patch_height]()
+        auto normal_img = AppPaths::Project_Dataset_Path(project_name) / "normal" / filename;
+        if (std::filesystem::exists(normal_img))
+        {
+            set_button_icon(action_button, "/com/example/eagle_eye/remove.svg");
+        }
+        else
+        {
+            set_button_icon(action_button, "/com/example/eagle_eye/add.svg");
+        }
+
+        action_button->set_tooltip_text(
+            "Click to add image to dataset."
+        );
+
+        // action_button->set_tooltip_text(
+        //     "Click to add image to dataset.\nHold CTRL to add to abnormal set."
+        // );
+
+        action_button->signal_clicked().connect([this, normal_img, action_button, position_x, position_y, patch_width, patch_height]()
         {
             try
             {
-                std::string filename = transaction_id + "_patch_" + std::to_string(prediction_id) + ".png";
-                auto remark = get_patch_remark(trans_json_path, prediction_id);
-                auto project_name = "ad_hoc";
-
-                // Create the directory path
-                std::filesystem::path project_folder = AppPaths::Project_Path(project_name);
-                std::filesystem::create_directories(project_folder);
-
-                if (remark == "TP") // 'remark' does not exist or marked as True Positive, changing to False Positive
+                // Check if the image already exists in the normal directory
+                if (std::filesystem::exists(normal_img))
                 {
-                    bool is_images_dir_created = FileUtils::createSubdirectory(AppPaths::Project_Dataset_Path(project_name).string(), "normal");
-                    
-                    if (!is_images_dir_created)
-                    {
-                        throw std::runtime_error("Failed to create normal images directory");
+                    // Delete the image from normal dir
+                    std::filesystem::remove(normal_img);
+                    set_button_icon(action_button, "/com/example/eagle_eye/add.svg");
+                }
+                else
+                {
+                    // Create the dest directory if it doesn't exist
+                    std::filesystem::path dest_dir = normal_img.parent_path();
+                    if (!std::filesystem::exists(dest_dir)) {
+                        std::filesystem::create_directories(dest_dir);
                     }
 
                     // Ensure the patch coordinates and dimensions are within bounds
@@ -2509,47 +2523,23 @@ void MainWindow::load_detection_result_in_explorer(std::string &detection_result
                         // Save the patch to a file
                         if (patch_pixbuf)
                         {
-                            patch_pixbuf->save((AppPaths::Project_Dataset_Path(project_name) / "normal" / filename).string(), "png");
+                            patch_pixbuf->save(normal_img, "png");
                         }
 
-                        // Mark the patch as FP and update transaction json file
-                        update_patch_remark(trans_json_path, prediction_id, "FP");
-                        set_button_icon(delete_button, "/com/example/eagle_eye/confirm.svg");
-                        update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 128);
+                        set_button_icon(action_button, "/com/example/eagle_eye/remove.svg");
                     }
                     else
                     {
                         std::cerr << "Patch coordinates are out of bounds!" << std::endl;
                     }
                 }
-                else if (remark == "FP") // Was False Positive, changing to True Positive.
-                {
-                    // Mark the patch as TP and update transaction json file
-                    update_patch_remark(trans_json_path, prediction_id, "TP");
-
-                    // Delete image/mask pair from Dataset path
-                    auto imagePath = AppPaths::Project_Dataset_Path(project_name) / "normal" / filename;
-                    if (std::filesystem::exists(imagePath))
-                    {
-                        // Delete the image
-                        std::filesystem::remove(imagePath);
-                        std::cout << "File deleted: " << imagePath << std::endl;
-                    }
-                    else
-                    {
-                        std::cerr << "File not found: " << imagePath << std::endl;
-                    }
-
-                    set_button_icon(delete_button, "/com/example/eagle_eye/delete.svg");
-                    update_patch_thumbnail_alpha(thumbnail_pixbuf, thumbnail, 255);
-                }
             }
             catch (const Glib::Exception& e)
             {
-                std::cerr << "Error saving or deleting patch: " << e.what() << std::endl;
+                std::cerr << "Error adding or remove image from dataset: " << e.what() << std::endl;
             }
         });
-        action_box->pack_start(*delete_button, Gtk::PACK_SHRINK);
+        action_box->pack_start(*action_button, Gtk::PACK_SHRINK);
 
         // Add the button box to the item box
         item_box->pack_start(*action_box, Gtk::PACK_SHRINK);
@@ -2901,6 +2891,11 @@ void MainWindow::on_save_detection_settings_clicked()
     {
         auto confidence_threshold = m_detection_sensitivity_scale->get_value();
         new_settings["confidence_threshold"] = confidence_threshold;
+    }
+    if (m_save_extra_normal_frames_cbtn)
+    {
+        auto active = m_save_extra_normal_frames_cbtn->get_active();
+        new_settings["save_extra_normal_frames"] = active;
     }
 
     // Save detection settings
@@ -5368,6 +5363,8 @@ void MainWindow::on_quick_start_clicked()
     // Initialize detection rate records with 5 elements, all set to 0.0
     m_detection_rate_records = std::vector<double>(5, 0.0);
 
+    m_curr_project_name = TEMP_PROJECT_NAME;
+
     // Update main window title with a project name
     set_window_title(APP_NAME);
 
@@ -6855,6 +6852,7 @@ void MainWindow::start_detection(int frame_width, int frame_height)
                 nlohmann::json transaction_json = {
                     {"transaction_id", transaction_id},
                     {"transaction_datetime", TimeUtils::get_current_time()},
+                    {"project_name", m_curr_project_name},
                     {"patch_size", PATCH_SIZE},
                     {"confidence_threshold", confidence_threshold},
                     {"frame_width", frame_width},
